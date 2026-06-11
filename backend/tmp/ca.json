@@ -1,0 +1,18 @@
+{
+    "requestedBy":  "Dev User",
+    "requestedAmount":  100,
+    "purpose":  "E2E test",
+    "employeeId":  1,
+    "items":  [
+                  {
+                      "description":  "Test item",
+                      "estimatedAmount":  100,
+                      "category":  "Other"
+                  }
+              ],
+    "advanceDate":  "2026-01-07",
+    "advanceNumber":  "CA-E2E-TEST-20260107",
+    "status":  "draft",
+    "paymentMethod":  "check",
+    "department":  "Finance"
+}

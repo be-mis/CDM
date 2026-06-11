@@ -1,0 +1,3 @@
+This folder stores uploaded files for the backend.
+
+The `.gitkeep` file ensures the folder is committed even if empty. It can be removed once files are uploaded via the app.

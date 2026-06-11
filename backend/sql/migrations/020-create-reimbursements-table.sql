@@ -1,0 +1,35 @@
+-- Migration 020: Create reimbursements table
+USE `cdmdb`;
+
+CREATE TABLE IF NOT EXISTS `reimbursements` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `reimbursement_number` VARCHAR(50) NOT NULL UNIQUE,
+  `reimbursement_date` DATE NOT NULL,
+  `requested_by` VARCHAR(191) NOT NULL,
+  `department_id` INT NOT NULL,
+  `employee_id` VARCHAR(50) NULL,
+  `purpose` TEXT NOT NULL,
+  `period_covered_from` DATE NULL,
+  `period_covered_to` DATE NULL,
+  `total_amount` DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+  `approved_amount` DECIMAL(15, 2) NULL,
+  `payment_method` ENUM('check', 'bank_transfer', 'cash') NOT NULL DEFAULT 'check',
+  `check_number` VARCHAR(50) NULL,
+  `account_number` VARCHAR(100) NULL,
+  `status` ENUM('draft', 'pending', 'approved', 'rejected', 'disbursed', 'cancelled') NOT NULL DEFAULT 'draft',
+  `created_by` INT UNSIGNED NULL,
+  `approved_by` INT UNSIGNED NULL,
+  `approved_at` TIMESTAMP NULL,
+  `disbursed_at` TIMESTAMP NULL,
+  `remarks` TEXT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_reimbursement_number` (`reimbursement_number`),
+  INDEX `idx_status` (`status`),
+  INDEX `idx_department_id` (`department_id`),
+  INDEX `idx_created_by` (`created_by`),
+  FOREIGN KEY (`department_id`) REFERENCES `departments`(`id`) ON DELETE RESTRICT,
+  FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`approved_by`) REFERENCES `users`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
