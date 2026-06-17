@@ -1,535 +1,1024 @@
-// import React, { useState, useEffect } from 'react';
-// import { useNavigate } from 'react-router-dom';
-// import { Save, Send, RotateCcw } from 'lucide-react';
-// import api from '../api';
-// import { useAuth } from '../context/AuthContext';
-// import ItemsTable from './forms/ItemsTable';
-// import AttachmentsSection from './forms/AttachmentsSection';
-// import PaymentDetailsSection from './forms/PaymentDetailsSection';
-// import ItinerarySheet from './forms/ItinerarySheet';
-// import { formatNumber, sanitizeNumberInput, normalizeDate, formatLongDate } from '../utils/formatters';
-// import Button from './ui/Button';
-// import Input from './ui/Input';
-// import { Card, CardContent } from './ui/Card';
-// import { Alert, InlineAlert } from './ui/Alert';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Save, Paperclip, Send, RotateCcw } from 'lucide-react';
+import api from '../api';
+import AttachmentViewer from './AttachmentViewer';
+import { useAuth } from '../context/AuthContext';
+import Button from './ui/Button';
+import Input from './ui/Input';
+import { Card, CardContent } from './ui/Card';
+import { Alert, InlineAlert } from './ui/Alert';
+import { normalizeDate, formatLongDate } from '../utils/formatters';
+import PaymentDetailsSection from './forms/PaymentDetailsSection';
+import ExpensesBreakdown, { blankExpense } from './forms/Expensesbreakdown';
+import ItinerarySheet, { blankItinerary } from './forms/Itinerarysheet';
 
-// const TruncatedViewField = ({ value, label }) => (
-//     <div className="relative w-full">
-//         {label && (
-//             <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600 z-10">
-//                 {label}
-//             </span>
-//         )}
-//         <div className="px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 whitespace-nowrap overflow-hidden text-ellipsis w-full text-sm text-gray-900 min-h-[35px] flex items-center" title={value || ''}>
-//             {value || '-'}
-//         </div>
-//     </div>
-// );
+// Module-level helpers and constants
+const currencyFormatter = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
-// const ReimbursementForm = (props) => {
-//     const { editData, onClose, viewOnly = false, hideCloseButton = false } = props || {};
-//     const { user } = useAuth();
-//     const navigate = useNavigate();
-//     const [userPaymentInfo, setUserPaymentInfo] = useState(null);
+/**
+ * Normalise a raw expense row coming from the GET /reimbursements/:id response.
+ * The backend now returns `expenses[]` with an `attachments[]` array on each row.
+ */
+const mapIncomingExpense = (it, idx) => ({
+  id:             it.id || idx + 1,
+  particulars:    it.particulars   || it.particular    || it.description || '',
+  actualAmount:   parseFloat(it.actualAmount   || it.actual_amount   || it.amount || 0),
+  receiptNumber:  it.receiptNumber || it.receipt_number || '',
+  tin:            it.tin           || '',
+  vendor:         it.vendor        || it.vendor_name   || '',
+  address:        it.address       || '',
+  vatType:        it.vatType       || it.vat_type      || '',
+  vatable:        parseFloat(it.vatable        || it.vatable_sales   || 0),
+  vatAmount:      parseFloat(it.vatAmount      || it.vat_amount      || 0),
+  zeroRatedSales: parseFloat(it.zeroRatedSales || it.zero_rated_sales || 0),
+  vatExemptSales: parseFloat(it.vatExemptSales || it.vat_exempt_sales || 0),
+  expenseDate:    normalizeDate(it.expenseDate || it.expense_date || ''),
+  // The GET endpoint returns receipt info inside attachments[]
+  attachment:
+    it.attachments?.length > 0
+      ? {
+          id:         it.attachments[0].id,
+          fileName:   it.attachments[0].file_name  || it.attachments[0].fileName,
+          filePath:   it.attachments[0].file_path  || it.attachments[0].filePath,
+          fileType:   it.attachments[0].file_type  || it.attachments[0].fileType,
+          fileSize:   it.attachments[0].file_size  || it.attachments[0].fileSize,
+          isExisting: true,
+        }
+      : null,
+});
 
-//     const [formData, setFormData] = useState(() => {
-//         if (editData) {
-//             return {
-//                 reimbursementNumber: editData.reimbursementNumber || editData.reimbursement_number || '',
-//                 reimbursementDate: normalizeDate(editData.reimbursementDate || editData.reimbursement_date) || new Date().toISOString().split('T')[0],
-//                 requestedBy: editData.requestedBy || user?.name || '',
-//                 department: editData.department || user?.department || '',
-//                 departmentName: editData.departmentName || editData.department_name || editData.department || '',
-//                 employeeId: editData.employeeId || '',
-//                 businessUnit: editData.businessUnit || editData.business_unit || 'EPC',
-//                 purpose: editData.purpose || '',
-//                 periodCoveredFrom: normalizeDate(editData.periodCoveredFrom || editData.period_covered_from || '') || '',
-//                 periodCoveredTo: normalizeDate(editData.periodCoveredTo || editData.period_covered_to || '') || '',
-//                 paymentMethod: editData.paymentMethod || editData.payment_method || 'payroll',
-//                 gcashName: editData.gcashName || editData.gcash_name || editData.paymentReason || '',
-//                 checkNumber: editData.checkNumber || editData.check_number || '',
-//                 accountNumber: editData.accountNumber || editData.account_number || '',
-//                 remarks: editData.remarks || '',
-//                 status: editData.status || 'draft',
-//             };
-//         }
-//         return {
-//             reimbursementNumber: '',
-//             reimbursementDate: new Date().toISOString().split('T')[0],
-//             requestedBy: user?.name || '',
-//             department: user?.department || '',
-//             employeeId: '',
-//             businessUnit: 'EPC',
-//             purpose: '',
-//             periodCoveredFrom: '',
-//             periodCoveredTo: '',
-//             paymentMethod: 'payroll',
-//             gcashName: '',
-//             checkNumber: '',
-//             accountNumber: '',
-//             remarks: '',
-//             status: 'draft',
-//         };
-//     });
+/**
+ * Normalise a raw itinerary row from the GET response.
+ * The backend returns `itinerary[]` with a `receipt{}` object on each row.
+ */
+const mapIncomingItinerary = (it, idx) => ({
+  id:                   it.id || idx + 1,
+  dateCovered:          normalizeDate(it.dateCovered || it.date_covered || it.travel_date || ''),
+  storeName:            it.storeName    || it.store_name    || it.store          || '',
+  fromPlace:            it.fromPlace    || it.from_place    || it.transport_from || it.fromLocation || '',
+  toPlace:              it.toPlace      || it.to_place      || it.transport_to   || it.toLocation   || '',
+  modeOfTransportation: it.modeOfTransportation || it.mode_of_transportation || it.transport_mode || '',
+  amount:               parseFloat(it.amount || 0),
+  receipt:
+    it.receipt
+      ? {
+          id:         it.receipt.id,
+          fileName:   it.receipt.file_name  || it.receipt.fileName,
+          filePath:   it.receipt.file_path  || it.receipt.filePath,
+          fileType:   it.receipt.file_type  || it.receipt.fileType,
+          fileSize:   it.receipt.file_size  || it.receipt.fileSize,
+          isExisting: true,
+        }
+      : null,
+});
 
-//     const [items, setItems] = useState(() => {
-//         if (editData?.items?.length) {
-//             return editData.items.map((it, idx) => ({
-//                 id: it.id || idx + 1,
-//                 expenseDate: normalizeDate(it.expenseDate || it.expense_date || ''),
-//                 description: it.description || it.particulars || '',
-//                 estimatedAmount: parseFloat(it.estimatedAmount || it.estimated_amount || it.amount || 0),
-//                 tin: it.tin || it.tim || it.receiptNumber || it.receipt_number || '',
-//                 vendor: it.vendor || '',
-//                 address: it.address || '',
-//                 accountCode: it.accountCode || it.account_code || ''
-//             }));
-//         }
-//         return [{ id: 1, expenseDate: '', description: '', estimatedAmount: 0, tin: '', vendor: '', address: '', accountCode: '' }];
-//     });
+// Five business days from today (used as the minimum "Date Needed")
+const getMinDateNeeded = () => {
+  let d = new Date();
+  let count = 0;
+  while (count < 5) {
+    d.setDate(d.getDate() + 1);
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) count++;
+  }
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
-//     const [itinerary, setItinerary] = useState(() => {
-//         if (editData?.transportation?.length) {
-//             return editData.transportation.map((t, idx) => ({
-//                 id: t.id || idx + 1,
-//                 dateCovered: normalizeDate(t.dateCovered || t.date_covered || ''),
-//                 store: t.store || '',
-//                 fromLocation: t.fromLocation || t.from_location || '',
-//                 toLocation: t.toLocation || t.to_location || '',
-//                 modeOfTransport: t.modeOfTransport || t.mode_of_transport || '',
-//                 amount: parseFloat(t.amount || 0)
-//             }));
-//         }
-//         return [];
-//     });
+// Safely extract a YYYY-MM-DD string from either a JS Date object, an ISO
+// datetime string ("2025-06-20T00:00:00.000Z"), or a plain date string.
+const toDateString = (val) => {
+  if (!val) return '';
+  // JS Date object → use toISOString()
+  if (val instanceof Date) return val.toISOString().split('T')[0];
+  // Already a plain date string
+  const s = String(val);
+  // ISO datetime string — take the date part before 'T'
+  if (s.includes('T')) return s.split('T')[0];
+  return s;
+};
 
-//     const [departments, setDepartments] = useState([]);
-//     const [attachments, setAttachments] = useState([]);
-//     const [pendingDeletes, setPendingDeletes] = useState([]);
-//     const [notification, setNotification] = useState(null);
-//     const [errors, setErrors] = useState({});
+// Read-only display field reused in the header section.
+const TruncatedViewField = ({ value, label }) => (
+  <div className="relative w-full">
+    {label && (
+      <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-500 z-10">
+        {label}
+      </span>
+    )}
+    <div
+      className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-sm text-gray-900 min-h-[38px] flex items-center w-full"
+      title={value || ''}
+    >
+      <span className="truncate w-full">{value || '-'}</span>
+    </div>
+  </div>
+);
 
-//     useEffect(() => {
-//         fetchDepartments();
-//         if (!editData) generateReimbursementNumber();
-//         if (editData?.attachments?.length) {
-//             setAttachments(editData.attachments.map(att => ({
-//                 id: att.id,
-//                 fileName: att.fileName || att.file_name,
-//                 filePath: att.filePath || att.file_path,
-//                 fileType: att.fileType || att.file_type,
-//                 fileSize: att.fileSize || att.file_size,
-//                 isExisting: true
-//             })));
-//         }
-//     }, [editData]);
+// ReimbursementForm component
+const ReimbursementForm = (props) => {
+  const { editData, onClose, viewOnly = false, hideCloseButton = false } = props || {};
+  const isEditMode = !!editData;
+  const { user }   = useAuth();
+  const navigate   = useNavigate();
 
-//     // Fetch user payment information on mount
-//     useEffect(() => {
-//         const fetchUserPaymentInfo = async () => {
-//             try {
-//                 const response = await api.get('/auth/profile');
-//                 if (response.data?.user) {
-//                     setUserPaymentInfo({
-//                         payrollAccount: response.data.user.payroll_account,
-//                         gcashNumber: response.data.user.gcash_number,
-//                         gcashName: response.data.user.gcash_name
-//                     });
-//                 }
-//             } catch (err) {
-//                 console.error('Failed to fetch user payment info:', err);
-//             }
-//         };
-//         fetchUserPaymentInfo();
-//     }, []);
+  // Form state initialization with editData fallback for edit mode, or sensible defaults for create mode
+  const [formData, setFormData] = useState(() => {
+    if (editData) {
+      return {
+        reimbursementNumber: editData.reimbursementNumber || editData.reimbursement_number || '',
+        reimbursementDate:   toDateString(editData.reimbursementDate || editData.reimbursement_date) || new Date().toISOString().split('T')[0],
+        requestedBy:         editData.requestedBy   || editData.submitted_by  || user?.name       || '',
+        department:     editData.department    || editData.department_id   || '',
+        departmentName: editData.departmentName || editData.department_name || '',
+        employeeId:          editData.employeeId    || '',
+        businessUnit:        editData.businessUnit  || editData.business_unit  || 'EPC',
+        purpose:             editData.purpose || '',
+        dateNeeded:          toDateString(editData.dateNeeded || editData.date_needed || ''),
+        dateCoverageFrom:    toDateString(editData.dateCoverageFrom || editData.start_date || ''),
+        dateCoverageTo:      toDateString(editData.dateCoverageTo || editData.end_date || ''),
+        paymentMethod:       editData.paymentMethod || editData.payment_method || 'payroll',
+        gcashName:           editData.gcashName     || editData.gcash_name     || '',
+        accountNumber:       editData.accountNumber || editData.account_number || '',
+        remarks:             editData.remarks       || '',
+        status:              editData.status        || 'draft',
+      };
+    }
+    return {
+      reimbursementNumber: '',
+      reimbursementDate:   new Date().toISOString().split('T')[0],
+      dateNeeded:          '',
+      requestedBy:         user?.name       || '',
+      department:     user?.department_id || '',
+      departmentName: user?.department    || '',
+      employeeId:          '',
+      businessUnit:        'EPC',
+      purpose:             '',
+      dateCoverageFrom:    '',
+      dateCoverageTo:      '',
+      paymentMethod:       'payroll',
+      gcashName:           '',
+      accountNumber:       '',
+      remarks:             '',
+      status:              'draft',
+    };
+  });
 
-//     // Auto-populate payment details when payment method changes
-//     useEffect(() => {
-//         if (!userPaymentInfo || viewOnly) return;
+  // Expenses Breakdown rows
+  // The GET endpoint returns the array under the key `expenses`
+  const [expenses, setExpenses] = useState(() => {
+    if (editData?.expenses?.length > 0)      return editData.expenses.map(mapIncomingExpense);
+    if (editData?.items?.length > 0)         return editData.items.map(mapIncomingExpense);
+    return [blankExpense(1)];
+  });
 
-//         setFormData(p => {
-//             if (p.paymentMethod === 'payroll') {
-//                 return { ...p, accountNumber: userPaymentInfo.payrollAccount || '', gcashName: '' };
-//             } else if (p.paymentMethod === 'gcash') {
-//                 return { ...p, accountNumber: userPaymentInfo.gcashNumber || '', gcashName: userPaymentInfo.gcashName || '' };
-//             }
-//             return p;
-//         });
-//     }, [formData.paymentMethod, userPaymentInfo, viewOnly]);
+  // Itinerary Sheet rows
+  // The GET endpoint returns the array under the key `itinerary`
+  const [itineraryItems, setItineraryItems] = useState(() => {
+    if (editData?.itinerary?.length > 0)         return editData.itinerary.map(mapIncomingItinerary);
+    if (editData?.transportation?.length > 0)    return editData.transportation.map(mapIncomingItinerary);
+    if (editData?.itineraryItems?.length > 0)    return editData.itineraryItems.map(mapIncomingItinerary);
+    return [];
+  });
 
-//     const fetchDepartments = async () => {
-//         try {
-//             const res = await api.get('/departments');
-//             if (res.data) setDepartments(Array.isArray(res.data) ? res.data : (res.data.departments || []));
-//         } catch (e) {
-//             setDepartments([{ id: 1, name: 'Finance' }, { id: 2, name: 'Operations' }]);
-//         }
-//     };
+  const [departments,  setDepartments]  = useState([]);
+  const [userProfile,  setUserProfile]  = useState(null);
+  const [attachments,  setAttachments]  = useState(() => {
+    if (editData?.attachments?.length > 0) {
+      return editData.attachments.map((att) => ({
+        id:         att.id,
+        fileName:   att.file_name  || att.fileName  || att.name,
+        filePath:   att.file_path  || att.filePath,
+        fileType:   att.file_type  || att.fileType,
+        fileSize:   att.file_size  || att.fileSize,
+        isExisting: true,
+      }));
+    }
+    return [];
+  });
+  const [pendingDeletes, setPendingDeletes] = useState([]);
+  const [snackbar,       setSnackbar]       = useState({ open: false, message: '', severity: 'success' });
+  const [errors,         setErrors]         = useState({});
+  const [submitting,     setSubmitting]     = useState(false);
 
-//     const generateReimbursementNumber = () => {
-//         const date = new Date();
-//         const year = date.getFullYear();
-//         const month = String(date.getMonth() + 1).padStart(2, '0');
-//         const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-//         setFormData(prev => ({ ...prev, reimbursementNumber: `RMB-${year}${month}-${random}` }));
-//     };
+  const handleExpensesChange = useCallback((updated) => {
+    if (typeof updated === 'function') {
+      setExpenses(updated);   // functional update from OCR callback
+    } else {
+      setExpenses(updated);   // plain array update
+    }
+  }, []);
 
-//     const handleInputChange = (e) => setFormData(p => ({ ...p, [e.target.name]: e.target.value }));
+  const handleItineraryItemsChange = useCallback((updated) => setItineraryItems(updated), []);
 
-//     const calculateTotal = () => {
-//         const itemsTotal = items.reduce((sum, item) => sum + (parseFloat(item.estimatedAmount) || 0), 0);
-//         const itineraryTotal = itinerary.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
-//         return itemsTotal + itineraryTotal;
-//     };
+  // Helpers for showing snackbars and fetching initial data
+  const showSnackbar = useCallback((message, severity = 'success') => {
+    setSnackbar({ open: true, message, severity });
+  }, []);
 
-//     const handleItemChange = (id, field, value, cursorPos) => {
-//         setItems(p => p.map(it => it.id === id ? { ...it, [field]: value } : it));
-//         if (cursorPos !== undefined && field === 'estimatedAmount') {
-//             setTimeout(() => {
-//                 const i = document.querySelector(`input[data-item-id="${id}"][data-field="${field}"]`);
-//                 if (i) i.setSelectionRange(cursorPos, cursorPos);
-//             }, 0);
-//         }
-//     };
+  const generateReimbursementNumber = useCallback(() => {
+    const d      = new Date();
+    const year   = d.getFullYear();
+    const month  = String(d.getMonth() + 1).padStart(2, '0');
+    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    setFormData((prev) => ({ ...prev, reimbursementNumber: `RI-${year}${month}-${random}` }));
+  }, []);
 
-//     const handleItineraryChange = (index, field, value) => {
-//         setItinerary(prev => prev.map((item, i) =>
-//             i === index ? { ...item, [field]: value } : item
-//         ));
-//     };
+  // Fetch helpers for departments and user profile (for payment-details auto-fill)
+  const fetchDepartments = useCallback(async () => {
+    const fallback = [
+      { id: 1, name: 'Finance' }, { id: 2, name: 'Operations' },
+      { id: 3, name: 'HR' },      { id: 4, name: 'IT' }, { id: 5, name: 'Marketing' },
+    ];
+    try {
+      const response = await api.get('/departments');
+      const data = response.data;
+      if (Array.isArray(data))                  setDepartments(data);
+      else if (Array.isArray(data.departments)) setDepartments(data.departments);
+      else setDepartments(fallback);
+    } catch {
+      setDepartments(fallback);
+    }
+  }, []);
 
-//     const addItineraryRow = () => {
-//         setItinerary(prev => [...prev, {
-//             id: Date.now(),
-//             dateCovered: '',
-//             store: '',
-//             fromLocation: '',
-//             toLocation: '',
-//             modeOfTransport: '',
-//             amount: 0
-//         }]);
-//     };
+  // Initialize form with fetched data when in edit mode, or generate a new reimbursement number when in create mode
+  useEffect(() => {
+    fetchDepartments();
+    if (!editData) generateReimbursementNumber();
+  }, [fetchDepartments, generateReimbursementNumber, editData]);
 
-//     const removeItineraryRow = (id) => {
-//         setItinerary(prev => prev.filter(item => item.id !== id));
-//     };
+  // After fetchDepartments runs, resolve departmentName from the departments list
+  // if it wasn't returned directly on editData (covers the race-condition case).
+  useEffect(() => {
+    if (!editData || departments.length === 0) return;
+    setFormData((prev) => {
+      if (prev.departmentName && prev.departmentName.trim() !== '') return prev;
+      if (!prev.department) return prev;
+      const found = departments.find((d) => String(d.id) === String(prev.department));
+      return found ? { ...prev, departmentName: found.name } : prev;
+    });
+  }, [departments, editData]);
 
-//     const validateForm = () => {
-//         const errs = {};
-//         if (!formData.purpose?.trim()) errs.purpose = 'Purpose required';
-//         if (!formData.department) errs.department = 'Department required';
-//         if (calculateTotal() === 0) errs.total = 'Total amount must be > 0';
+  // Fetch full user profile for payment-details auto-fill
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const res = await api.get('/auth/profile');
+        if (res.data?.user) setUserProfile(res.data.user);
+      } catch (err) {
+        console.error('Failed to fetch user profile', err);
+      }
+    };
+    if (user) fetchProfile();
+  }, [user]);
 
-//         if (formData.paymentMethod === 'gcash') {
-//             if (!formData.gcashName?.toString().trim()) errs.gcashName = 'Name required';
-//             if (!formData.accountNumber?.toString().trim()) errs.accountNumber = 'Account number required';
-//         } else if (['payroll', 'bank_transfer'].includes(formData.paymentMethod) && !formData.accountNumber?.toString().trim()) {
-//             errs.accountNumber = 'Account number required';
-//         }
-//         setErrors(errs);
-//         return { isValid: Object.keys(errs).length === 0, errors: errs };
-//     };
+  // Auto-populate payment details from profile
+  useEffect(() => {
+    if (!userProfile) return;
+    if (formData.paymentMethod === 'payroll') {
+      setFormData((prev) => ({ ...prev, accountNumber: userProfile.payroll_account || prev.accountNumber, gcashName: '' }));
+    } else if (formData.paymentMethod === 'gcash') {
+      setFormData((prev) => ({
+        ...prev,
+        accountNumber: userProfile.gcash_number || prev.accountNumber,
+        gcashName:     userProfile.gcash_name   || prev.gcashName,
+      }));
+    }
+  }, [formData.paymentMethod, userProfile]);
 
-//     const handleSaveDraft = async () => {
-//         if (!formData.purpose?.trim() && calculateTotal() === 0) {
-//             return showNotification('Provide at least a purpose or an amount to save as draft', 'warning');
-//         }
-//         try {
-//             const payload = { ...formData, items, transportation: itinerary, totalAmount: calculateTotal(), status: 'draft' };
-//             let res;
-//             if (editData?.id) {
-//                 res = await api.put(`/reimbursements/${editData.id}`, payload);
-//             } else {
-//                 res = await api.post('/reimbursements', payload);
-//             }
+  // ── Derived totals ─────────────────────────────────────────────────────────
+  const totalAmount = useMemo(
+    () =>
+      expenses.reduce((s, it) => s + (parseFloat(it.actualAmount) || 0), 0) +
+      itineraryItems.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0),
+    [expenses, itineraryItems],
+  );
 
-//             if (res.data.success) {
-//                 const requestId = editData?.id || res.data.data.id;
-//                 if (attachments.length > 0) await uploadAttachments(requestId);
-//                 showNotification('Draft saved!');
-//                 onClose ? onClose() : navigate('/my-requests', { state: { tab: 0 } });
-//             }
-//         } catch (e) { showNotification('Save failed', 'error'); }
-//     };
+  // ── Form field handler ─────────────────────────────────────────────────────
+  const handleInputChange = useCallback((e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    setErrors((prev)    => ({ ...prev, [name]: '' }));
+  }, []);
 
-//     const handleSubmit = async () => {
-//         const { isValid, errors: validationErrors } = validateForm();
-//         if (!isValid) {
-//             const fieldLabels = {
-//                 purpose: 'Purpose',
-//                 department: 'Department',
-//                 total: 'Amount/Items'
-//             };
-//             const missing = Object.keys(validationErrors).map(k => fieldLabels[k] || k);
-//             return showNotification(`Please fill in required fields: ${missing.join(', ')}`, 'error');
-//         }
-//         try {
-//             const payload = { ...formData, items, transportation: itinerary, totalAmount: calculateTotal(), status: 'pending' };
-//             let res;
-//             if (editData?.id) {
-//                 res = await api.put(`/reimbursements/${editData.id}`, payload);
-//             } else {
-//                 res = await api.post('/reimbursements', payload);
-//             }
+  // ── Top-level supporting documents ────────────────────────────────────────
+  const handleFileAttach = useCallback((e) => {
+    const files = Array.from(e.target.files).map((f) => {
+      try { f.preview = URL.createObjectURL(f); } catch { f.preview = null; }
+      return f;
+    });
+    setAttachments((prev) => [...prev, ...files]);
+    showSnackbar(`${files.length} file(s) attached`, 'success');
+  }, [showSnackbar]);
 
-//             if (res.data.success) {
-//                 const requestId = editData?.id || res.data.data.id;
-//                 if (attachments.length > 0) await uploadAttachments(requestId);
-//                 showNotification('Submitted successfully!');
-//                 onClose ? onClose() : navigate('/my-requests', { state: { tab: 0 } });
-//             }
-//         } catch (e) { showNotification('Submit failed', 'error'); }
-//     };
+  const removeAttachment = useCallback(async (index) => {
+    setAttachments((prev) => {
+      const att = prev[index];
+      if (!att) return prev;
+      if (att.isExisting && att.id && editData?.id) {
+        setPendingDeletes((pd) => Array.from(new Set([...pd, att.id])));
+        showSnackbar('Attachment marked for removal (will be deleted on save)', 'info');
+      } else {
+        try { if (att?.preview) URL.revokeObjectURL(att.preview); } catch { }
+      }
+      return prev.filter((_, i) => i !== index);
+    });
+  }, [editData?.id, showSnackbar]);   // ← no longer needs attachments in deps
 
-//     const uploadAttachments = async (id) => {
-//         // Process deletions
-//         if (pendingDeletes.length > 0) {
-//             for (const attachmentId of pendingDeletes) {
-//                 try {
-//                     await api.delete(`/reimbursements/${id}/attachments/${attachmentId}`);
-//                 } catch (e) {
-//                     console.error(`Failed to delete attachment ${attachmentId}`, e);
-//                 }
-//             }
-//         }
+  // ── File-upload helpers ────────────────────────────────────────────────────
 
-//         // Process new uploads
-//         for (const file of attachments) {
-//             if (file.isExisting) continue;
-//             const fd = new FormData();
-//             fd.append('file', file);
-//             fd.append('resourceType', 'reimbursements');
-//             fd.append('resourceId', id);
-//             try {
-//                 const up = await api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-//                 if (up.data.success) await api.post(`/reimbursements/${id}/attachments`, { fileName: file.name, filePath: up.data.path, fileType: file.type, fileSize: file.size });
-//             } catch (e) { }
-//         }
-//     };
+  /**
+   * Upload new receipt files attached to expense rows.
+   * Returns a new array of expense objects with resolved server-side attachment info.
+   */
+  const uploadExpenseAttachments = useCallback(async (currentItems, reimbursementId) => {
+    const results = [];
+    for (const item of currentItems) {
+      if (!item.attachment || item.attachment.isExisting) { results.push(item); continue; }
+      const fd = new FormData();
+      fd.append('file',         item.attachment);
+      fd.append('resourceType', 'reimbursements');
+      fd.append('resourceId',   reimbursementId);
+      try {
+        const res = await api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        if (res.data?.success) {
+          results.push({
+            ...item,
+            attachment: {
+              id:         res.data.id   || null,
+              fileName:   item.attachment.name,
+              filePath:   res.data.path,
+              fileType:   item.attachment.type,
+              fileSize:   item.attachment.size,
+              isExisting: true,
+            },
+          });
+        } else {
+          results.push(item);
+        }
+      } catch (err) {
+        console.error('Error uploading expense attachment', err);
+        results.push(item);
+      }
+    }
+    return results;
+  }, []);
 
-//     const showNotification = (message, severity = 'success') => {
-//         setNotification({ message, severity });
-//         setTimeout(() => setNotification(null), 4000);
-//     };
+  /**
+   * Upload new receipt files attached to itinerary rows.
+   * Returns a new array of itinerary objects with resolved server-side receipt info.
+   */
+  const uploadItineraryReceipts = useCallback(async (currentItems, reimbursementId) => {
+    const results = [];
+    for (const item of currentItems) {
+      if (!item.receipt || item.receipt.isExisting) { results.push(item); continue; }
+      const fd = new FormData();
+      fd.append('file',         item.receipt);
+      fd.append('resourceType', 'reimbursements');
+      fd.append('resourceId',   reimbursementId);
+      try {
+        const res = await api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        if (res.data?.success) {
+          results.push({
+            ...item,
+            receipt: {
+              id:         res.data.id   || null,
+              fileName:   item.receipt.name,
+              filePath:   res.data.path,
+              fileType:   item.receipt.type,
+              fileSize:   item.receipt.size,
+              isExisting: true,
+            },
+          });
+        } else {
+          results.push(item);
+        }
+      } catch (err) {
+        console.error('Error uploading itinerary receipt', err);
+        results.push(item);
+      }
+    }
+    return results;
+  }, []);
 
-//     const resetForm = () => {
-//         setFormData(prev => ({
-//             ...prev,
-//             purpose: '',
-//             periodCoveredFrom: '',
-//             periodCoveredTo: '',
-//             paymentMethod: 'payroll',
-//             checkNumber: '',
-//             accountNumber: '',
-//             remarks: '',
-//             status: 'draft'
-//         }));
-//         setItems([{ id: 1, expenseDate: '', description: '', estimatedAmount: 0, tin: '', vendor: '', accountCode: '' }]);
-//         setItinerary([]);
-//         setAttachments([]);
-//         setErrors({});
-//         generateReimbursementNumber();
-//         showNotification('Form reset successfully', 'info');
-//     };
+  /**
+   * Upload top-level supporting documents and link them to the reimbursement.
+   */
+  const uploadSupportingDocuments = useCallback(async (reimbursementId) => {
+    try {
+      const updated = [];
+      for (const file of attachments) {
+        if (file.isExisting) { updated.push(file); continue; }
+        const fd = new FormData();
+        fd.append('file',         file);
+        fd.append('resourceType', 'reimbursements');
+        fd.append('resourceId',   reimbursementId);
+        try {
+          const uploadRes = await api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+          if (uploadRes.data?.success) {
+            const attachRes = await api.post(`/reimbursements/${reimbursementId}/attachments`, {
+              fileName: file.name,
+              filePath: uploadRes.data.path,
+              fileType: file.type,
+              fileSize: file.size,
+            });
+            try { if (file.preview) URL.revokeObjectURL(file.preview); } catch { /* ignore */ }
+            updated.push({
+              id:         attachRes.data?.data?.id || null,
+              fileName:   file.name,
+              filePath:   uploadRes.data.path,
+              fileType:   file.type,
+              fileSize:   file.size,
+              isExisting: true,
+            });
+          } else {
+            updated.push(file);
+          }
+        } catch (err) {
+          console.error('Error uploading supporting document', err);
+          updated.push(file);
+        }
+      }
+      setAttachments(updated);
+    } catch {
+      showSnackbar('Warning: Some supporting documents failed to upload', 'warning');
+    }
+  }, [attachments, showSnackbar]);
 
-//     const removeAttachment = (index) => {
-//         const file = attachments[index];
-//         if (file.isExisting) {
-//             setPendingDeletes(prev => [...prev, file.id]);
-//         }
-//         setAttachments(prev => prev.filter((_, i) => i !== index));
-//     };
+  const buildPayload = useCallback(
+    (status, finalExpenses, finalItinerary) => ({
+      reimbursementNumber: formData.reimbursementNumber,
+      reimbursementDate:   formData.reimbursementDate,
+      requestedBy:         formData.requestedBy,
+      department:          formData.department,
+      businessUnit:        formData.businessUnit,
+      purpose:             formData.purpose             || null,
+      dateNeeded:          formData.dateNeeded          || null,
+      dateCoverageFrom:    formData.dateCoverageFrom    || null,
+      dateCoverageTo:      formData.dateCoverageTo      || null,
+      totalAmount:         totalAmount,
+      // paymentMethod must match DB ENUM: 'gcash' | 'payroll'
+      paymentMethod:       formData.paymentMethod       || null,
+      gcashName:           formData.gcashName           || null,
+      accountNumber:       formData.accountNumber       || null,
+      remarks:             formData.remarks             || null,
+      status,
 
-//     return (
-//         <div className="space-y-6">
-//             {!viewOnly && (
-//                 <div className="mb-6">
-//                     <h2 className="text-2xl font-semibold text-gray-900 mb-1">Reimbursement Form</h2>
-//                     <p className="text-gray-600">Request reimbursement for out-of-pocket expenses</p>
-//                 </div>
-//             )}
+      items: finalExpenses.map((item) => ({
+        description:    item.particulars,
+        amount:         parseFloat(item.actualAmount) || 0,
+        receiptNumber:  item.receiptNumber  || '',
+        tin:            item.tin            || null,
+        vendor:         item.vendor         || null,
+        vatType:        item.vatType        || 'NonVAT',
+        address:        item.address        || null,
+        vatable:        parseFloat(item.vatable)        || 0,
+        vatAmount:      parseFloat(item.vatAmount)      || 0,
+        zeroRatedSales: parseFloat(item.zeroRatedSales) || 0,
+        vatExemptSales: parseFloat(item.vatExemptSales) || 0,
+        expenseDate:    item.expenseDate    || null,
+        // Controller reads attachments[0] to create a reimbursement_receipts row
+        attachments:    item.attachment ? [item.attachment] : [],
+      })),
 
-//             {/* Rejection Reason Banner */}
-//             {viewOnly && editData?.status?.toLowerCase() === 'rejected' && (editData?.remarks || editData?.release_remarks) && (
-//                 <InlineAlert severity="error">
-//                     <div className="font-semibold mb-1">Rejection Reason:</div>
-//                     <div>{editData.remarks || editData.release_remarks}</div>
-//                 </InlineAlert>
-//             )}
+      transportation: finalItinerary.map((it) => ({
+        dateCovered:      it.dateCovered          || null,
+        store:            it.storeName            || '',
+        fromLocation:     it.fromPlace            || null,
+        toLocation:       it.toPlace              || null,
+        modeOfTransport:  it.modeOfTransportation || null,
+        amount:           parseFloat(it.amount)   || 0,
+        receipt:          it.receipt || null,
+      })),
+    }),
+    [formData, totalAmount],
+  );
 
-//             {notification && (
-//                 <Alert severity={notification.severity} onClose={() => setNotification(null)}>
-//                     {notification.message}
-//                 </Alert>
-//             )}
+  // Validation 
+  const validateForm = useCallback(() => {
+    const errs = {};
+    if (!formData.purpose?.trim())
+      errs.purpose = 'Purpose is required';
+    if (!formData.requestedBy?.toString().trim())
+      errs.requestedBy = 'Requested by is required';
+    if (!formData.department)
+      errs.department = 'Department is required';
+    if (expenses.some((it) => !it.particulars.toString().trim() || (parseFloat(it.actualAmount) || 0) <= 0))
+      errs.expenses = 'All expenses must have particulars and a valid actual amount';
+    if (formData.dateCoverageFrom && formData.dateCoverageTo) {
+      const outOfRange = expenses.some((it) => {
+        if (!it.expenseDate) return false;
+        return it.expenseDate < formData.dateCoverageFrom || it.expenseDate > formData.dateCoverageTo;
+      });
+      if (outOfRange)
+        errs.expenses = `Expense dates must be within the coverage period (${formatLongDate(formData.dateCoverageFrom)} – ${formatLongDate(formData.dateCoverageTo)})`;
+    }
+    if (totalAmount === 0)
+      errs.total = 'Total amount must be greater than 0';
 
-//             <Card>
-//                 <CardContent>
-//                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Information</h3>
-//                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-//                         <TruncatedViewField label="Reimbursement Number" value={formData.reimbursementNumber} />
-//                         <TruncatedViewField label="Requested By" value={formData.requestedBy} />
-//                         <TruncatedViewField label="Department" value={formData.department} />
-                        
-//                         <div>
-//                             {!viewOnly ? (
-//                                 <div className="relative border border-gray-300 rounded-lg px-3 h-[35px] flex items-center">
-//                                     <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600">Business Unit</span>
-//                                     <div className="flex gap-6 w-full">
-//                                         <label className="flex items-center gap-1 text-sm">
-//                                             <input type="radio" name="businessUnit" value="EPC" checked={formData.businessUnit === 'EPC'} onChange={handleInputChange} className="w-4 h-4" />
-//                                             EPC
-//                                         </label>
-//                                         <label className="flex items-center gap-1 text-sm">
-//                                             <input type="radio" name="businessUnit" value="NBFI" checked={formData.businessUnit === 'NBFI'} onChange={handleInputChange} className="w-4 h-4" />
-//                                             NBFI
-//                                         </label>
-//                                         <label className="flex items-center gap-1 text-sm">
-//                                             <input type="radio" name="businessUnit" value="Shared" checked={formData.businessUnit === 'Shared'} onChange={handleInputChange} className="w-4 h-4" />
-//                                             Shared
-//                                         </label>
-//                                     </div>
-//                                 </div>
-//                             ) : <TruncatedViewField label="Business Unit" value={formData.businessUnit} />}
-//                         </div>
+    setErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      showSnackbar(Object.values(errs)[0], 'error');
+      return false;
+    }
+    return true;
+  }, [formData, expenses, totalAmount, showSnackbar]);
 
-//                         <Input
-//                             fullWidth
-//                             label="Request Date"
-//                             type={viewOnly ? 'text' : 'date'}
-//                             name="reimbursementDate"
-//                             value={viewOnly ? formatLongDate(formData.reimbursementDate) : formData.reimbursementDate}
-//                             onChange={handleInputChange}
-//                             readOnly={viewOnly}
-//                         />
+  // Persist (save draft or submit) 
+  const persistForm = useCallback(async (status) => {
+    if (status === 'pending' && !validateForm()) return;
+    if (status === 'draft' && !formData.purpose?.trim() && totalAmount === 0) {
+      return showSnackbar('Provide at least a purpose or an amount to save as draft', 'warning');
+    }
+    setSubmitting(true);
+    try {
+      // Phase 1: Save reimbursement header + child rows (no new files yet)
+      const phase1Payload = buildPayload(status, expenses, itineraryItems);
 
-//                         {/* Period Covered - Combined field */}
-//                         <div className="relative border border-gray-300 rounded-lg px-3 h-[35px] flex items-center gap-2 focus-within:border-primary-600 hover:border-gray-900">
-//                             <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600">Period Covered</span>
-//                             <input
-//                                 type={viewOnly ? 'text' : 'date'}
-//                                 name="periodCoveredFrom"
-//                                 value={viewOnly ? formatLongDate(formData.periodCoveredFrom) : formData.periodCoveredFrom}
-//                                 onChange={handleInputChange}
-//                                 readOnly={viewOnly}
-//                                 max={(!viewOnly && formData.periodCoveredTo) ? formData.periodCoveredTo : undefined}
-//                                 className="flex-1 bg-transparent border-none outline-none text-sm"
-//                             />
-//                             <span className="text-gray-500">—</span>
-//                             <input
-//                                 type={viewOnly ? 'text' : 'date'}
-//                                 name="periodCoveredTo"
-//                                 value={viewOnly ? formatLongDate(formData.periodCoveredTo) : formData.periodCoveredTo}
-//                                 onChange={handleInputChange}
-//                                 readOnly={viewOnly}
-//                                 min={(!viewOnly && formData.periodCoveredFrom) ? formData.periodCoveredFrom : undefined}
-//                                 className="flex-1 bg-transparent border-none outline-none text-sm text-right"
-//                             />
-//                         </div>
+      const response = isEditMode && editData?.id
+        ? await api.put(`/reimbursements/${editData.id}`, phase1Payload)
+        : await api.post('/reimbursements', phase1Payload);
 
-//                         {/* Purpose - Full width */}
-//                         <div className="md:col-span-3">
-//                             {viewOnly ? (
-//                                 <TruncatedViewField label="Purpose" value={formData.purpose} />
-//                             ) : (
-//                                 <Input
-//                                     fullWidth
-//                                     multiline
-//                                     rows={2}
-//                                     label="Purpose"
-//                                     name="purpose"
-//                                     value={formData.purpose}
-//                                     onChange={handleInputChange}
-//                                     error={errors.purpose}
-//                                 />
-//                             )}
-//                         </div>
-//                     </div>
-//                 </CardContent>
-//             </Card>
+      if (!response.data?.success) {
+        showSnackbar('Failed to save reimbursement', 'error');
+        return;
+      }
 
-//             <Card>
-//                 <CardContent>
-//                     <ItemsTable
-//                         title="Budget Breakdown"
-//                         items={items}
-//                         advanceType="cash"
-//                         estimatedLabel="Amount"
-//                         showDate={true}
-//                         showReceiptFields={true}
-//                         viewOnly={viewOnly}
-//                         onItemChange={handleItemChange}
-//                         onAddItem={() => setItems(p => [...p, { id: Date.now(), expenseDate: '', description: '', estimatedAmount: 0, tin: '', vendor: '', address: '' }])}
-//                         onRemoveItem={(id) => setItems(p => p.filter(it => it.id !== id))}
-//                         errors={errors}
-//                     />
-//                 </CardContent>
-//             </Card>
+      const reimbursementId = response.data.data.id;
 
-//             {/* Itinerary Sheet for Transportation - Hide if empty in viewOnly mode */}
-//             {(!viewOnly || (itinerary && itinerary.length > 0)) && (
-//                 <Card>
-//                     <CardContent>
-//                         <ItinerarySheet
-//                             itinerary={itinerary}
-//                             viewOnly={viewOnly}
-//                             onItemChange={handleItineraryChange}
-//                             onAddItem={addItineraryRow}
-//                             onRemoveItem={removeItineraryRow}
-//                             errors={errors}
-//                         />
-//                     </CardContent>
-//                 </Card>
-//             )}
+      // Phase 2: Upload new receipt files now that we have the DB ID 
+      const hasNewExpenseReceipts   = expenses.some(e => e.attachment && !e.attachment.isExisting);
+      const hasNewItineraryReceipts = itineraryItems.some(t => t.receipt && !t.receipt.isExisting);
 
-//             <Card>
-//                 <CardContent>
-//                     <div className="flex justify-end">
-//                         <div className="min-w-[180px] p-4 border border-gray-200 rounded-lg">
-//                             <p className="text-xs text-gray-600 mb-1">Total</p>
-//                             <h3 className="text-2xl font-semibold text-gray-900">₱ {calculateTotal().toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
-//                         </div>
-//                     </div>
-//                 </CardContent>
-//             </Card>
+      if (hasNewExpenseReceipts || hasNewItineraryReceipts) {
+        const finalExpenses  = hasNewExpenseReceipts
+          ? await uploadExpenseAttachments(expenses, reimbursementId)
+          : expenses;
 
-//             <Card>
-//                 <CardContent>
-//                     <PaymentDetailsSection
-//                         formData={formData}
-//                         viewOnly={viewOnly}
-//                         onInputChange={handleInputChange}
-//                         errors={errors}
-//                         disableAccountFields={true}
-//                     />
-//                 </CardContent>
-//             </Card>
+        const finalItinerary = hasNewItineraryReceipts
+          ? await uploadItineraryReceipts(itineraryItems, reimbursementId)
+          : itineraryItems;
 
-//             <Card>
-//                 <CardContent>
-//                     <AttachmentsSection
-//                         attachments={attachments}
-//                         viewOnly={viewOnly}
-//                         onAttach={(e) => {
-//                             const files = Array.from(e.target.files).map(f => { f.preview = URL.createObjectURL(f); return f; });
-//                             setAttachments(p => [...p, ...files]);
-//                         }}
-//                         onRemove={removeAttachment}
-//                     />
-//                 </CardContent>
-//             </Card>
+        // Phase 3: Re-save with resolved file paths in the receipt objects 
+        const phase3Payload = buildPayload(status, finalExpenses, finalItinerary);
+        await api.put(`/reimbursements/${reimbursementId}`, phase3Payload);
+      }
 
-//             <div className="flex gap-4 justify-end">
-//                 {!viewOnly ? (
-//                     <>
-//                         <Button variant="secondary" startIcon={<RotateCcw className="w-4 h-4" />} onClick={resetForm}>Reset</Button>
-//                         <Button variant="secondary" startIcon={<Save className="w-4 h-4" />} onClick={handleSaveDraft}>Save Draft</Button>
-//                         <Button variant="primary" startIcon={<Send className="w-4 h-4" />} onClick={handleSubmit}>Submit</Button>
-//                     </>
-//                 ) : (!hideCloseButton && <Button variant="primary" onClick={onClose || (() => navigate('/my-requests'))}>Close</Button>)}
-//             </div>
-//         </div>
-//     );
-// };
+      // Phase 4: Upload top-level supporting documents
+      if (attachments.some((a) => !a.isExisting)) {
+        await uploadSupportingDocuments(reimbursementId);
+      }
 
-// export default ReimbursementForm;
+      // Phase 5: Delete any attachments the user removed
+      if (pendingDeletes.length > 0) {
+        await Promise.allSettled(
+          pendingDeletes
+            .filter(Boolean)
+            .map((delId) => api.delete(`/reimbursements/${reimbursementId}/attachments/${delId}`)),
+        );
+        setPendingDeletes([]);
+      }
+
+      showSnackbar(
+        status === 'draft' ? 'Draft saved successfully!' : 'Reimbursement submitted successfully!',
+        'success',
+      );
+      if (onClose) onClose();
+      else navigate('/my-requests', { state: { tab: 0 } });
+
+    } catch (error) {
+      showSnackbar(
+        `Error ${status === 'draft' ? 'saving draft' : 'submitting'}: ` +
+          (error.response?.data?.message || error.message),
+        'error',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }, [
+    validateForm, buildPayload, expenses, itineraryItems,
+    isEditMode, editData?.id,
+    uploadExpenseAttachments, uploadItineraryReceipts,
+    attachments, uploadSupportingDocuments,
+    pendingDeletes, showSnackbar, onClose, navigate,
+    formData.purpose, totalAmount,
+  ]);
+
+  const handleSaveDraft = useCallback(() => persistForm('draft'),   [persistForm]);
+  const handleSubmit    = useCallback(() => persistForm('pending'), [persistForm]);
+
+  // Reset / cancel
+  const resetForm = useCallback(() => {
+    setFormData({
+      reimbursementNumber: '',
+      reimbursementDate:   new Date().toISOString().split('T')[0],
+      dateNeeded:          '',
+      requestedBy:         user?.name       || '',
+      department:     user?.department_id || '',
+      departmentName: user?.department    || '',
+      employeeId:          '',
+      businessUnit:        'EPC',
+      purpose:             '',
+      dateCoverageFrom:    '',
+      dateCoverageTo:      '',
+      paymentMethod:       'payroll',
+      gcashName:           '',
+      accountNumber:       '',
+      remarks:             '',
+      status:              'draft',
+    });
+    setExpenses([blankExpense(1)]);
+    setItineraryItems([]);
+    setAttachments([]);
+    setErrors({});
+    setPendingDeletes([]);
+    generateReimbursementNumber();
+  }, [user, generateReimbursementNumber]);
+
+  const handleCancel = useCallback(() => {
+    resetForm();
+    if (onClose) onClose();
+    else navigate('/my-requests', { state: { tab: 0 } });
+  }, [resetForm, onClose, navigate]);
+
+  // Render 
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      {!viewOnly && (
+        <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-gray-900">
+              Reimbursement Form
+            </h2>
+        </div>
+      )}
+
+      {/* Rejection Reason Banner */}
+      {viewOnly && editData?.status?.toLowerCase() === 'rejected' && (editData?.remarks || editData?.release_remarks) && (
+        <InlineAlert severity="error">
+          <div className="font-semibold mb-1">Rejection Reason:</div>
+          <div>{editData.remarks || editData.release_remarks}</div>
+        </InlineAlert>
+      )}
+
+      {/* Reimbursement Information */}
+      <Card>
+        <CardContent>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Information</h3>
+          {!viewOnly ? (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <TruncatedViewField label="Reimbursement Number" value={formData.reimbursementNumber} />
+            <TruncatedViewField label="Requested By"         value={formData.requestedBy}         />
+            <TruncatedViewField label="Department"           value={formData.departmentName || formData.department} />
+
+            {/* Business Unit */}
+            <div>
+              {!viewOnly ? (
+                <div className="relative border border-gray-300 rounded-lg px-3 h-[38px] flex items-center">
+                  <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-500">Business Unit</span>
+                  <div className="flex gap-6 w-full">
+                    {['EPC', 'NBFI', 'Shared'].map((unit) => (
+                      <label key={unit} className="flex items-center gap-1 text-sm">
+                        <input
+                          type="radio"
+                          name="businessUnit"
+                          value={unit}
+                          checked={formData.businessUnit === unit}
+                          onChange={handleInputChange}
+                          className="w-4 h-4"
+                        />
+                        {unit}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <TruncatedViewField label="Business Unit" value={formData.businessUnit} />
+              )}
+            </div>
+
+            {/* Request Date (read-only — auto-filled) */}
+            {viewOnly ? (
+              <TruncatedViewField label="Request Date" value={formatLongDate(formData.reimbursementDate)} />
+            ) : (
+              <div className="relative w-full">
+                <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600 z-10">Request Date</span>
+                <input
+                  type="date"
+                  name="reimbursementDate"
+                  value={formData.reimbursementDate}
+                  readOnly
+                  className="px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 w-full text-sm text-gray-900 outline-none cursor-default"
+                />
+              </div>
+            )}
+
+            {/* Date Needed */}
+            {viewOnly ? (
+              <TruncatedViewField label="Date Needed" value={formatLongDate(formData.dateNeeded)} />
+            ) : (
+              <div className="relative w-full">
+                <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600 z-10">Date Needed</span>
+                <input
+                  type="date"
+                  name="dateNeeded"
+                  value={formData.dateNeeded}
+                  onChange={handleInputChange}
+                  min={getMinDateNeeded()}
+                  className="px-4 py-2 border border-gray-300 rounded-lg bg-white w-full text-sm text-gray-900 outline-none focus:border-primary-600 hover:border-gray-900"
+                />
+              </div>
+            )}
+
+            {/* Period Covered */}
+            <div className="col-span-1 md:col-span-2 relative border border-gray-300 rounded-lg px-3 h-[38px] flex items-center gap-2 focus-within:border-primary-600 hover:border-gray-900">
+              <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-500">Period Covered</span>
+              <input
+                type={viewOnly ? 'text' : 'date'}
+                name="dateCoverageFrom"
+                value={viewOnly ? formatLongDate(formData.dateCoverageFrom) : formData.dateCoverageFrom}
+                onChange={handleInputChange}
+                readOnly={viewOnly}
+                max={(!viewOnly && formData.dateCoverageTo) ? formData.dateCoverageTo : undefined}
+                className="flex-1 bg-transparent border-none outline-none text-sm"
+              />
+              <span className="text-gray-500">—</span>
+              <input
+                type={viewOnly ? 'text' : 'date'}
+                name="dateCoverageTo"
+                value={viewOnly ? formatLongDate(formData.dateCoverageTo) : formData.dateCoverageTo}
+                onChange={handleInputChange}
+                readOnly={viewOnly}
+                min={(!viewOnly && formData.dateCoverageFrom) ? formData.dateCoverageFrom : undefined}
+                className="flex-1 bg-transparent border-none outline-none text-sm text-right"
+              />
+            </div>
+
+            {/* Purpose – full width */}
+            <div className="col-span-1 md:col-span-4">
+              {viewOnly ? (
+                <TruncatedViewField label="Purpose" value={formData.purpose} />
+              ) : (
+                <Input
+                  fullWidth
+                  multiline
+                  rows={2}
+                  label="Purpose"
+                  name="purpose"
+                  value={formData.purpose}
+                  onChange={handleInputChange}
+                  error={errors.purpose}
+                />
+              )}
+            </div>
+          </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-8 gap-4">
+              <div>
+                <label className="px-1 text-xs text-gray-600">Reimbursement Number</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {formData.reimbursementNumber}
+                </div>
+              </div>
+              <div>
+                <label className="px-1 text-xs text-gray-600">Requested By</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {formData.requestedBy}
+                </div>
+              </div>
+              <div>
+                <label className="px-1 text-xs text-gray-600">Department</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {formData.departmentName || formData.department}
+                </div>
+              </div>
+              <div>
+                <label className="px-1 text-xs text-gray-600">Business Unit</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {formData.businessUnit}
+                </div>
+              </div>
+              <div>
+                <label className="px-1 text-xs text-gray-600">Request Date</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {formatLongDate(formData.reimbursementDate)}
+                </div>
+              </div>
+              <div>
+                <label className="px-1 text-xs text-gray-600">Request Date</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {formatLongDate(formData.reimbursementDate)}
+                </div>
+              </div>
+              <div>
+                <label className="px-1 text-xs text-gray-600">Date Needed</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {formatLongDate(formData.dateNeeded)}
+                </div>
+              </div>
+              <div>
+                <label className="px-1 text-xs text-gray-600">Period Covered</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {`${formatLongDate(formData.dateCoverageFrom)} – ${formatLongDate(formData.dateCoverageTo)}`}
+                </div>
+              </div>
+              <div className="col-span-1 md:col-span-8">
+                <label className="px-1 text-xs text-gray-600">Purpose</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {formData.purpose}
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Expenses Summary */}
+      <Card>
+        <CardContent>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Expenses Summary</h3>
+          <div className="grid grid-cols-1 gap-4">
+            <div className="border border-amber-100 rounded-lg p-4 bg-amber-50/50">
+              <span className="text-xs text-gray-500 block mb-1">Total Amount</span>
+              <span className="text-xl font-bold text-amber-600">
+                ₱ {currencyFormatter.format(totalAmount)}
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Expenses Breakdown */}
+      <Card>
+        <CardContent>
+          <ExpensesBreakdown
+            expenses={expenses}
+            onExpensesChange={handleExpensesChange}
+            viewOnly={viewOnly}
+            errors={errors}
+            onSnackbar={showSnackbar}
+            minDate={formData.dateCoverageFrom || undefined}
+            maxDate={formData.dateCoverageTo   || undefined}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Itinerary Sheet */}
+      <Card>
+        <CardContent>
+          <ItinerarySheet
+            itineraryItems={itineraryItems}
+            onItineraryItemsChange={handleItineraryItemsChange}
+            viewOnly={viewOnly}
+            minDate={formData.dateCoverageFrom || undefined}
+            maxDate={formData.dateCoverageTo   || undefined}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Payment Details */}
+      <Card>
+        <CardContent>
+          <PaymentDetailsSection
+            formData={formData}
+            viewOnly={viewOnly}
+            onInputChange={handleInputChange}
+            errors={errors}
+            disableAccountFields={true}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Remarks */}
+      <Card>
+        <CardContent>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Remarks</h3>
+          { !viewOnly ? (
+          <Input
+            fullWidth
+            multiline
+            rows={3}
+            name="remarks"
+            value={formData.remarks}
+            onChange={handleInputChange}
+          />
+          ) : (
+                        <div>
+                            <div className="px-1 py-1 border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                              {formData.remarks ? (
+                                <span className="text-sm text-gray-900 whitespace-pre-wrap">{formData.remarks}</span>
+                                ) : (
+                                <span className="text-sm text-gray-500 italic">No remarks provided.</span>
+                                )}
+                            </div>
+                        </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Supporting Documents */}
+      <Card>
+        <CardContent>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Supporting Documents</h3>
+          <div className="mb-4">
+            {!viewOnly && (
+              <>
+                <input
+                  accept="image/*,.pdf,.doc,.docx"
+                  className="hidden"
+                  id="reimbursement-file-upload"        // Line 842
+                  type="file"
+                  multiple
+                  onChange={handleFileAttach}
+                />
+                <label
+                  htmlFor="reimbursement-file-upload"
+                  className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 cursor-pointer w-fit transition-colors"
+                >
+                  <Paperclip className="w-4 h-4 mr-2" />
+                  Attach Files
+                </label>
+              </>
+            )}
+          </div>
+          {attachments.length > 0 && (
+            <div className="mt-4">
+              <AttachmentViewer
+                attachments={attachments.map((att) => ({
+                  id:        att.id,
+                  file_name: att.fileName || att.name,
+                  file_path: att.filePath || null,
+                  file_type: att.fileType || att.type,
+                  preview:   att.preview  || null,
+                }))}
+                onRemove={viewOnly ? undefined : (index) => removeAttachment(index)}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Action Buttons */}
+      <div className="flex gap-4 justify-end">
+        {!viewOnly ? (
+          <>
+            {!isEditMode && (
+              <Button variant="secondary" startIcon={<RotateCcw className="w-4 h-4" />} onClick={resetForm} disabled={submitting}>
+                Reset
+              </Button>
+            )}
+            {isEditMode && (
+              <Button variant="secondary" onClick={handleCancel} disabled={submitting}>
+                Cancel
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              startIcon={<Save className="w-4 h-4" />}
+              onClick={handleSaveDraft}
+              disabled={submitting}
+            >
+              {submitting ? 'Saving…' : 'Save Draft'}
+            </Button>
+            <Button
+              variant="primary"
+              startIcon={<Send className="w-4 h-4" />}
+              onClick={handleSubmit}
+              disabled={submitting}
+            >
+              {submitting ? 'Submitting…' : 'Submit'}
+            </Button>
+            {onClose && (
+              <Button variant="ghost" onClick={onClose} disabled={submitting}>
+                {isEditMode ? 'Cancel' : 'Close'}
+              </Button>
+            )}
+          </>
+        ) : (
+          !hideCloseButton && (
+            <Button
+              variant="primary"
+              onClick={onClose ?? (() => navigate('/my-requests', { state: { tab: 0 } }))}
+            >
+              Close
+            </Button>
+          )
+        )}
+      </div>
+
+      <Alert
+        open={snackbar.open}
+        onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
+        message={snackbar.message}
+        severity={snackbar.severity}
+        duration={4000}
+        position="bottom-right"
+      />
+    </div>
+  );
+};
+
+export default ReimbursementForm;

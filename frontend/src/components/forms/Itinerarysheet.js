@@ -37,6 +37,8 @@ const ItinerarySheet = ({
   itineraryItems,
   onItineraryItemsChange,
   viewOnly = false,
+  minDate,
+  maxDate,
 }) => {
   const [previewReceipt, setPreviewReceipt] = React.useState(null);
   // ---------------------------------------------------------------------------
@@ -105,6 +107,52 @@ const ItinerarySheet = ({
           </Button>
         )}
       </div>
+{viewOnly ? (
+
+      <div className="space-y-3">
+        <table className="w-full text-sm border border-gray-200 rounded-lg">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Date Covered</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Store Name</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">From</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">To</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Mode of Transportation</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Amount</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Receipt</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {itineraryItems.map((item) => (
+              <tr key={item.id} className="hover:bg-gray-50">
+                <td className="px-3 py-2">{formatLongDate(item.dateCovered)}</td>
+                <td className="px-3 py-2">{item.storeName}</td>
+                <td className="px-3 py-2">{item.fromPlace}</td>
+                <td className="px-3 py-2">{item.toPlace}</td>
+                <td className="px-3 py-2">{item.modeOfTransportation}</td>
+                <td className="px-3 py-2">{item.amount ? `₱${item.amount.toFixed(2)}` : ''}</td>
+                <td className="px-3 py-2">
+                  {item.receipt ? (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewReceipt(item.receipt)}
+                      className="text-indigo-500 hover:text-indigo-700 hover:underline transition-colors"
+                    >
+                      {item.receipt.fileName || item.receipt.name || 'View Receipt'}
+                    </button>
+                  ) : (
+                    <span className="text-gray-400 text-xs">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+
+        </table>
+      </div>
+
+          ) : (
+
 
       <div className="space-y-3">
         {itineraryItems.map((item, index) => (
@@ -143,6 +191,8 @@ const ItinerarySheet = ({
                       type="date"
                       value={item.dateCovered || ''}
                       onChange={(e) => updateItem(item.id, 'dateCovered', e.target.value)}
+                      min={minDate || undefined}
+                      max={maxDate || undefined}
                     />
                   ) : (
                     <Input fullWidth value={formatLongDate(item.dateCovered)} readOnly />
@@ -284,6 +334,8 @@ const ItinerarySheet = ({
           </div>
         ))}
       </div>
+
+          )}
 
       <ReceiptPreviewModal
         receipt={previewReceipt}

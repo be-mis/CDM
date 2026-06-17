@@ -47,43 +47,33 @@ const MyRequests = () => {
     try {
       setViewLoading(true);
       const response = await api.get(`/cash-advances/${request.id}`);
-      console.log('Fetched cash advance details for view:', response.data);
+      // console.log('Fetched cash advance details for view:', response.data);
       if (response.data && response.data.success) {
         const data = response.data.data;
         const viewData = {
           id: data.id,
-          refNumber: data.advance_number || data.advanceNumber || request.refNumber,
-          requestDate: data.advance_date || data.advanceDate || request.requestDate,
-          requestedBy: data.requested_by || data.requestedBy,
-          department: data.department,
-          employeeId: data.employee_id || data.employeeId,
-          businessUnit: data.business_unit || data.businessUnit,
-          purpose: data.purpose,
-          projectName: data.project_name || data.projectName,
-          destination: data.destination,
-          startDate: data.start_date || data.startDate,
-          endDate: data.end_date || data.endDate,
-          activities: Array.isArray(data.activities) ? data.activities.map(a => ({ id: a.id, destination: a.destination, start_date: a.start_date, end_date: a.end_date })) : [],
-          paymentMethod: data.payment_method || data.paymentMethod,
-          paymentReason: data.payment_reason || data.paymentReason || '',
-          checkNumber: data.check_number || data.checkNumber,
-          accountNumber: data.account_number || data.accountNumber,
-          dateNeeded: data.date_needed || data.dateNeeded,
-          dateCoverage: data.date_coverage || data.dateCoverage,
-          liquidationDeadline: data.liquidation_deadline || data.liquidationDeadline,
-          status: data.status,
-          items: Array.isArray(data.items) ? data.items.map(it => ({
-            id: it.id,
-            description: it.description || it.particulars || it.item_description || '',
-            estimatedAmount: it.estimated_amount ?? it.estimatedAmount ?? it.amount ?? 0,
-            noOfDays: it.no_of_days ?? it.noOfDays ?? 0,
-            totalAmount: it.total_amount ?? it.totalAmount ?? 0,
-            destination: it.destination || ''
-          })) : [],
-          advanceType: data.advance_type || data.advanceType || request.advanceType || 'cash',
-          attachments: data.attachments || [],
-          remarks: data.remarks || '',
-          release_remarks: data.release_remarks || ''
+          reimbursementNumber: data.reimbursement_number || request.refNumber,
+          reimbursementDate:   data.reimbursement_date   || request.submitDate,
+          requestedBy:         data.submitted_by         || request.submittedBy,
+          department:          data.department_id,        // ✅ fix
+          departmentName:      data.department_name,      // ✅ fix
+          businessUnit:        data.business_unit || '',
+          purpose:             data.purpose || '',
+          dateNeeded:          data.date_needed || '',    // ✅ ADD THIS
+          dateCoverageFrom:    data.start_date || data.period_covered_from || '',
+          dateCoverageTo:      data.end_date   || data.period_covered_to   || '',
+          totalAmount:         data.total_amount,
+          paymentMethod:       data.payment_method,
+          gcashName:           data.gcash_name || '',
+          checkNumber:         data.check_number,
+          accountNumber:       data.account_number,
+          remarks:             data.remarks,
+          status:              data.status,
+          expenses:            data.expenses    || [],
+          itinerary:           data.itinerary   || [],
+          attachments:         data.attachments || [],
+          paymentReason:       data.payment_reason || '',
+          release_remarks:     data.release_remarks || '',
         };
         setSelectedRequest(viewData);
       } else {
@@ -109,34 +99,27 @@ const MyRequests = () => {
         const viewData = {
           id: data.id,
           liquidationNumber: data.liquidation_number || request.refNumber,
-          liquidationDate: data.liquidation_date || request.submitDate,
-          cashAdvanceId: data.cash_advance_id,
-          cashAdvanceNumber: data.cash_advance_number || request.cashAdvanceRef,
-          advanceType: data.advance_type || 'cash',
-          submittedBy: data.submitted_by || request.submittedBy,
-          department: data.department,
-          totalAdvanceAmount: data.total_advance_amount || request.totalExpenses || 0,
-          totalActualAmount: data.total_actual_amount || 0,
-          refundAmount: data.refund_amount || 0,
-          additionalPayment: data.additional_payment || 0,
-          paymentMethod: data.payment_method,
-          gcashName: data.gcash_name || '',
-          accountNumber: data.account_number,
-          purpose: data.purpose || request.purpose || '',
-          remarks: data.remarks,
-          status: data.status,
-          businessUnit: data.business_unit || '',
-          dateOfCA: data.date_of_ca || '',
-          startDate: data.start_date || '',
-          endDate: data.end_date || '',
-          dateCoverage: data.date_coverage || '',
-          // Pass items and transportation as-is — getLiquidationById already returns
-          // the correct shape (particulars/actualAmount/storeName/fromPlace/etc.)
-          // that LiquidationForm's mapIncomingExpense / mapIncomingItinerary expect.
-          items: data.items || [],
-          transportation: data.transportation || [],
-          attachments: data.attachments || [],
-          release_remarks: data.release_remarks || ''
+          liquidationDate:   data.liquidation_date   || request.submitDate,
+          requestedBy:         data.submitted_by         || request.submittedBy,
+          department:          data.department_id,        // ✅ fix
+          departmentName:      data.department_name,      // ✅ fix
+          businessUnit:        data.business_unit || '',
+          purpose:             data.purpose || '',
+          dateNeeded:          data.date_needed || '',    // ✅ ADD THIS
+          dateCoverageFrom: data.date_coverage_from || data.start_date || '',
+          dateCoverageTo:   data.date_coverage_to   || data.end_date   || '',
+          totalAmount:         data.total_amount,
+          paymentMethod:       data.payment_method,
+          gcashName:           data.gcash_name || '',
+          checkNumber:         data.check_number,
+          accountNumber:       data.account_number,
+          remarks:             data.remarks,
+          status:              data.status,
+          items:               data.items         || [],
+          transportation:      data.transportation || [],
+          attachments:         data.attachments    || [],
+          paymentReason:       data.payment_reason || '',
+          release_remarks:     data.release_remarks || '',
         };
         setSelectedRequest(viewData);
       } else {
@@ -161,41 +144,27 @@ const MyRequests = () => {
         const viewData = {
           id: data.id,
           reimbursementNumber: data.reimbursement_number || request.refNumber,
-          reimbursementDate: data.reimbursement_date || request.submitDate,
-          requestedBy: data.submitted_by || request.submittedBy,
-          department: data.department,
-          businessUnit: data.business_unit || '',
-          purpose: data.purpose || '',
-          periodCoveredFrom: data.period_covered_from || data.periodCoveredFrom,
-          periodCoveredTo: data.period_covered_to || data.periodCoveredTo,
-          totalAmount: data.total_amount,
-          paymentMethod: data.payment_method,
-          gcashName: data.gcash_name || '',
-          checkNumber: data.check_number,
-          accountNumber: data.account_number,
-          remarks: data.remarks,
-          status: data.status,
-          items: Array.isArray(data.items) ? data.items.map(it => ({
-            id: it.id,
-            description: it.description || it.particulars || '',
-            expenseDate: it.expenseDate || it.expense_date,
-            tin: it.tin || it.tim || it.receipt_number || '',
-            vendor: it.vendor || '',
-            address: it.address || '',
-            estimatedAmount: it.amount ?? it.estimatedAmount ?? it.estimated_amount ?? 0
-          })) : [],
-          transportation: Array.isArray(data.transportation) ? data.transportation.map(t => ({
-            id: t.id,
-            dateCovered: t.dateCovered || t.date_covered,
-            store: t.store,
-            fromLocation: t.fromLocation || t.from_location,
-            toLocation: t.toLocation || t.to_location,
-            modeOfTransport: t.modeOfTransport || t.mode_of_transport,
-            amount: parseFloat(t.amount || 0)
-          })) : [],
-          attachments: data.attachments || [],
-          paymentReason: data.payment_reason || '',
-          release_remarks: data.release_remarks || ''
+          reimbursementDate:   data.reimbursement_date   || request.submitDate,
+          requestedBy:         data.submitted_by         || request.submittedBy,
+          department:          data.department_id,        
+          departmentName:      data.department_name,      
+          businessUnit:        data.business_unit || '',
+          purpose:             data.purpose || '',
+          dateNeeded:          data.date_needed || '',    
+          dateCoverageFrom:    data.start_date || data.period_covered_from || '',
+          dateCoverageTo:      data.end_date   || data.period_covered_to   || '',
+          totalAmount:         data.total_amount,
+          paymentMethod:       data.payment_method,
+          gcashName:           data.gcash_name || '',
+          checkNumber:         data.check_number,
+          accountNumber:       data.account_number,
+          remarks:             data.remarks,
+          status:              data.status,
+          expenses:            data.expenses    || [],
+          itinerary:           data.itinerary   || [],
+          attachments:         data.attachments || [],
+          paymentReason:       data.payment_reason || '',
+          release_remarks:     data.release_remarks || '',
         };
         setSelectedRequest(viewData);
       } else {
@@ -298,35 +267,27 @@ const MyRequests = () => {
         const data = response.data.data;
         const editData = {
           id: data.id,
-          refNumber: data.advance_number || data.advanceNumber || request.refNumber,
-          requestDate: data.advance_date || data.advanceDate || request.requestDate,
-          requestedBy: data.requested_by || data.requestedBy,
-          department: data.department,
-          employeeId: data.employee_id || data.employeeId,
-          businessUnit: data.business_unit || data.businessUnit,
-          advanceType: data.advance_type || data.advanceType || 'cash',
-          purpose: data.purpose,
-          projectName: data.project_name || data.projectName,
-          destination: data.destination,
-          startDate: data.start_date || data.startDate,
-          endDate: data.end_date || data.endDate,
-          paymentMethod: data.payment_method || data.paymentMethod,
-          paymentReason: data.payment_reason || data.paymentReason || '',
-          checkNumber: data.check_number || data.checkNumber,
-          accountNumber: data.account_number || data.accountNumber,
-          dateNeeded: data.date_needed || data.dateNeeded,
-          dateCoverage: data.date_coverage || data.dateCoverage,
-          liquidationDeadline: data.liquidation_deadline || data.liquidationDeadline,
-          status: data.status,
-          items: Array.isArray(data.items) ? data.items.map(it => ({
-            id: it.id,
-            description: it.description || it.particulars || it.item_description || '',
-            estimatedAmount: it.estimated_amount ?? it.estimatedAmount ?? it.amount ?? 0,
-            noOfDays: it.no_of_days || it.noOfDays || 0,
-            totalAmount: it.total_amount || it.totalAmount || 0
-          })) : [],
-          activities: Array.isArray(data.activities) ? data.activities.map(a => ({ id: a.id, destination: a.destination, startDate: a.start_date || a.startDate, endDate: a.end_date || a.endDate })) : [],
-          attachments: data.attachments || []
+          reimbursementNumber: data.reimbursement_number,
+          reimbursementDate:   data.reimbursement_date,
+          requestedBy:         data.submitted_by,
+          department:          data.department_id,       // ✅ was: data.department
+          departmentName:      data.department_name,     // ✅ was: data.department
+          businessUnit:        data.business_unit || '',
+          purpose:             data.purpose || '',
+          dateNeeded:          data.date_needed || '',   // ✅ ADD THIS — was missing entirely
+          dateCoverageFrom:    data.start_date || '',
+          dateCoverageTo:      data.end_date   || '',
+          totalAmount:         data.total_amount,
+          paymentMethod:       data.payment_method,
+          gcashName:           data.gcash_name || '',
+          accountNumber:       data.account_number,
+          remarks:             data.remarks,
+          status:              data.status,
+          expenses:            data.expenses    || [],
+          itinerary:           data.itinerary   || [],
+          attachments:         data.attachments || [],
+          paymentReason:       data.payment_reason || '',
+          release_remarks:     data.release_remarks || '',
         };
 
         navigate('/cash-advance', { state: { editData } });
@@ -444,7 +405,8 @@ const MyRequests = () => {
           status: formatStatus(item.status),
           rawStatus: item.status,
           approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || 'N/A'),
-          department: item.department,
+          department:     item.department_id,
+          departmentName: item.department_name,
           paymentMethod: item.payment_method,
           gcashName: item.gcash_name,
           accountNumber: item.account_number,
@@ -514,7 +476,7 @@ const MyRequests = () => {
           advanceType: data.advance_type || 'cash',
           submittedBy: data.submitted_by,
           department: data.department,
-          departmentName: data.department,
+          departmentName: data.department_name,
           totalAdvanceAmount: data.total_advance_amount,
           totalActualAmount: data.total_actual_amount,
           refundAmount: data.refund_amount,
@@ -531,6 +493,8 @@ const MyRequests = () => {
           startDate: data.start_date || '',
           endDate: data.end_date || '',
           dateCoverage: data.date_coverage || '',
+          date_coverage_from: data.date_coverage_from || null,  // ✅ ADD THIS
+          date_coverage_to:   data.date_coverage_to   || null,  // ✅ ADD THIS
           // Pass items and transportation as-is — getLiquidationById already returns
           // the correct shape that LiquidationForm's mapIncomingExpense /
           // mapIncomingItinerary expect (particulars/actualAmount/storeName/fromPlace/etc.)
@@ -561,13 +525,14 @@ const MyRequests = () => {
           id: data.id,
           reimbursementNumber: data.reimbursement_number,
           reimbursementDate: data.reimbursement_date,
-          submittedBy: data.submitted_by,
-          department: data.department,
-          departmentName: data.department,
+          requestedBy: data.submitted_by,
+          department: data.department_id,
+          departmentName: data.department_name,
           businessUnit: data.business_unit || '',
           purpose: data.purpose || '',
-          periodCoveredFrom: data.period_covered_from || data.periodCoveredFrom,
-          periodCoveredTo: data.period_covered_to || data.periodCoveredTo,
+          dateNeeded: data.date_needed || '',
+          dateCoverageFrom: data.start_date || data.period_covered_from || '',
+          dateCoverageTo:   data.end_date   || data.period_covered_to   || '',
           totalAmount: data.total_amount,
           paymentMethod: data.payment_method,
           gcashName: data.gcash_name || '',
@@ -575,24 +540,8 @@ const MyRequests = () => {
           accountNumber: data.account_number,
           remarks: data.remarks,
           status: data.status,
-          items: Array.isArray(data.items) ? data.items.map(it => ({
-            id: it.id,
-            description: it.description,
-            amount: it.amount || it.estimatedAmount || 0,
-            tin: it.tin || it.tim || it.receipt_number,
-            vendor: it.vendor,
-            address: it.address,
-            expenseDate: it.expenseDate || it.expense_date
-          })) : [],
-          transportation: Array.isArray(data.transportation) ? data.transportation.map(t => ({
-            id: t.id,
-            dateCovered: t.dateCovered || t.date_covered,
-            store: t.store,
-            fromLocation: t.fromLocation || t.from_location,
-            toLocation: t.toLocation || t.to_location,
-            modeOfTransport: t.modeOfTransport || t.mode_of_transport,
-            amount: parseFloat(t.amount || 0)
-          })) : [],
+          expenses:  data.expenses  || [],
+          itinerary: data.itinerary || [],
           attachments: data.attachments || []
         };
         navigate('/reimbursement', { state: { editData } });

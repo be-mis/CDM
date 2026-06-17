@@ -16,7 +16,7 @@ const PaymentDetailsSection = ({
     return (
         <div>
             <h3 className="text-lg font-semibold text-gray-900 mb-3">Payment Details</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                 <div>
                     {!viewOnly ? (
                         <Select
@@ -31,44 +31,63 @@ const PaymentDetailsSection = ({
                             ))}
                         </Select>
                     ) : (
-                        <Input
-                            fullWidth
-                            label="Payment Method"
-                            value={methodOptions.find(o => o.value === formData.paymentMethod)?.label || formData.paymentMethod}
-                            readOnly
-                        />
+                        <div>
+                            <label className="px-1 text-xs text-gray-600">Payment Method</label>
+                            <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                                {methodOptions.find(o => o.value === formData.paymentMethod)?.label || formData.paymentMethod}
+                            </div>
+                        </div>
                     )}
                 </div>
                 {/* Conditional Fields based on method */}
                 {formData.paymentMethod === 'gcash' && (
-                    <>
-                        <div>
-                            <Input
-                                fullWidth
-                                required
-                                label="Gcash Name"
-                                name="gcashName"
-                                value={formData.gcashName || ''}
-                                onChange={viewOnly ? undefined : onInputChange}
-                                error={errors?.gcashName}
-                                readOnly={viewOnly || disableAccountFields}
-                            />
-                        </div>
-                        <div>
-                            <Input
-                                fullWidth
-                                required
-                                label="G-Cash Account Number"
-                                name="accountNumber"
-                                value={formData.accountNumber || ''}
-                                onChange={viewOnly ? undefined : onInputChange}
-                                readOnly={viewOnly || disableAccountFields}
-                                error={errors?.accountNumber}
-                            />
-                        </div>
-                    </>
+                    !viewOnly ? (
+                        <>
+                            <div>
+                                <Input
+                                    fullWidth
+                                    required
+                                    label="Gcash Name"
+                                    name="gcashName"
+                                    value={formData.gcashName || ''}
+                                    onChange={viewOnly ? undefined : onInputChange}
+                                    error={errors?.gcashName}
+                                    readOnly={viewOnly || disableAccountFields}
+                                />
+                            </div>
+                            <div>
+                                <Input
+                                    fullWidth
+                                    required
+                                    label="G-Cash Account Number"
+                                    name="accountNumber"
+                                    value={formData.accountNumber || ''}
+                                    onChange={viewOnly ? undefined : onInputChange}
+                                    readOnly={viewOnly || disableAccountFields}
+                                    error={errors?.accountNumber}
+                                />
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div>
+                                <label className="px-1 text-xs text-gray-600">Gcash Name</label>
+                                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                                    {formData.gcashName}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="px-1 text-xs text-gray-600">G-Cash Account Number</label>
+                                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                                    {formData.accountNumber}
+                                </div>
+                            </div>
+                        </>
+                    )
                 )}
                 {formData.paymentMethod === 'payroll' && (
+                    !viewOnly ? (
+
                     <div>
                         <Input
                             fullWidth
@@ -81,6 +100,14 @@ const PaymentDetailsSection = ({
                             error={errors?.accountNumber}
                         />
                     </div>
+                    ) : (
+                        <div>
+                            <label className="px-1 text-xs text-gray-600">Payroll Account Number</label>
+                            <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                                {formData.accountNumber}
+                            </div>
+                        </div>
+                    )
                 )}
             </div>
         </div>

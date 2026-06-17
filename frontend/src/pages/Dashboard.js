@@ -4,8 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import {
   LayoutDashboard, FileText, TrendingUp, Settings, Menu, X, LogOut,
-  Users, History, Upload, Table, DollarSign, Receipt, 
-  CheckSquare, Coins, User as UserIcon, Star
+  Users, History, Upload, Table, DollarSign, ReceiptText, ClipboardList,
+  CheckSquare, Coins, User as UserIcon, Star, HandCoins
 } from 'lucide-react';
 
 import FileUpload from '../components/FileUpload';
@@ -25,6 +25,7 @@ import PaymentRequirementModal from '../components/PaymentRequirementModal';
 import Alert from '../components/ui/Alert';
 import { InlineAlert } from '../components/ui/Alert';
 import Tooltip from '../components/ui/Tooltip';
+import { List } from 'lucide-react';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -104,10 +105,10 @@ const Dashboard = () => {
     { text: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" />, view: 'dashboard', path: '/dashboard', key: 'dashboard' },
     { text: 'Manager Dashboard', icon: <Users className="w-5 h-5" />, view: 'manager-dashboard', path: '/manager-dashboard', key: 'manager-dashboard', adminOnly: true },
     { text: 'Accounting Dashboard', icon: <TrendingUp className="w-5 h-5" />, view: 'accounting-dashboard', path: '/accounting-dashboard', key: 'accounting-dashboard', adminOnly: true },
-    { text: 'My Requests', icon: <History className="w-5 h-5" />, view: 'my-requests', path: '/my-requests', key: 'my-requests' },
-    { text: 'Cash Advance', icon: <DollarSign className="w-5 h-5" />, view: 'cash-advance', path: '/cash-advance', key: 'cash-advance' },
-    { text: 'Liquidation', icon: <Receipt className="w-5 h-5" />, view: 'liquidation', path: '/liquidation', key: 'liquidation' },
-    { text: 'Reimbursement', icon: <Coins className="w-5 h-5" />, view: 'reimbursement', path: '/reimbursement', key: 'reimbursement' },
+    { text: 'My Requests', icon: <ClipboardList className="w-5 h-5" />, view: 'my-requests', path: '/my-requests', key: 'my-requests' },
+    { text: 'Cash Advance Form', icon: <HandCoins className="w-5 h-5" />, view: 'cash-advance', path: '/cash-advance', key: 'cash-advance' },
+    { text: 'Liquidation Form', icon: <ReceiptText className="w-5 h-5" />, view: 'liquidation', path: '/liquidation', key: 'liquidation' },
+    { text: 'Reimbursement Form', icon: <Coins className="w-5 h-5" />, view: 'reimbursement', path: '/reimbursement', key: 'reimbursement' },
     { text: 'Approvals', icon: <CheckSquare className="w-5 h-5" />, view: 'approvals', path: '/approvals', key: 'approvals', approverOnly: true },
     { text: 'Disbursements', icon: <Coins className="w-5 h-5" />, view: 'disbursements', path: '/disbursements', key: 'disbursements', accountingOnly: true },
     { text: 'Profile', icon: <UserIcon className="w-5 h-5" />, view: 'profile', path: '/profile', key: 'profile' },
@@ -131,13 +132,25 @@ const Dashboard = () => {
         return <Profile />;
 
       case 'cash-advance':
-        return <CashAdvanceForm editData={location.state?.editData} onClose={() => navigate(location.state?.returnPath || '/my-requests')} />;
+        return <CashAdvanceForm
+          key={location.state?.editData?.id ?? 'new'}
+          editData={location.state?.editData}
+          onClose={() => navigate(location.state?.returnPath || '/my-requests')}
+        />;
 
       case 'liquidation':
-        return <LiquidationForm initialData={location.state?.cashAdvance} editData={location.state?.editData} onClose={() => navigate(location.state?.returnPath || '/my-requests')} />;
-
+        return <LiquidationForm
+          key={location.state?.editData?.id ?? 'new'}
+          initialData={location.state?.cashAdvance}
+          editData={location.state?.editData}
+          onClose={() => navigate(location.state?.returnPath || '/my-requests')}
+        />;
       case 'reimbursement':
-        return <ReimbursementForm editData={location.state?.editData} onClose={() => navigate(location.state?.returnPath || '/my-requests')} />;
+        return <ReimbursementForm
+          key={location.state?.editData?.id ?? 'new'}
+          editData={location.state?.editData}
+          onClose={() => navigate(location.state?.returnPath || '/my-requests')}
+        />;
 
       case 'usermanagement':
         if (user?.role !== 'admin') {
@@ -243,7 +256,8 @@ const Dashboard = () => {
           {menuItems.map((item) => (
             <li key={item.key}>
               <button
-                onClick={() => navigate(item.path)}
+                
+                onClick={() => { navigate(item.path, { replace: true, state: null }); }}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 ${
                   currentView === item.view
                     ? 'bg-blue-50 border border-blue-200 text-blue-600 font-semibold'

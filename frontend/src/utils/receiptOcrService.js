@@ -3,9 +3,7 @@ import { extractReceiptFields } from '../utils/receiptExtractor';
 
 let worker = null;
 
-// ---------------------------------------------------------------------------
 // Image resize helper
-// ---------------------------------------------------------------------------
 const resizeImageForOcr = (file, maxWidth = 1400, quality = 0.9) => {
   return new Promise((resolve, reject) => {
     if (!file || !file.type?.startsWith('image/')) {
@@ -56,20 +54,14 @@ const resizeImageForOcr = (file, maxWidth = 1400, quality = 0.9) => {
   });
 };
 
-// ---------------------------------------------------------------------------
-// FIX 1: PDF → image conversion using pdfjs-dist
+
 // Converts the first page of a PDF to a JPEG Blob for Tesseract.
-// Install: npm install pdfjs-dist
-// ---------------------------------------------------------------------------
 const convertPdfToImage = async (file) => {
   // Dynamic import so the large pdfjs bundle is only loaded when needed
   const pdfjsLib = await import('pdfjs-dist');
 
   // Point the worker at the bundled worker file.
-  // If you use Vite/CRA you can import the URL instead:
-  //   import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-  //   pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -108,10 +100,7 @@ const convertPdfToImage = async (file) => {
   });
 };
 
-// ---------------------------------------------------------------------------
 // Tesseract worker — lazy singleton
-// FIX 5: expose terminate() so callers can clean up on unmount
-// ---------------------------------------------------------------------------
 const getWorker = async () => {
   if (!worker) {
     worker = await Tesseract.createWorker('eng');
@@ -126,13 +115,11 @@ export const terminateOcrWorker = async () => {
   }
 };
 
-// ---------------------------------------------------------------------------
 // Main entry point called by LiquidationForm → handleRowFileChange
-// ---------------------------------------------------------------------------
 export const scanReceipt = async (file) => {
   let fileToScan = file;
 
-  // FIX 1: Handle PDFs by converting to image first
+  // Handle PDFs by converting to image first
   if (file.type === 'application/pdf') {
     fileToScan = await convertPdfToImage(file);
   }

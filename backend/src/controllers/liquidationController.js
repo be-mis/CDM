@@ -126,6 +126,8 @@ const createLiquidation = async (req, res) => {
       otherExpenses,
       advanceType,
       businessUnit,
+      dateCoverageFrom,
+      dateCoverageTo,
     } = req.body;
 
     // ── Required-field validation ────────────────────────────────────────────
@@ -178,34 +180,37 @@ const createLiquidation = async (req, res) => {
       });
     }
 
-    // ── Insert liquidation header ────────────────────────────────────────────
+    // Insert liquidation header
     const [result] = await connection.query(
       `INSERT INTO liquidations (
-         liquidation_number, cash_advance_id, liquidation_date,
-         submitted_by, department_id, business_unit,
-         total_advance_amount, total_actual_amount,
-         refund_amount, additional_payment,
-         payment_method, gcash_name, account_number,
-         remarks, previous_status, status, created_by
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        liquidation_number, cash_advance_id, liquidation_date,
+        submitted_by, department_id, business_unit,
+        total_advance_amount, total_actual_amount,
+        refund_amount, additional_payment, start_date, end_date,
+        payment_method, gcash_name, account_number,
+        remarks, previous_status, status, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+
       [
         liquidationNumber,
         cashAdvanceId,
         liquidationDate,
         submittedBy,
         departmentId,
-        businessUnit              || null,
-        totalAdvanceAmount,
-        totalActualAmount,
-        refundAmount              || null,
-        additionalPayment         || null,
-        paymentMethod             || null,
-        gcashName || paymentReason || null,
-        accountNumber             || null,
-        remarks                   || null,
-        previousStatus,
-        status                    || 'draft',
-        createdBy,
+        businessUnit              || null,  // 6
+        totalAdvanceAmount,                 // 7
+        totalActualAmount,                  // 8
+        refundAmount              || null,  // 9
+        additionalPayment         || null,  // 10
+        dateCoverageFrom          || null,  // 11 — start_date
+        dateCoverageTo            || null,  // 12 — end_date
+        paymentMethod             || null,  // 13
+        gcashName || paymentReason || null, // 14
+        accountNumber             || null,  // 15
+        remarks                   || null,  // 16
+        previousStatus,                     // 17
+        status                    || 'draft', // 18
+        createdBy,                          // 19
       ],
     );
     const liquidationId = result.insertId;
@@ -368,6 +373,8 @@ const updateLiquidation = async (req, res) => {
       otherExpenses,
       advanceType,
       businessUnit,
+      dateCoverageFrom,
+      dateCoverageTo,
     } = req.body;
 
     // ── Verify liquidation exists and is editable ────────────────────────────
@@ -404,7 +411,7 @@ const updateLiquidation = async (req, res) => {
     await connection.query(
       `UPDATE liquidations SET
          liquidation_date = ?, cash_advance_id = ?, submitted_by = ?,
-         department_id = ?, business_unit = ?,
+         department_id = ?, business_unit = ?, start_date = ?, end_date =?,
          total_advance_amount = ?, total_actual_amount = ?,
          refund_amount = ?, additional_payment = ?,
          payment_method = ?, gcash_name = ?, account_number = ?,
@@ -416,6 +423,8 @@ const updateLiquidation = async (req, res) => {
         submittedBy,
         departmentId,
         businessUnit              || null,
+        dateCoverageFrom          || null,
+        dateCoverageTo            || null,
         totalAdvanceAmount,
         totalActualAmount,
         refundAmount              || null,
@@ -567,35 +576,39 @@ const getLiquidations = async (req, res) => {
     const userEmail = req.user?.email;
     const userId    = req.user?.id;
 
+    // ✅ FIXED
     const [liquidations] = await db.query(
       `SELECT
-         l.id,
-         l.liquidation_number,
-         l.liquidation_date,
-         l.cash_advance_id,
-         ca.advance_number  AS cash_advance_number,
-         l.submitted_by,
-         d.name             AS department,
-         l.total_advance_amount,
-         l.total_actual_amount,
-         l.variance,
-         l.refund_amount,
-         l.additional_payment,
-         l.payment_method,
-         l.gcash_name,
-         l.account_number,
-         l.remarks,
-         l.release_remarks,
-         l.status,
-         l.created_at,
-         l.updated_at,
-         l.approved_at,
-         l.approved_by_name AS approver_name
-       FROM liquidations l
-       LEFT JOIN departments d    ON l.department_id   = d.id
-       LEFT JOIN cash_advances ca ON l.cash_advance_id = ca.id
-       WHERE (l.created_by = ? OR l.created_by = ?)
-       ORDER BY l.created_at DESC`,
+        l.id,
+        l.liquidation_number,
+        l.liquidation_date,
+        l.cash_advance_id,
+        ca.advance_number  AS cash_advance_number,
+        l.submitted_by,
+        d.name             AS department,
+        l.business_unit,
+        l.start_date       AS date_coverage_from,    -- ✅ ADD THIS
+        l.end_date         AS date_coverage_to,      -- ✅ ADD THIS
+        l.total_advance_amount,
+        l.total_actual_amount,
+        l.variance,
+        l.refund_amount,
+        l.additional_payment,
+        l.payment_method,
+        l.gcash_name,
+        l.account_number,
+        l.remarks,
+        l.release_remarks,
+        l.status,
+        l.created_at,
+        l.updated_at,
+        l.approved_at,
+        l.approved_by_name AS approver_name
+      FROM liquidations l
+      LEFT JOIN departments d    ON l.department_id   = d.id
+      LEFT JOIN cash_advances ca ON l.cash_advance_id = ca.id
+      WHERE (l.created_by = ? OR l.created_by = ?)
+      ORDER BY l.created_at DESC`,
       [userEmail, String(userId)],
     );
 
@@ -621,6 +634,8 @@ const getLiquidationById = async (req, res) => {
          l.cash_advance_id,
          ca.advance_number AS cash_advance_number,
          ca.advance_type,  ca.purpose,
+         l.start_date      AS date_coverage_from,
+         l.end_date        AS date_coverage_to,
          l.submitted_by,
          d.name            AS department,
          l.business_unit,

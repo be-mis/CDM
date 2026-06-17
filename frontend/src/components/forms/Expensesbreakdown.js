@@ -60,6 +60,8 @@ const ExpensesBreakdown = ({
   viewOnly = false,
   errors = {},
   onSnackbar,
+  minDate,
+  maxDate, 
 }) => {
   const [ocrLoading, setOcrLoading] = useState({});
   const [previewReceipt, setPreviewReceipt] = useState(null);
@@ -194,7 +196,23 @@ const ExpensesBreakdown = ({
         expenses.map((item) => {
           if (item.id !== itemId) return item;
           try { if (item.attachment?.preview) URL.revokeObjectURL(item.attachment.preview); } catch { }
-          return { ...item, attachment: null };
+          return {
+            ...item,
+            attachment:     null,
+            // cleared fields
+            receiptNumber:  '',
+            tin:            '',
+            vendor:         '',
+            address:        '',
+            vatType:        '',
+            vatable:        0,
+            vatAmount:      0,
+            zeroRatedSales: 0,
+            vatExemptSales: 0,
+            actualAmount:   0,
+            // preserved fields
+            // expenseDate and particulars are kept via ...item spread above
+          };
         }),
       );
     },
@@ -230,7 +248,62 @@ const ExpensesBreakdown = ({
           <InlineAlert severity="error">{errors.total}</InlineAlert>
         </div>
       )}
-
+{viewOnly ? (
+      <div className="space-y-3 overflow-x-auto border border-gray-200 rounded-lg">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Expense Date </th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Particulars </th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Actual Amount</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Receipt #</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">TIN</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Vendor</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Address</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">VAT Type</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Vatable</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">VAT Amount</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Zero Rated Sales</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">VAT Exempt Sales</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Actual Amount</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Receipt</th>  
+            </tr>
+          </thead>
+          <tbody>
+            {expenses.map((item) => (
+              <tr key={item.id} className="hover:bg-gray-50">
+                <td className="px-3 py-2">{formatLongDate(item.expenseDate)}</td>
+                <td className="px-3 py-2">{item.particulars}</td>
+                <td className="px-3 py-2">{item.actualAmount}</td>
+                <td className="px-3 py-2">{item.receiptNumber}</td>
+                <td className="px-3 py-2">{item.tin}</td>
+                <td className="px-3 py-2">{item.vendor}</td>
+                <td className="px-3 py-2">{item.address}</td>
+                <td className="px-3 py-2">{item.vatType}</td>
+                <td className="px-3 py-2">{item.vatable}</td>
+                <td className="px-3 py-2">{item.vatAmount}</td>
+                <td className="px-3 py-2">{item.zeroRatedSales}</td>
+                <td className="px-3 py-2">{item.vatExemptSales}</td>
+                <td className="px-3 py-2">{item.actualAmount}</td>
+                <td className="px-3 py-2">
+                  {item.attachment ? (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewReceipt(item.attachment)}
+                      className="text-indigo-500 hover:text-indigo-700 hover:underline transition-colors"
+                    >
+                      {item.attachment.fileName || item.attachment.name || 'View Receipt'}
+                    </button>
+                  ) : (
+                    <span className="text-gray-400 text-xs">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+) : (
       <div className="space-y-3">
         {expenses.map((item, index) => (
           <div
@@ -246,7 +319,7 @@ const ExpensesBreakdown = ({
                 <button
                   type="button"
                   onClick={() => handleRemove(item.id)}
-                  disabled={expenses.length === 1}
+                  disabled={expenses.length === 1 || !!ocrLoading[item.id]}
                   className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -267,6 +340,8 @@ const ExpensesBreakdown = ({
                     fullWidth
                     type="date"
                     value={item.expenseDate}
+                    min={minDate || undefined}
+                    max={maxDate || undefined}
                     onChange={(e) => handleChange(item.id, 'expenseDate', e.target.value)}
                   />
                 ) : (
@@ -322,10 +397,11 @@ const ExpensesBreakdown = ({
                         id={`row-file-upload-${item.id}`}
                         type="file"
                         onChange={(e) => handleRowFileChange(item.id, e)}
+                        disabled={!!ocrLoading[item.id]}
                       />
                       <label
                         htmlFor={`row-file-upload-${item.id}`}
-                        className="inline-flex items-center w-full justify-center px-3 py-2 text-xs font-medium rounded-lg text-gray-500 bg-white border border-gray-200 hover:border-gray-300 hover:bg-gray-50 cursor-pointer transition-colors min-h-[38px]"
+                        className={`inline-flex items-center w-full justify-center px-3 py-2 text-xs font-medium rounded-lg text-gray-500 bg-white border border-gray-200 hover:border-gray-300 hover:bg-gray-50 cursor-pointer transition-colors min-h-[38px] ${ocrLoading[item.id] ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         {isMobileDevice() ? (
                           <>
@@ -406,7 +482,7 @@ const ExpensesBreakdown = ({
                         ? undefined
                         : (e) => handleChange(item.id, 'receiptNumber', e.target.value)
                     }
-                    readOnly={viewOnly}
+                    readOnly={viewOnly || !!ocrLoading[item.id]}
                     placeholder="OR Number"
                   />
                 </div>
@@ -421,7 +497,7 @@ const ExpensesBreakdown = ({
                     onChange={
                       viewOnly ? undefined : (e) => handleChange(item.id, 'tin', e.target.value)
                     }
-                    readOnly={viewOnly}
+                    readOnly={viewOnly || !!ocrLoading[item.id]}
                     placeholder="000-000-000"
                   />
                 </div>
@@ -438,7 +514,7 @@ const ExpensesBreakdown = ({
                         ? undefined
                         : (e) => handleChange(item.id, 'vendor', e.target.value)
                     }
-                    readOnly={viewOnly}
+                    readOnly={viewOnly || !!ocrLoading[item.id]}
                     placeholder="Vendor name"
                   />
                 </div>
@@ -459,7 +535,7 @@ const ExpensesBreakdown = ({
                       className="w-full z-20"
                     />
                   ) : (
-                    <Input fullWidth value={item.vatType || '—'} readOnly />
+                    <Input fullWidth value={item.vatType || '—'} readOnly={viewOnly || !!ocrLoading[item.id]} />
                   )}
                 </div>
               </div>
@@ -477,7 +553,7 @@ const ExpensesBreakdown = ({
                       ? undefined
                       : (e) => handleChange(item.id, 'address', e.target.value)
                   }
-                  readOnly={viewOnly}
+                  readOnly={viewOnly || !!ocrLoading[item.id]}
                   placeholder="Enter Address"
                 />
               </div>
@@ -498,7 +574,7 @@ const ExpensesBreakdown = ({
                       itemId={item.id}
                       field={field}
                       value={item[field]}
-                      readOnly={viewOnly}
+                      readOnly={viewOnly || !!ocrLoading[item.id]}
                       onChange={(raw) => handleChange(item.id, field, raw)}
                     />
                   </div>
@@ -508,7 +584,7 @@ const ExpensesBreakdown = ({
           </div>
         ))}
       </div>
-
+)}
       <ReceiptPreviewModal
         receipt={previewReceipt}
         onClose={() => setPreviewReceipt(null)}

@@ -52,13 +52,18 @@ const login = async (req, res) => {
     const [approverRows] = await pool.query('SELECT id FROM approver WHERE email = ?', [email]);
     const isApprover = approverRows.length > 0;
 
-    const token = jwt.sign({ id: user.id, email: user.email, name: user.name }, process.env.JWT_SECRET || 'devsecret', { expiresIn: '8h' });
+    const token = jwt.sign({ 
+      id: user.id, 
+      email: user.email, 
+      name: user.name,
+      department:    user.department    || null, }, process.env.JWT_SECRET || 'devsecret', { expiresIn: '8h' });
     await logAudit({
       userId: user.id,
       action: 'login',
       entity: 'users',
       entityId: user.id,
       details: { email: user.email, success: true },
+      department:    user.department, 
       ip: req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || null
     });
 
@@ -88,7 +93,12 @@ const forgotPassword = async (req, res) => {
   if (!email) return res.status(400).json({ error: 'Email required' });
 
   try {
-    const [rows] = await pool.query('SELECT id, email, name FROM users WHERE email = ?', [email]);
+    const [rows] = await pool.query(
+      `SELECT id, name, email, password, role, business_unit,
+              payroll_account, gcash_number, gcash_name
+      FROM users WHERE email = ?`,
+      [email]
+    );
     if (!rows.length) {
       // Don't reveal if user exists
       return res.json({ message: 'If the email exists, a reset link has been sent' });
@@ -167,7 +177,7 @@ const resetPassword = async (req, res) => {
 const getProfile = async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id, name, email, department, role, business_unit, payroll_account, gcash_number, gcash_name FROM users WHERE id = ?',
+      `SELECT id, name, email, department, role, business_unit, payroll_account, gcash_number, gcash_name FROM users WHERE id = ?`,
       [req.user.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'User not found' });
@@ -194,7 +204,10 @@ const updateProfile = async (req, res) => {
 
     // Return updated user
     const [rows] = await pool.query(
-      'SELECT id, name, email, department, role, business_unit, payroll_account, gcash_number, gcash_name FROM users WHERE id = ?',
+      `SELECT id, name, email, role, business_unit,
+              department,
+              payroll_account, gcash_number, gcash_name
+      FROM users WHERE id = ?`,
       [req.user.id]
     );
 

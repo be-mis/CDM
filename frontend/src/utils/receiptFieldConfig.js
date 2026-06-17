@@ -33,6 +33,7 @@ export const RECEIPT_NUMBER_LABELS = [
   'SI No.',
   'SI No :',
   'SI No. :',
+  'SI ho. :',
   // Generic
   'RECEIPT NO',
   'RECEIPT NUMBER',

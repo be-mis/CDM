@@ -130,10 +130,12 @@ const LiquidationForm = (props) => {
         cashAdvanceId:      editData.cashAdvanceId      || editData.cash_advance_id      || '',
         submittedBy:        editData.submittedBy        || editData.submitted_by         || user?.name || '',
         department:         editData.department         || user?.department              || '',
+        businessUnit:       editData.businessUnit       || editData.business_unit        || '',
+        dateCoverageFrom:   normalizeDate(editData.dateCoverageFrom || editData.date_coverage_from || ''),  // ← editData
+        dateCoverageTo:     normalizeDate(editData.dateCoverageTo   || editData.date_coverage_to   || ''),  // ← editData
         totalAdvanceAmount: parseFloat(editData.totalAdvanceAmount || editData.total_advance_amount) || 0,
         refundAmount:       parseFloat(editData.refundAmount       || editData.refund_amount)        || 0,
         additionalPayment:  parseFloat(editData.additionalPayment  || editData.additional_payment)   || 0,
-        // DB ENUM is 'gcash' | 'payroll' only — no 'offset' or 'check'
         paymentMethod:      editData.paymentMethod || editData.payment_method || 'payroll',
         gcashName:          editData.gcashName     || editData.gcash_name     || '',
         accountNumber:      editData.accountNumber || editData.account_number || '',
@@ -147,6 +149,9 @@ const LiquidationForm = (props) => {
       cashAdvanceId:      initialData?.id || '',
       submittedBy:        initialData?.requestedBy || initialData?.requested_by || user?.name || '',
       department:         initialData?.department  || user?.department           || '',
+      businessUnit:       initialData?.businessUnit || initialData?.business_unit || '',
+      dateCoverageFrom:   normalizeDate(initialData?.dateCoverageFrom || initialData?.date_coverage_from || ''),  // ← initialData
+      dateCoverageTo:     normalizeDate(initialData?.dateCoverageTo   || initialData?.date_coverage_to   || ''),  // ← initialData
       totalAdvanceAmount: parseFloat(initialData?.totalAdvanceAmount || initialData?.requestedAmount || initialData?.requested_amount) || 0,
       refundAmount:       0,
       additionalPayment:  0,
@@ -250,6 +255,9 @@ const LiquidationForm = (props) => {
           ? new Set(liqResp.value.data.data.map((l) => l.cash_advance_id || l.cashAdvanceId).filter(Boolean))
           : new Set();
 
+          // console.log('Fetched cash advances:', advResp);
+          // console.log('Existing cash advance IDs in liquidations:', liqResp);
+
       setCashAdvances(
         advances.filter((a) => !existingCaIds.has(a.id) && a.status?.toLowerCase() === 'released'),
       );
@@ -317,8 +325,10 @@ const LiquidationForm = (props) => {
 
   // ── Derived totals ─────────────────────────────────────────────────────────
   const totalActual = useMemo(
-    () => expenses.reduce((s, it) => s + (parseFloat(it.actualAmount) || 0), 0),
-    [expenses],
+    () =>
+      expenses.reduce((s, it) => s + (parseFloat(it.actualAmount) || 0), 0) +
+      itineraryItems.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0),
+    [expenses, itineraryItems],
   );
 
   const variance = useMemo(
@@ -360,6 +370,9 @@ const LiquidationForm = (props) => {
           cashAdvanceId:      data.id,
           submittedBy:        data.requested_by || data.requestedBy || prev.submittedBy,
           department:         data.department   || prev.department,
+          businessUnit:       data.business_unit || data.businessUnit || prev.businessUnit,
+          dateCoverageFrom: normalizeDate(data.start_date || data.startDate || data.dateCoverageFrom || ''),
+          dateCoverageTo:   normalizeDate(data.end_date   || data.endDate   || data.dateCoverageTo   || ''),
           totalAdvanceAmount: parseFloat(data.requested_amount || data.requestedAmount || data.amount || prev.totalAdvanceAmount) || 0,
         }));
         if (data.expenses?.length > 0) {
@@ -377,6 +390,9 @@ const LiquidationForm = (props) => {
           advanceNumber: data.advance_number || data.advanceNumber,
           requestedBy:   data.requested_by   || data.requestedBy,
           department:    data.department,
+          businessUnit:  data.business_unit || data.businessUnit,
+          dateCoverageFrom: normalizeDate(data.start_date || data.startDate || ''),
+          dateCoverageTo:   normalizeDate(data.end_date   || data.endDate   || ''),
           amount:        parseFloat(data.requested_amount || data.requestedAmount || data.amount || 0),
         });
         return;
@@ -390,6 +406,7 @@ const LiquidationForm = (props) => {
       cashAdvanceId:      newValue.id,
       submittedBy:        newValue.requestedBy || prev.submittedBy,
       department:         newValue.department  || prev.department,
+      businessUnit:       newValue.businessUnit || newValue.business_unit || prev.businessUnit,  // ← add this
       totalAdvanceAmount: newValue.amount      || prev.totalAdvanceAmount,
     }));
     setSelectedCashAdvance(newValue);
@@ -417,13 +434,7 @@ const LiquidationForm = (props) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   }, [attachments, editData?.id, showSnackbar]);
 
-  // ── File-upload helpers ────────────────────────────────────────────────────
-
-  /**
-   * Upload new receipt files attached to expense rows.
-   * Files that already have isExisting=true are passed through unchanged.
-   * Returns a new array of expense objects with resolved server-side attachment info.
-   */
+  // File-upload helpers
   const uploadExpenseAttachments = useCallback(async (currentItems, liquidationId) => {
   const results = [];
   for (const item of currentItems) {
@@ -569,6 +580,9 @@ const LiquidationForm = (props) => {
       cashAdvanceId:      formData.cashAdvanceId,
       submittedBy:        formData.submittedBy,
       department:         formData.department,
+      businessUnit:       formData.businessUnit || null,
+      dateCoverageFrom:   formData.dateCoverageFrom || null,
+      dateCoverageTo:     formData.dateCoverageTo   || null,
       totalAdvanceAmount: formData.totalAdvanceAmount,
       totalActualAmount:  totalActual,
       refundAmount:       formData.refundAmount      || null,
@@ -628,6 +642,14 @@ const LiquidationForm = (props) => {
       errs.department = 'Department is required';
     if (expenses.some((it) => !it.particulars.toString().trim() || (parseFloat(it.actualAmount) || 0) <= 0))
       errs.expenses = 'All expenses must have particulars and a valid actual amount';
+    if (formData.dateCoverageFrom && formData.dateCoverageTo) {
+      const outOfRange = expenses.some((it) => {
+        if (!it.expenseDate) return false;
+        return it.expenseDate < formData.dateCoverageFrom || it.expenseDate > formData.dateCoverageTo;
+      });
+      if (outOfRange)
+        errs.expenses = `Expense dates must be within the coverage period (${formatLongDate(formData.dateCoverageFrom)} – ${formatLongDate(formData.dateCoverageTo)})`;
+    }
 
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
@@ -722,6 +744,9 @@ const LiquidationForm = (props) => {
     setFormData({
       liquidationNumber: '', liquidationDate: new Date().toISOString().split('T')[0],
       cashAdvanceId: '', submittedBy: user?.name || '', department: user?.department || '',
+      businessUnit: '',
+      dateCoverageFrom: '',
+      dateCoverageTo:   '',
       totalAdvanceAmount: 0, refundAmount: 0, additionalPayment: 0,
       paymentMethod: 'payroll', gcashName: '', accountNumber: '', remarks: '', status: 'draft',
     });
@@ -744,55 +769,133 @@ const LiquidationForm = (props) => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-gray-900">
-          {isEditMode ? 'Edit Liquidation' : 'Liquidation Form'}
-        </h2>
-      </div>
+      {!viewOnly && (
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-900">
+            Liquidation Form
+          </h2>
+        </div>
+      )}
 
       {/* Liquidation Information */}
       <Card>
         <CardContent>
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Liquidation Information</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <TruncatedViewField label="Liquidation Number" value={formData.liquidationNumber} />
-            <TruncatedViewField
-              label="Liquidation Date"
-              value={viewOnly ? formatLongDate(formData.liquidationDate) : formData.liquidationDate}
-            />
-            <TruncatedViewField label="Submitted By" value={formData.submittedBy} />
-            <TruncatedViewField label="Department"   value={formData.department}  />
+          {!viewOnly ? (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <TruncatedViewField label="Liquidation Number" value={formData.liquidationNumber} />
+              <TruncatedViewField label="Submitted By" value={formData.submittedBy} />
+              <TruncatedViewField label="Department"   value={formData.department}  />
+              <TruncatedViewField label="Business Unit" value={formData.businessUnit || '—'} />
+              <TruncatedViewField
+                label="Liquidation Date"
+                value={viewOnly ? formatLongDate(formData.liquidationDate) : formData.liquidationDate}
+              />
+              
+              <div className="col-span-1 md:col-span-2 relative border border-gray-200 rounded-lg px-3 h-[38px] flex items-center gap-2 bg-gray-50">
+                <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-500 z-10">
+                  Date Coverage
+                </span>
+                <span className="text-sm text-gray-900 truncate">
+                  {formData.dateCoverageFrom
+                    ? formatLongDate(formData.dateCoverageFrom)
+                    : '—'}
+                </span>
+                <span className="text-gray-400 text-sm">–</span>
+                <span className="text-sm text-gray-900 truncate">
+                  {formData.dateCoverageTo
+                    ? formatLongDate(formData.dateCoverageTo)
+                    : '—'}
+                </span>
+              </div>
 
-            <div className="col-span-1 md:col-span-4">
-              {!viewOnly ? (
-                <Autocomplete
-                  options={cashAdvances}
-                  value={selectedCashAdvance}
-                  getOptionLabel={(option) =>
-                    option
-                      ? `${option.advanceNumber || option.id} - ${option.requestedBy} (₱${currencyFormatter.format(option.amount)})`
-                      : ''
-                  }
-                  onChange={(newValue) => handleCashAdvanceSelect(null, newValue)}
-                  label="Advance to Liquidate"
-                  required
-                  error={!!errors.cashAdvanceId}
-                  helperText={errors.cashAdvanceId}
-                  placeholder="Search cash advance..."
-                  className="w-full"
-                />
-              ) : (
-                <TruncatedViewField
-                  label="Cash Advance to Liquidate"
-                  value={
-                    selectedCashAdvance
-                      ? `${selectedCashAdvance.advanceNumber} - ${selectedCashAdvance.requestedBy} (₱${currencyFormatter.format(selectedCashAdvance.amount)})`
-                      : formData.cashAdvanceId || ''
-                  }
-                />
-              )}
+              <div className="col-span-1 md:col-span-1">
+                {!viewOnly && !isEditMode ? (
+                  
+                  <div className="relative w-full">
+                      <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-500 z-10">
+                        Cash Advance to Liquidate
+                      </span>
+                      <Autocomplete
+                        options={cashAdvances}
+                        value={selectedCashAdvance}
+                        getOptionLabel={(option) =>
+                          option
+                            ? `${option.advanceNumber || option.id} - (₱${currencyFormatter.format(option.amount)})`
+                            : ''
+                        }
+                        onChange={(newValue) => handleCashAdvanceSelect(null, newValue)}
+                        required
+                        error={!!errors.cashAdvanceId}
+                        helperText={errors.cashAdvanceId}
+                        placeholder="Search cash advance..."
+                        className="w-full"
+                      />
+                  </div>
+                ) : (
+                  <TruncatedViewField
+                    label="Cash Advance to Liquidate"
+                    value={
+                      selectedCashAdvance
+                        ? `${selectedCashAdvance.advanceNumber} - (₱${currencyFormatter.format(selectedCashAdvance.amount)})`
+                        : editData?.cash_advance_number || editData?.cashAdvanceNumber
+                          ? `${editData.cash_advance_number || editData.cashAdvanceNumber} - (₱${currencyFormatter.format(editData.total_advance_amount || editData.totalAdvanceAmount || 0)})`
+                          : '-'
+                    }
+                  />
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-8 gap-4">
+              <div>
+                <label className="px-1 text-xs text-gray-600">Liquidation Number</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {formData.liquidationNumber}
+                </div>
+              </div>
+              <div>
+                <label className="px-1 text-xs text-gray-600">Submitted By</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {formData.submittedBy}
+                </div>
+              </div>
+              <div>
+                <label className="px-1 text-xs text-gray-600">Department</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {formData.department}
+                </div>
+              </div>
+              <div>
+                <label className="px-1 text-xs text-gray-600">Business Unit</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {formData.businessUnit}
+                </div>
+              </div>
+              <div>
+                <label className="px-1 text-xs text-gray-600">Liquidation Date</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {formData.liquidationDate}
+                </div>
+              </div>
+              <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="col-span-1 md:col-span-2">
+                  <label className="px-1 text-xs text-gray-600">Date Coverage</label>
+                  <div className={` border-b border-gray-200 flex items-center justify-between gap-2 px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900`}>
+                    {formatLongDate(formData.dateCoverageFrom)}
+                    <span className="text-gray-500">—</span>
+                    {formatLongDate(formData.dateCoverageTo)}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="px-1 text-xs text-gray-600">Cash Advance to Liquidate</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {`${editData.cash_advance_number || editData.cashAdvanceNumber} - (₱${currencyFormatter.format(editData.total_advance_amount || editData.totalAdvanceAmount || 0)})`}
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -838,6 +941,8 @@ const LiquidationForm = (props) => {
             viewOnly={viewOnly}
             errors={errors}
             onSnackbar={showSnackbar}
+            minDate={formData.dateCoverageFrom || undefined}
+            maxDate={formData.dateCoverageTo   || undefined}
           />
         </CardContent>
       </Card>
@@ -849,6 +954,8 @@ const LiquidationForm = (props) => {
             itineraryItems={itineraryItems}
             onItineraryItemsChange={handleItineraryItemsChange}
             viewOnly={viewOnly}
+            minDate={formData.dateCoverageFrom || undefined}
+            maxDate={formData.dateCoverageTo   || undefined}
           />
         </CardContent>
       </Card>
@@ -870,16 +977,32 @@ const LiquidationForm = (props) => {
       <Card>
         <CardContent>
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Remarks</h3>
+          {!viewOnly ? (
           <Input
             fullWidth
             multiline
             rows={3}
             name="remarks"
             value={formData.remarks}
-            onChange={viewOnly ? undefined : handleInputChange}
-            placeholder="Add any additional notes or remarks"
-            readOnly={viewOnly}
-          />
+            onChange={handleInputChange}
+          />) : (
+                        <div>
+                            <div className="px-1 py-1 border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                              {formData.remarks ? (
+                                <span className="text-sm text-gray-900 whitespace-pre-wrap">{formData.remarks}</span>
+                                ) : (
+                                <span className="text-sm text-gray-500 italic">No remarks provided.</span>
+                                )}
+                            </div>
+                        </div>
+            // <div className="px-3 py-2 border-b border-gray-200 rounded-lg min-h-[80px]">
+            //   {formData.remarks ? (
+            //     <span className="text-sm text-gray-900 whitespace-pre-wrap">{formData.remarks}</span>
+            //   ) : (
+            //     <span className="text-sm text-gray-500 italic">No remarks provided.</span>
+            //   )}
+            // </div>
+          )}
         </CardContent>
       </Card>
 
@@ -914,23 +1037,12 @@ const LiquidationForm = (props) => {
                 attachments={attachments.map((att) => ({
                   id:        att.id,
                   file_name: att.fileName || att.name,
-                  file_path: att.filePath || att.preview,
+                  file_path: att.filePath,                   // ← no longer using preview as fallback
                   file_type: att.fileType || att.type,
+                  file_size: att.fileSize || att.size,       // ← add this for reliable fallback matching
                   preview:   att.preview  || null,
                 }))}
-                onRemove={
-                  !viewOnly
-                    ? (att) => {
-                        const idx = attachments.findIndex(
-                          (a) =>
-                            (a.id && a.id === att.id) ||
-                            a.filePath === att.file_path ||
-                            a.fileName === att.file_name,
-                        );
-                        if (idx >= 0) removeAttachment(idx);
-                      }
-                    : undefined
-                }
+                onRemove={viewOnly ? undefined : (index) => removeAttachment(index)}
               />
             </div>
           )}

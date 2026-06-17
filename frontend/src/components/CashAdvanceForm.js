@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Save, Send, RotateCcw, X } from 'lucide-react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
-import ItemsTable from './forms/ItemsTable';
+import BudgetBreakdown from './forms/BudgetBreakdown';
 import AttachmentsSection from './forms/AttachmentsSection';
 import PaymentDetailsSection from './forms/PaymentDetailsSection';
 import { formatNumber, sanitizeNumberInput, normalizeDate, formatLongDate } from '../utils/formatters';
@@ -470,9 +470,34 @@ const CashAdvanceForm = (props) => {
                 <CardContent>
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Information</h3>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <TruncatedViewField label="Cash Advance Number" value={formData.advanceNumber} />
-                        <TruncatedViewField label="Requested By" value={formData.requestedBy} />
-                        <TruncatedViewField label="Department" value={formData.department} />
+                        {!viewOnly ? (
+                            <div className="col-span-1 md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <TruncatedViewField label="Cash Advance Number" value={formData.advanceNumber} />
+                                <TruncatedViewField label="Requested By" value={formData.requestedBy} />
+                                <TruncatedViewField label="Department" value={formData.department} />
+                        </div>
+                        ) : (
+                            <div className="col-span-1 md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className="px-1 text-xs text-gray-600">Cash Advance Number</label>
+                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
+                                        {formData.advanceNumber}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="px-1 text-xs text-gray-600">Requested By</label>
+                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
+                                        {formData.requestedBy}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="px-1 text-xs text-gray-600">Department</label>
+                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
+                                        {formData.department}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         <div>
                             {!viewOnly ? (
@@ -493,11 +518,21 @@ const CashAdvanceForm = (props) => {
                                         </label>
                                     </div>
                                 </div>
-                            ) : <TruncatedViewField label="Business Unit" value={formData.businessUnit} />}
+                            ) :(<div>
+                                    <label className="px-1 text-xs text-gray-600">Business Unit</label>
+                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
+                                        {formData.businessUnit}
+                                    </div>
+                                </div>)}
                         </div>
 
                         {viewOnly ? (
-                            <TruncatedViewField label="Request Date" value={formatLongDate(formData.advanceDate)} />
+                            <div>
+                                <label className="px-1 text-xs text-gray-600">Request Date</label>
+                                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
+                                    {formatLongDate(formData.advanceDate)}
+                                </div>
+                            </div>
                         ) : (
                             <div className="relative w-full">
                                 <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600 z-10">Request Date</span>
@@ -512,7 +547,12 @@ const CashAdvanceForm = (props) => {
                         )}
 
                         {viewOnly ? (
-                            <TruncatedViewField label="Date Needed" value={formatLongDate(formData.dateNeeded)} />
+                            <div>
+                                <label className="px-1 text-xs text-gray-600">Date Needed</label>
+                                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
+                                    {formatLongDate(formData.dateNeeded)}
+                                </div>
+                            </div>
                         ) : (
                             <div className="relative w-full">
                                 <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600 z-10">Date Needed</span>
@@ -527,6 +567,7 @@ const CashAdvanceForm = (props) => {
                             </div>
                         )}
 
+                        {!viewOnly ? (
                         <div className="md:col-span-2">
                             <div className={`relative border ${errors.dateCoverage ? 'border-red-600' : 'border-gray-300'} rounded-lg px-3 py-2 flex items-center gap-2 focus-within:border-primary-600 hover:border-gray-900`}>
                                 <span className={`absolute -top-2 left-3 bg-white px-1 text-xs ${errors.dateCoverage ? 'text-red-600' : 'text-gray-600'}`}>
@@ -554,10 +595,27 @@ const CashAdvanceForm = (props) => {
                                 />
                             </div>
                         </div>
+                        ) : (
+                            <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="col-span-1 md:col-span-2">
+                                    <label className="px-1 text-xs text-gray-600">Date Coverage</label>
+                                    <div className={` border-b border-gray-200 flex items-center justify-between gap-2 px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900`}>
+                                        {formatLongDate(formData.startDate)}
+                                        <span className="text-gray-500">—</span>
+                                        {formatLongDate(formData.endDate)}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         <div className="md:col-span-4 text-sm">
                             {viewOnly ? (
-                                <TruncatedViewField label="Purpose" value={formData.purpose} />
+                                <div>
+                                    <label className="px-1 text-xs text-gray-600">Purpose</label>
+                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                                        {formData.purpose || '-'}
+                                    </div>
+                                </div>
                             ) : (
                                 <Input
                                     fullWidth
@@ -578,9 +636,9 @@ const CashAdvanceForm = (props) => {
 
             <Card>
                 <CardContent>
-                    {/* FIX 4 (note): Pass itemInputRefs down so ItemsTable can attach
+                    {/* FIX 4 (note): Pass itemInputRefs down so BudgetBreakdown can attach
                         refs to number inputs for reliable cursor position restoration. */}
-                    <ItemsTable
+                    <BudgetBreakdown
                         items={items}
                         advanceType={formData.advanceType}
                         viewOnly={viewOnly}
@@ -594,7 +652,7 @@ const CashAdvanceForm = (props) => {
                     />
                     <div className="mt-6 flex justify-end">
                         <div className="min-w-[180px] p-4 border border-gray-200 rounded-lg">
-                            <p className="text-xs text-gray-600 mb-1">Total Amount</p>
+                            <p className="text-xs text-gray-600 mb-1">Grand Total Amount</p>
                             <h3 className={`text-2xl font-semibold ${errors.total ? 'text-red-600' : 'text-gray-900'}`}>
                                 ₱ {calculateTotal().toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </h3>

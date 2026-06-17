@@ -29,11 +29,11 @@ const Modal = ({
   const maxWidthClass = {
     xs: 'max-w-xs',
     sm: 'max-w-sm',
-    md: 'max-w-2xl',
-    lg: 'max-w-4xl',
-    xl: 'max-w-6xl',
+    md: 'max-w-md',
+    lg: 'size-fit',
+    xl: 'size-fit',
     full: 'max-w-full'
-  }[maxWidth] || 'max-w-2xl';
+  }[maxWidth] || 'size-fit';
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -44,7 +44,7 @@ const Modal = ({
       />
       
       {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
+      <div className="flex min-h-fit items-center justify-center p-4">
         <div 
           className={`relative bg-white rounded-lg shadow-xl ${maxWidthClass} w-full`}
           onClick={(e) => e.stopPropagation()}

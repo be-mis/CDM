@@ -1,32 +1,29 @@
 const express = require('express');
-const router = express.Router();
-const reimbursementController = require('../controllers/reimbursementController');
+const router  = express.Router();
 const auth = require('../middleware/auth');
+
+const {
+  createReimbursement,
+  updateReimbursement,
+  getReimbursements,
+  getReimbursementById,
+  addAttachment,
+  deleteAttachment,
+  deleteReimbursement,
+} = require('../controllers/reimbursementController');
 
 // All routes require authentication
 router.use(auth);
 
-// Create new reimbursement (draft or submit)
-router.post('/', reimbursementController.createReimbursement);
+// ─── Reimbursement CRUD ───────────────────────────────────────────────────────
+router.get   ('/',    getReimbursements);      // list (current user)
+router.post  ('/',    createReimbursement);    // create
+router.get   ('/:id', getReimbursementById);   // read one
+router.put   ('/:id', updateReimbursement);    // update / phase-3 re-save
+router.delete('/:id', deleteReimbursement);    // soft-cancel
 
-// Update existing reimbursement
-router.put('/:id', reimbursementController.updateReimbursement);
-
-// Get all reimbursements for current user
-router.get('/', reimbursementController.getReimbursements);
-
-// Get single reimbursement by ID
-router.get('/:id', reimbursementController.getReimbursementById);
-
-// Add attachment to reimbursement
-router.post('/:reimbursementId/attachments', reimbursementController.addAttachment);
-// Delete attachment
-router.delete('/:reimbursementId/attachments/:attachmentId', reimbursementController.deleteAttachment);
-
-// Cancel pending reimbursement
-router.post('/:id/cancel', reimbursementController.cancelReimbursement);
-
-// Delete reimbursement (only drafts)
-router.delete('/:id', reimbursementController.deleteReimbursement);
+// ─── Supporting-document attachments ─────────────────────────────────────────
+router.post  ('/:id/attachments',        addAttachment);
+router.delete('/:id/attachments/:attId', deleteAttachment);
 
 module.exports = router;
