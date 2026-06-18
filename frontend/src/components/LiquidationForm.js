@@ -891,7 +891,7 @@ const LiquidationForm = (props) => {
               <div>
                 <label className="px-1 text-xs text-gray-600">Cash Advance to Liquidate</label>
                 <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
-                  {`${editData.cash_advance_number || editData.cashAdvanceNumber} - (₱${currencyFormatter.format(editData.total_advance_amount || editData.totalAdvanceAmount || 0)})`}
+                  {`${editData.cash_advance_number || editData.cashAdvanceNumber}`}
                 </div>
               </div>
             </div>
@@ -1051,7 +1051,7 @@ const LiquidationForm = (props) => {
 
       {/* Action Buttons */}
       <div className="flex gap-4 justify-end">
-        {!viewOnly ? (
+        {!viewOnly && (
           <>
             {!isEditMode && (
               <Button variant="secondary" onClick={resetForm} disabled={submitting}>
@@ -1085,13 +1085,6 @@ const LiquidationForm = (props) => {
               </Button>
             )}
           </>
-        ) : (
-          <Button
-            variant="primary"
-            onClick={onClose ?? (() => navigate('/my-requests', { state: { tab: 1 } }))}
-          >
-            Close
-          </Button>
         )}
       </div>
 

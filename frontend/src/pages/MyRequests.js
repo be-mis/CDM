@@ -108,6 +108,9 @@ const MyRequests = () => {
           dateNeeded:          data.date_needed || '',    // ✅ ADD THIS
           dateCoverageFrom: data.date_coverage_from || data.start_date || '',
           dateCoverageTo:   data.date_coverage_to   || data.end_date   || '',
+          cashAdvanceId:       data.cash_advance_id,
+          cashAdvanceNumber:   data.cash_advance_number,
+          totalAdvanceAmount:  data.total_advance_amount,
           totalAmount:         data.total_amount,
           paymentMethod:       data.payment_method,
           gcashName:           data.gcash_name || '',

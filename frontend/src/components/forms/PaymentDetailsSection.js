@@ -16,7 +16,7 @@ const PaymentDetailsSection = ({
     return (
         <div>
             <h3 className="text-lg font-semibold text-gray-900 mb-3">Payment Details</h3>
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                     {!viewOnly ? (
                         <Select

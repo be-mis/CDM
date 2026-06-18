@@ -87,7 +87,7 @@ const AttachmentViewer = ({ attachments = [], onRemove }) => {
 
   return (
     <div>
-      <ul className="space-y-2">
+      <div className="grid grid-cols-12 gap-3">
         {attachments.map((att, index) => {
           const name = att.file_name || att.filename || att.name || att.originalname || att.fileName || 'attachment';
           const type = att.file_type || att.mimetype || att.type || '';
@@ -108,42 +108,17 @@ const AttachmentViewer = ({ attachments = [], onRemove }) => {
           };
 
           return (
-            <li
+            <div
               key={att.id || index}
-              className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+              className="col-span-1 sm:col-span-2 lg:col-span-2 flex flex-col p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              {/* Left thumbnail or icon */}
-              <div className="w-20 h-20 flex items-center justify-center flex-shrink-0">
-                {img ? (
-                  <img 
-                    src={url} 
-                    alt={name} 
-                    className="max-w-[72px] max-h-[72px] object-cover rounded-md"
-                  />
-                ) : pdf ? (
-                  <FileText className="w-10 h-10 text-red-500" />
-                ) : (
-                  <FileText className="w-9 h-9 text-gray-500" />
-                )}
-              </div>
-
-              {/* File name */}
-              <div className="flex-1 min-w-0">
-                <button
-                  onClick={handlePrimaryClick}
-                  className={`text-sm font-semibold text-gray-900 hover:text-primary-600 truncate block ${url ? 'cursor-pointer' : 'cursor-default'}`}
-                >
-                  {name}
-                </button>
-              </div>
-
               {/* Actions */}
-              <div className="flex items-center gap-1">
+              <div className="flex items-center justify-center gap-1 mt-2">
                 {url && (
                   <>
                     {!img && (
                       <Tooltip title="Download">
-                        <button 
+                        <button
                           onClick={() => triggerDownload(url, name)}
                           className="p-2 text-gray-600 hover:bg-gray-100 rounded transition-colors"
                         >
@@ -153,7 +128,7 @@ const AttachmentViewer = ({ attachments = [], onRemove }) => {
                     )}
                     {img && (
                       <Tooltip title="Preview">
-                        <button 
+                        <button
                           onClick={() => setPreview({ url, name, type })}
                           className="p-2 text-gray-600 hover:bg-gray-100 rounded transition-colors"
                         >
@@ -163,7 +138,7 @@ const AttachmentViewer = ({ attachments = [], onRemove }) => {
                     )}
                     {canRemove && (
                       <Tooltip title="Remove">
-                        <button 
+                        <button
                           onClick={() => onRemove(index)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
                         >
@@ -174,10 +149,35 @@ const AttachmentViewer = ({ attachments = [], onRemove }) => {
                   </>
                 )}
               </div>
-            </li>
+              {/* Thumbnail or icon */}
+              <div className="w-full h-24 flex items-center justify-center flex-shrink-0 mb-2">
+                {img ? (
+                  <img
+                    src={url}
+                    alt={name}
+                    className="max-w-full max-h-24 object-cover rounded-md"
+                  />
+                ) : pdf ? (
+                  <FileText className="w-10 h-10 text-red-500" />
+                ) : (
+                  <FileText className="w-9 h-9 text-gray-500" />
+                )}
+              </div>
+
+              {/* File name */}
+              {/* <button
+                onClick={handlePrimaryClick}
+                className={`text-sm font-semibold text-gray-900 hover:text-primary-600 truncate block text-center w-full ${url ? 'cursor-pointer' : 'cursor-default'}`}
+                title={name}
+              >
+                {name}
+              </button> */}
+              <label className="text-xs text-gray-500 text-center">{name}</label>
+
+            </div>
           );
         })}
-      </ul>
+      </div>
 
       {/* Preview Modal */}
       <Modal
@@ -190,22 +190,22 @@ const AttachmentViewer = ({ attachments = [], onRemove }) => {
           <div className="min-h-[200px]">
             {isImage(preview.type, preview.name) ? (
               <div className="w-full h-[70vh] flex items-center justify-center bg-gray-100">
-                <img 
-                  src={preview.url} 
-                  alt={preview.name} 
+                <img
+                  src={preview.url}
+                  alt={preview.name}
                   className="w-full h-full object-contain"
                 />
               </div>
             ) : isPdf(preview.type, preview.name) ? (
-              <iframe 
-                src={preview.url} 
-                title={preview.name} 
+              <iframe
+                src={preview.url}
+                title={preview.name}
                 className="w-full h-[70vh] border-none"
               />
             ) : (
-              <a 
-                href={preview.url} 
-                target="_blank" 
+              <a
+                href={preview.url}
+                target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary-600 hover:underline"
               >

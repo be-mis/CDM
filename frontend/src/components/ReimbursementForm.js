@@ -808,23 +808,21 @@ const ReimbursementForm = (props) => {
                 </div>
               </div>
               <div>
-                <label className="px-1 text-xs text-gray-600">Request Date</label>
-                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
-                  {formatLongDate(formData.reimbursementDate)}
-                </div>
-              </div>
-              <div>
                 <label className="px-1 text-xs text-gray-600">Date Needed</label>
                 <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
                   {formatLongDate(formData.dateNeeded)}
                 </div>
               </div>
-              <div>
-                <label className="px-1 text-xs text-gray-600">Period Covered</label>
-                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
-                  {`${formatLongDate(formData.dateCoverageFrom)} – ${formatLongDate(formData.dateCoverageTo)}`}
-                </div>
-              </div>
+                            <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="col-span-1 md:col-span-2">
+                                <label className="px-1 text-xs text-gray-600">Date Coverage</label>
+                                <div className={` border-b border-gray-200 flex items-center justify-between gap-2 px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900`}>
+                                  {formatLongDate(formData.dateCoverageFrom)}
+                                  <span className="text-gray-500">—</span>
+                                  {formatLongDate(formData.dateCoverageTo)}
+                                </div>
+                              </div>
+                            </div>
               <div className="col-span-1 md:col-span-8">
                 <label className="px-1 text-xs text-gray-600">Purpose</label>
                 <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
