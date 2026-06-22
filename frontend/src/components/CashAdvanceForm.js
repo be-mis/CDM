@@ -56,11 +56,12 @@ const CashAdvanceForm = (props) => {
     const { editData, onClose, viewOnly = false, hideCloseButton = false } = props || {};
 
     const [formData, setFormData] = useState(() => {
+
+        console.log('Initializing formData with editData:', editData);
         if (editData) {
             return {
-                advanceNumber: editData.refNumber || '',
-                // Preserve original request date for edits; only use today for new drafts
-                advanceDate: (editData.status?.toLowerCase() === 'draft') ? getTodayString() : (normalizeDate(editData.requestDate) || getTodayString()),
+                advanceNumber: editData.advanceNumber || editData.advance_number || '',
+                advanceDate: (editData.status?.toLowerCase() === 'draft') ? getTodayString() : (normalizeDate(editData.advanceDate) || getTodayString()),
                 requestedBy: user?.name || '',
                 department: editData.department || user?.department || '',
                 employeeId: user?.id || '',
@@ -169,12 +170,13 @@ const CashAdvanceForm = (props) => {
                 console.error("Failed to fetch user profile", err);
             }
         };
-        if (user) fetchProfile();
-    }, [user]);
+        if (user && !viewOnly) fetchProfile(); // ✅ Skip fetch entirely in view-only mode
+    }, [user, viewOnly]);
 
     // Auto-populate Payment Details from Profile
     useEffect(() => {
         if (!userProfile) return;
+        if (viewOnly) return; // ✅ Don't overwrite data when in view-only mode
 
         if (formData.paymentMethod === 'payroll') {
             setFormData(prev => ({
@@ -317,11 +319,46 @@ const CashAdvanceForm = (props) => {
         return { isValid: Object.keys(newErrors).length === 0, errors: newErrors };
     };
 
+    const validateDraft = () => {
+        const newErrors = {};
+
+        // Purpose is required
+        if (!formData.purpose?.toString().trim()) {
+            newErrors.purpose = 'Required';
+        }
+
+        // At least one budget breakdown item must have a description and amount > 0
+        const hasValidItem = items.some(item => {
+            const hasDescription = item.description?.toString().trim() || item.particulars?.toString().trim();
+            const hasAmount = (parseFloat(item.estimatedAmount) || 0) > 0;
+            return hasDescription && hasAmount;
+        });
+
+        if (!hasValidItem) {
+            // Mark all empty items so the red borders appear in the breakdown
+            items.forEach((item) => {
+                if (!(parseFloat(item.estimatedAmount) || 0 > 0)) {
+                    newErrors[`item_amount_${item.id}`] = 'Required';
+                }
+                if (!item.description?.toString().trim() && !item.particulars?.toString().trim()) {
+                    newErrors[`item_description_${item.id}`] = 'Required';
+                }
+            });
+            newErrors.budgetBreakdown = 'At least one budget breakdown item is required';
+        }
+
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
     const handleSaveDraft = async () => {
         if (isSubmitting) return;
-        if (!formData.purpose?.toString().trim() && calculateTotal() === 0) {
-            return showNotification('Provide at least a purpose or an amount to save as draft', 'warning');
+
+        const isDraftValid = validateDraft();
+        if (!isDraftValid) {
+            return showNotification('Please fill in the Purpose and at least one Budget Breakdown item before saving.', 'warning');
         }
+
         setIsSubmitting(true);
         try {
             // FIX 3: Preserve the original advanceDate for existing records.
@@ -469,38 +506,11 @@ const CashAdvanceForm = (props) => {
             <Card>
                 <CardContent>
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Information</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         {!viewOnly ? (
-                            <div className="col-span-1 md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <TruncatedViewField label="Cash Advance Number" value={formData.advanceNumber} />
                                 <TruncatedViewField label="Requested By" value={formData.requestedBy} />
                                 <TruncatedViewField label="Department" value={formData.department} />
-                        </div>
-                        ) : (
-                            <div className="col-span-1 md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                    <label className="px-1 text-xs text-gray-600">Cash Advance Number</label>
-                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
-                                        {formData.advanceNumber}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="px-1 text-xs text-gray-600">Requested By</label>
-                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
-                                        {formData.requestedBy}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="px-1 text-xs text-gray-600">Department</label>
-                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
-                                        {formData.department}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        <div>
-                            {!viewOnly ? (
                                 <div className="relative border border-gray-300 rounded-lg px-3 py-2 flex items-center">
                                     <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600">Business Unit</span>
                                     <div className="flex gap-6 w-full">
@@ -518,106 +528,56 @@ const CashAdvanceForm = (props) => {
                                         </label>
                                     </div>
                                 </div>
-                            ) :(<div>
-                                    <label className="px-1 text-xs text-gray-600">Business Unit</label>
-                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
-                                        {formData.businessUnit}
-                                    </div>
-                                </div>)}
-                        </div>
-
-                        {viewOnly ? (
-                            <div>
-                                <label className="px-1 text-xs text-gray-600">Request Date</label>
-                                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
-                                    {formatLongDate(formData.advanceDate)}
+                                <div className="relative w-full">
+                                    <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600 z-10">Request Date</span>
+                                    <input
+                                        type="date"
+                                        name="advanceDate"
+                                        value={formData.advanceDate}
+                                        readOnly
+                                        className="px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 w-full text-sm text-gray-900 outline-none cursor-default"
+                                    />
                                 </div>
-                            </div>
-                        ) : (
-                            <div className="relative w-full">
-                                <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600 z-10">Request Date</span>
-                                <input
-                                    type="date"
-                                    name="advanceDate"
-                                    value={formData.advanceDate}
-                                    readOnly
-                                    className="px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 w-full text-sm text-gray-900 outline-none cursor-default"
-                                />
-                            </div>
-                        )}
-
-                        {viewOnly ? (
-                            <div>
-                                <label className="px-1 text-xs text-gray-600">Date Needed</label>
-                                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
-                                    {formatLongDate(formData.dateNeeded)}
+                                <div className="relative w-full">
+                                    <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600 z-10">Date Needed</span>
+                                    <input
+                                        type="date"
+                                        name="dateNeeded"
+                                        value={formData.dateNeeded}
+                                        onChange={handleInputChange}
+                                        min={getMinDateNeeded()}
+                                        className="px-4 py-2 border border-gray-300 rounded-lg bg-white w-full text-sm text-gray-900 outline-none focus:border-primary-600 hover:border-gray-900"
+                                    />
                                 </div>
-                            </div>
-                        ) : (
-                            <div className="relative w-full">
-                                <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600 z-10">Date Needed</span>
-                                <input
-                                    type="date"
-                                    name="dateNeeded"
-                                    value={formData.dateNeeded}
-                                    onChange={handleInputChange}
-                                    min={getMinDateNeeded()}
-                                    className="px-4 py-2 border border-gray-300 rounded-lg bg-white w-full text-sm text-gray-900 outline-none focus:border-primary-600 hover:border-gray-900"
-                                />
-                            </div>
-                        )}
-
-                        {!viewOnly ? (
-                        <div className="md:col-span-2">
-                            <div className={`relative border ${errors.dateCoverage ? 'border-red-600' : 'border-gray-300'} rounded-lg px-3 py-2 flex items-center gap-2 focus-within:border-primary-600 hover:border-gray-900`}>
-                                <span className={`absolute -top-2 left-3 bg-white px-1 text-xs ${errors.dateCoverage ? 'text-red-600' : 'text-gray-600'}`}>
-                                    Date Coverage {errors.dateCoverage && '*'}
-                                </span>
-                                <input
-                                    type={viewOnly ? 'text' : 'date'}
-                                    name="startDate"
-                                    value={viewOnly ? formatLongDate(formData.startDate) : formData.startDate}
-                                    onChange={handleInputChange}
-                                    readOnly={viewOnly}
-                                    min={(!viewOnly && formData.dateNeeded) ? formData.dateNeeded : undefined}
-                                    max={(!viewOnly && formData.endDate) ? formData.endDate : undefined}
-                                    className="flex-1 bg-transparent border-none outline-none text-sm"
-                                />
-                                <span className="text-gray-500">—</span>
-                                <input
-                                    type={viewOnly ? 'text' : 'date'}
-                                    name="endDate"
-                                    value={viewOnly ? formatLongDate(formData.endDate) : formData.endDate}
-                                    onChange={handleInputChange}
-                                    readOnly={viewOnly}
-                                    min={(!viewOnly && formData.startDate) ? formData.startDate : undefined}
-                                    className="flex-1 bg-transparent border-none outline-none text-sm text-right"
-                                />
-                            </div>
-                        </div>
-                        ) : (
-                            <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="col-span-1 md:col-span-2">
-                                    <label className="px-1 text-xs text-gray-600">Date Coverage</label>
-                                    <div className={` border-b border-gray-200 flex items-center justify-between gap-2 px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900`}>
-                                        {formatLongDate(formData.startDate)}
+                                <div className="md:col-span-2">
+                                    <div className={`relative border ${errors.dateCoverage ? 'border-red-600' : 'border-gray-300'} rounded-lg px-3 py-2 flex items-center gap-2 focus-within:border-primary-600 hover:border-gray-900`}>
+                                        <span className={`absolute -top-2 left-3 bg-white px-1 text-xs ${errors.dateCoverage ? 'text-red-600' : 'text-gray-600'}`}>
+                                            Date Coverage {errors.dateCoverage && '*'}
+                                        </span>
+                                        <input
+                                            type={viewOnly ? 'text' : 'date'}
+                                            name="startDate"
+                                            value={viewOnly ? formatLongDate(formData.startDate) : formData.startDate}
+                                            onChange={handleInputChange}
+                                            readOnly={viewOnly}
+                                            min={(!viewOnly && formData.dateNeeded) ? formData.dateNeeded : undefined}
+                                            max={(!viewOnly && formData.endDate) ? formData.endDate : undefined}
+                                            className="flex-1 bg-transparent border-none outline-none text-sm"
+                                        />
                                         <span className="text-gray-500">—</span>
-                                        {formatLongDate(formData.endDate)}
+                                        <input
+                                            type={viewOnly ? 'text' : 'date'}
+                                            name="endDate"
+                                            value={viewOnly ? formatLongDate(formData.endDate) : formData.endDate}
+                                            onChange={handleInputChange}
+                                            readOnly={viewOnly}
+                                            min={(!viewOnly && formData.startDate) ? formData.startDate : undefined}
+                                            className="flex-1 bg-transparent border-none outline-none text-sm text-right"
+                                        />
                                     </div>
                                 </div>
-                            </div>
-                        )}
-
-                        <div className="md:col-span-4 text-sm">
-                            {viewOnly ? (
-                                <div>
-                                    <label className="px-1 text-xs text-gray-600">Purpose</label>
-                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
-                                        {formData.purpose || '-'}
-                                    </div>
-                                </div>
-                            ) : (
-                                <Input
+                                <div className="md:col-span-4">
+                                    <Input
                                     fullWidth
                                     required
                                     multiline
@@ -627,10 +587,64 @@ const CashAdvanceForm = (props) => {
                                     value={formData.purpose}
                                     onChange={handleInputChange}
                                     error={errors.purpose}
-                                />
-                            )}
-                        </div>
-                    </div>
+                                    />
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-8 gap-4">
+                                <div>
+                                    <label className="px-1 text-xs text-gray-600">Cash Advance Number</label>
+                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
+                                        {formData.advanceNumber}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="px-1 text-xs text-gray-600">Requested By</label>
+                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
+                                        {formData.requestedBy}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="px-1 text-xs text-gray-600">Department</label>
+                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
+                                        {formData.department}
+                                    </div>
+                                </div><div>
+                                    <label className="px-1 text-xs text-gray-600">Business Unit</label>
+                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
+                                        {formData.businessUnit}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="px-1 text-xs text-gray-600">Request Date</label>
+                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
+                                        {formatLongDate(formData.advanceDate)}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="px-1 text-xs text-gray-600">Date Needed</label>
+                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
+                                        {formatLongDate(formData.dateNeeded)}
+                                    </div>
+                                </div>
+                                <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="col-span-1 md:col-span-2">
+                                        <label className="px-1 text-xs text-gray-600">Date Coverage</label>
+                                        <div className={` border-b border-gray-200 flex items-center justify-between gap-2 px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900`}>
+                                            {formatLongDate(formData.startDate)}
+                                            <span className="text-gray-500">—</span>
+                                            {formatLongDate(formData.endDate)}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-span-1 md:col-span-4">
+                                    <label className="px-1 text-xs text-gray-600">Purpose</label>
+                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                                        {formData.purpose || '-'}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                 </CardContent>
             </Card>
 
@@ -686,7 +700,7 @@ const CashAdvanceForm = (props) => {
             </Card>
 
             <div className="flex gap-4 justify-end">
-                {!viewOnly ? (
+                {!viewOnly && (
                     <>
                         <Button
                             variant="secondary"
@@ -713,7 +727,7 @@ const CashAdvanceForm = (props) => {
                             {isSubmitting ? 'Submitting…' : 'Submit Request'}
                         </Button>
                     </>
-                ) : (!hideCloseButton && <Button variant="primary" onClick={onClose || (() => navigate('/my-requests'))}>Close</Button>)}
+                )}
             </div>
         </div>
     );

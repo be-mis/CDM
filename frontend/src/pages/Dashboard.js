@@ -60,8 +60,6 @@ const Dashboard = () => {
     const path = location.pathname;
     if (path === '/dashboard' || path === '/') {
       setCurrentView('dashboard');
-    } else if (path.includes('manager-dashboard')) {
-      setCurrentView('manager-dashboard');
     } else if (path.includes('accounting-dashboard')) {
       setCurrentView('accounting-dashboard');
     } else if (path.includes('my-requests')) {
@@ -103,7 +101,6 @@ const Dashboard = () => {
   // Menu Items
   const allMenuItems = [
     { text: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" />, view: 'dashboard', path: '/dashboard', key: 'dashboard' },
-    { text: 'Manager Dashboard', icon: <Users className="w-5 h-5" />, view: 'manager-dashboard', path: '/manager-dashboard', key: 'manager-dashboard', adminOnly: true },
     { text: 'Accounting Dashboard', icon: <TrendingUp className="w-5 h-5" />, view: 'accounting-dashboard', path: '/accounting-dashboard', key: 'accounting-dashboard', adminOnly: true },
     { text: 'My Requests', icon: <ClipboardList className="w-5 h-5" />, view: 'my-requests', path: '/my-requests', key: 'my-requests' },
     { text: 'Cash Advance Form', icon: <HandCoins className="w-5 h-5" />, view: 'cash-advance', path: '/cash-advance', key: 'cash-advance' },
@@ -180,16 +177,6 @@ const Dashboard = () => {
         }
         return <AuditLogs />;
 
-      case 'manager-dashboard':
-        if (user?.role !== 'admin') {
-          return (
-            <InlineAlert severity="warning">
-              You don't have permission to access Manager Dashboard. Admin access required.
-            </InlineAlert>
-          );
-        }
-        return <ManagerDashboard />;
-
       case 'accounting-dashboard':
         if (user?.role !== 'admin') {
           return (
@@ -222,12 +209,24 @@ const Dashboard = () => {
 
       case 'dashboard':
       default:
-        return <EmployeeDashboard />;
+        return (
+          <div className="space-y-8">
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 md:p-6">
+              <h2 className="text-lg font-bold text-gray-900 mb-4">My Requests</h2>
+              <EmployeeDashboard />
+            </div>
+            {user?.isApprover && (
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 md:p-6">
+                <h2 className="text-lg font-bold text-gray-900 mb-4">Pending Approvals (Manager)</h2>
+                <ManagerDashboard />
+              </div>
+            )}
+          </div>
+        );
     }
   };
 
   const getTitle = () => {
-    if (currentView === 'manager-dashboard') return 'Manager Dashboard';
     if (currentView === 'accounting-dashboard') return 'Accounting Dashboard';
     if (currentView === 'profile') return 'My Profile';
     if (currentView === 'my-requests') return 'My Requests';
@@ -353,9 +352,15 @@ const Dashboard = () => {
         <div className="h-16" /> {/* Spacer for fixed header */}
         <div className="flex-1 p-4 md:p-8 max-w-[1400px] mx-auto w-full">
           <PaymentRequirementModal />
-          <div key={currentView} className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 md:p-6">
-            {renderCurrentView()}
-          </div>
+          {currentView === 'dashboard' ? (
+            <div key={currentView}>
+              {renderCurrentView()}
+            </div>
+          ) : (
+            <div key={currentView} className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 md:p-6">
+              {renderCurrentView()}
+            </div>
+          )}
         </div>
       </main>
     </div>

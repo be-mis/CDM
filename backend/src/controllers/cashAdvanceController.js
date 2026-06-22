@@ -41,35 +41,20 @@ const createCashAdvance = async (req, res) => {
       liquidationDeadline,
       status,
       items,
-      activities,
       otherItems,
       requestedAmount
     } = req.body;
     // Compute liquidation deadline:
-    // - For travel advances, if activities or endDate provided, use the latest activity end date + 3 days.
+    // - For travel advances, if endDate is provided, use endDate + 3 days.
     // - Otherwise, if status indicates released/disbursed and no deadline provided, default to today + 3 days.
     let computedLiquidationDeadline = liquidationDeadline || null;
     try {
       const statusLower = String(status || '').toLowerCase();
-      if ((advanceType === 'travel' || advanceType === 'Travel') && Array.isArray(activities) && activities.length > 0) {
-        // find latest end date among activities
-        let latest = null;
-        for (const a of activities) {
-          const ed = a.endDate || a.end_date || a.end || null;
-          if (!ed) continue;
-          const dt = new Date(ed);
-          if (!isNaN(dt.getTime())) {
-            if (!latest || dt > latest) latest = dt;
-          }
-        }
-        // fallback to top-level endDate if none found
-        if (!latest && (endDate || end_date)) {
-          const dt = new Date(endDate || end_date);
-          if (!isNaN(dt.getTime())) latest = dt;
-        }
-        if (latest && !computedLiquidationDeadline) {
-          latest.setDate(latest.getDate() + 3);
-          computedLiquidationDeadline = latest.toISOString().split('T')[0];
+      if ((advanceType === 'travel' || advanceType === 'Travel') && endDate && !computedLiquidationDeadline) {
+        const dt = new Date(endDate);
+        if (!isNaN(dt.getTime())) {
+          dt.setDate(dt.getDate() + 3);
+          computedLiquidationDeadline = dt.toISOString().split('T')[0];
         }
       }
 
@@ -169,22 +154,6 @@ const createCashAdvance = async (req, res) => {
       );
     }
 
-    // Insert activities (batch insert for performance)
-    if (activities && Array.isArray(activities) && activities.length > 0) {
-      const activityValues = activities.map(act => [
-        cashAdvanceId,
-        act.destination || null,
-        act.startDate || null,
-        act.endDate || null
-      ]);
-      await connection.query(
-        `INSERT INTO cash_advance_activities (cash_advance_id, destination, start_date, end_date) VALUES ?`,
-        [activityValues]
-      );
-    }
-
-
-
     // If saving as draft, ensure upload folder exists immediately
     try {
       if (status === 'draft') {
@@ -275,7 +244,6 @@ const updateCashAdvance = async (req, res) => {
       liquidationDeadline,
       status,
       items,
-      activities,
       otherItems,
       requestedAmount,
       advanceNumber
@@ -356,23 +324,11 @@ const updateCashAdvance = async (req, res) => {
     let computedLiquidationDeadline = liquidationDeadline || null;
     try {
       const statusLower = String(status || '').toLowerCase();
-      if ((advanceType === 'travel' || advanceType === 'Travel') && Array.isArray(activities) && activities.length > 0) {
-        let latest = null;
-        for (const a of activities) {
-          const ed = a.endDate || a.end_date || a.end || null;
-          if (!ed) continue;
-          const dt = new Date(ed);
-          if (!isNaN(dt.getTime())) {
-            if (!latest || dt > latest) latest = dt;
-          }
-        }
-        if (!latest && (endDate || end_date)) {
-          const dt = new Date(endDate || end_date);
-          if (!isNaN(dt.getTime())) latest = dt;
-        }
-        if (latest && !computedLiquidationDeadline) {
-          latest.setDate(latest.getDate() + 3);
-          computedLiquidationDeadline = latest.toISOString().split('T')[0];
+      if ((advanceType === 'travel' || advanceType === 'Travel') && endDate && !computedLiquidationDeadline) {
+        const dt = new Date(endDate);
+        if (!isNaN(dt.getTime())) {
+          dt.setDate(dt.getDate() + 3);
+          computedLiquidationDeadline = dt.toISOString().split('T')[0];
         }
       }
 
@@ -597,12 +553,6 @@ const getCashAdvanceById = async (req, res) => {
       [id]
     );
 
-    // Get activities
-    const [activities] = await db.query(
-      'SELECT * FROM cash_advance_activities WHERE cash_advance_id = ?',
-      [id]
-    );
-
     // Get attachments
     const [attachments] = await db.query(
       'SELECT * FROM cash_advance_attachments WHERE cash_advance_id = ?',
@@ -615,7 +565,6 @@ const getCashAdvanceById = async (req, res) => {
     const cashAdvance = {
       ...advances[0],
       items,
-      activities,
       otherItems,
       attachments
     };

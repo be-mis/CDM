@@ -137,15 +137,11 @@ const ExpensesBreakdown = ({
         console.log('=== OCR RAW TEXT ===\n',      rawText);
         console.log('=== EXTRACTED FIELDS ===\n', extracted);
 
-        // ✅ Use a callback so we always get the LATEST expenses state,
-        //    not the stale snapshot from when processReceiptFile was called.
         onExpensesChange((latestExpenses) =>
           latestExpenses.map((item) => {
             if (item.id !== itemId) return item;
             return {
               ...item,
-              // ✅ attachment is already set from the first update above,
-              //    so spreading item here preserves it.
               receiptNumber:  extracted.receiptNumber  ?? item.receiptNumber,
               tin:            extracted.tin            ?? item.tin,
               vendor:         extracted.vendor         ?? item.vendor,
@@ -351,8 +347,8 @@ const ExpensesBreakdown = ({
 
               {/* Particulars */}
               <div className="md:col-span-5 relative">
-                <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-500 z-10">
-                  Particular
+                <span className={`absolute -top-2 left-3 bg-white px-1 text-xs z-10 ${errors[`expense_particulars_${item.id}`] ? 'text-red-500' : 'text-gray-500'}`}>
+                  Particular{errors[`expense_particulars_${item.id}`] ? ' *' : ''}
                 </span>
                 <Input
                   fullWidth
@@ -364,13 +360,14 @@ const ExpensesBreakdown = ({
                   }
                   readOnly={viewOnly}
                   placeholder="Enter Particulars"
+                  error={errors[`expense_particulars_${item.id}`]}
                 />
               </div>
 
               {/* Actual Amount */}
               <div className="md:col-span-3 relative">
-                <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-500 z-10">
-                  Actual Amount
+                <span className={`absolute -top-2 left-3 bg-white px-1 text-xs z-10 ${errors[`expense_amount_${item.id}`] ? 'text-red-500' : 'text-gray-500'}`}>
+                  Actual Amount{errors[`expense_amount_${item.id}`] ? ' *' : ''}
                 </span>
                 <CurrencyInput
                   itemId={item.id}
@@ -378,13 +375,14 @@ const ExpensesBreakdown = ({
                   value={item.actualAmount}
                   readOnly={viewOnly}
                   onChange={(raw) => handleChange(item.id, 'actualAmount', raw)}
+                  error={errors[`expense_amount_${item.id}`]}
                 />
               </div>
 
               {/* Receipt attachment */}
               <div className="md:col-span-2 relative">
-                <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-500 z-10">
-                  Receipt
+                <span className={`absolute -top-2 left-3 bg-white px-1 text-xs z-10 ${errors[`expense_receipt_${item.id}`] ? 'text-red-500' : 'text-gray-500'}`}>
+                  Receipt{errors[`expense_receipt_${item.id}`] ? ' *' : ''}
                 </span>
 
                 {!viewOnly ? (
@@ -401,7 +399,7 @@ const ExpensesBreakdown = ({
                       />
                       <label
                         htmlFor={`row-file-upload-${item.id}`}
-                        className={`inline-flex items-center w-full justify-center px-3 py-2 text-xs font-medium rounded-lg text-gray-500 bg-white border border-gray-200 hover:border-gray-300 hover:bg-gray-50 cursor-pointer transition-colors min-h-[38px] ${ocrLoading[item.id] ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        className={`inline-flex items-center w-full justify-center px-3 py-2 text-xs font-medium rounded-lg bg-white border hover:bg-gray-50 cursor-pointer transition-colors min-h-[38px] ${ocrLoading[item.id] ? 'opacity-50 cursor-not-allowed' : ''} ${errors[`expense_receipt_${item.id}`] ? 'border-red-400 text-red-500 hover:border-red-500' : 'text-gray-500 border-gray-200 hover:border-gray-300'}`}
                       >
                         {isMobileDevice() ? (
                           <>

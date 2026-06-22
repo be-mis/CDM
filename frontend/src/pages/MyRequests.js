@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
-  PhilippinePeso, Landmark, FileText, Coins, Eye, Edit2, Trash2, Search,
-  XCircle, AlertTriangle, Receipt, Loader2, RefreshCw, Star
+  HandCoins, Landmark, ReceiptText, Coins, Eye, Edit2, Trash2, Search,
+  XCircle, AlertTriangle, Receipt, Loader2, RefreshCw, Hourglass,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import CashAdvanceForm from '../components/CashAdvanceForm';
 import LiquidationForm from '../components/LiquidationForm';
@@ -16,11 +17,96 @@ import { Alert } from '../components/ui/Alert';
 import { Loading } from '../components/ui/Loading';
 import Tooltip from '../components/ui/Tooltip';
 
+// Reusable pagination control used under each request table
+const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSizeChange }) => {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  if (totalItems === 0) return null;
+
+  const start = (currentPage - 1) * pageSize + 1;
+  const end = Math.min(currentPage * pageSize, totalItems);
+
+  // Build a compact page-number list: first, last, current ± 1, with ellipses
+  const pageNumbers = [];
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || Math.abs(i - currentPage) <= 1) {
+      pageNumbers.push(i);
+    } else if (pageNumbers[pageNumbers.length - 1] !== '...') {
+      pageNumbers.push('...');
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between flex-wrap gap-3 px-2 py-3">
+      <div className="flex items-center gap-3 flex-wrap">
+        <p className="text-sm text-gray-600">
+          Showing <span className="font-medium text-gray-900">{start}</span>–
+          <span className="font-medium text-gray-900">{end}</span> of{' '}
+          <span className="font-medium text-gray-900">{totalItems}</span>
+        </p>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-600 whitespace-nowrap">Rows per page</label>
+          <select
+            value={pageSize}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            className="border border-gray-300 rounded-lg px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
+          >
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+          disabled={currentPage === 1}
+          className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          aria-label="Previous page"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        {pageNumbers.map((p, idx) =>
+          p === '...' ? (
+            <span key={`ellipsis-${idx}`} className="px-2 text-sm text-gray-400">…</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onPageChange(p)}
+              className={`min-w-[2rem] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                p === currentPage
+                  ? 'bg-primary-600 text-white'
+                  : 'text-gray-600 hover:bg-gray-50 border border-gray-300'
+              }`}
+            >
+              {p}
+            </button>
+          )
+        )}
+        <button
+          onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+          disabled={currentPage === totalPages}
+          className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          aria-label="Next page"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const MyRequests = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [tabValue, setTabValue] = useState(0);
+  const TAB_SLUGS = ['cash-advances', 'liquidations', 'reimbursements'];
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tabValue, setTabValue] = useState(() => {
+    const slug = searchParams.get('tab');
+    const idx = TAB_SLUGS.indexOf(slug);
+    return idx !== -1 ? idx : 0;
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [viewLoading, setViewLoading] = useState(false);
@@ -35,6 +121,8 @@ const MyRequests = () => {
   const [confirmAction, setConfirmAction] = useState(''); // 'cancel' | 'delete'
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [retryCount, setRetryCount] = useState({ cashAdvances: 0, liquidations: 0, reimbursements: 0 });
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
 
   // Snackbar handler
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -52,28 +140,29 @@ const MyRequests = () => {
         const data = response.data.data;
         const viewData = {
           id: data.id,
-          reimbursementNumber: data.reimbursement_number || request.refNumber,
-          reimbursementDate:   data.reimbursement_date   || request.submitDate,
-          requestedBy:         data.submitted_by         || request.submittedBy,
-          department:          data.department_id,        // ✅ fix
-          departmentName:      data.department_name,      // ✅ fix
-          businessUnit:        data.business_unit || '',
-          purpose:             data.purpose || '',
-          dateNeeded:          data.date_needed || '',    // ✅ ADD THIS
-          dateCoverageFrom:    data.start_date || data.period_covered_from || '',
-          dateCoverageTo:      data.end_date   || data.period_covered_to   || '',
-          totalAmount:         data.total_amount,
-          paymentMethod:       data.payment_method,
-          gcashName:           data.gcash_name || '',
-          checkNumber:         data.check_number,
-          accountNumber:       data.account_number,
-          remarks:             data.remarks,
-          status:              data.status,
-          expenses:            data.expenses    || [],
-          itinerary:           data.itinerary   || [],
-          attachments:         data.attachments || [],
-          paymentReason:       data.payment_reason || '',
-          release_remarks:     data.release_remarks || '',
+          advanceNumber:    data.advance_number || request.refNumber,
+          advanceDate:      data.advance_date || request.requestDate,
+          requestedBy:      data.requested_by || '',
+          department:       data.department || request.department || '',
+          businessUnit:     data.business_unit || '',
+          purpose:          data.purpose || '',
+          projectName:      data.project_name || '',
+          dateNeeded:       data.date_needed || '',
+          startDate:        data.start_date || '',
+          endDate:          data.end_date || '',
+          dateCoverage:     data.date_coverage || '',
+          requestedAmount:  data.requested_amount,
+          approvedAmount:   data.approved_amount,
+          paymentMethod:    data.payment_method,
+          gcashName:        data.gcash_name || '',
+          accountNumber:    data.account_number,
+          remarks:          data.remarks,
+          status:           data.status,
+          // Budget breakdown rows from the cash_advance_breakdown table
+          items:            data.items       || [],
+          attachments:      data.attachments || [],
+          paymentReason:    data.payment_reason || '',
+          release_remarks:  data.release_remarks || '',
         };
         setSelectedRequest(viewData);
       } else {
@@ -270,27 +359,28 @@ const MyRequests = () => {
         const data = response.data.data;
         const editData = {
           id: data.id,
-          reimbursementNumber: data.reimbursement_number,
-          reimbursementDate:   data.reimbursement_date,
-          requestedBy:         data.submitted_by,
-          department:          data.department_id,       // ✅ was: data.department
-          departmentName:      data.department_name,     // ✅ was: data.department
-          businessUnit:        data.business_unit || '',
-          purpose:             data.purpose || '',
-          dateNeeded:          data.date_needed || '',   // ✅ ADD THIS — was missing entirely
-          dateCoverageFrom:    data.start_date || '',
-          dateCoverageTo:      data.end_date   || '',
-          totalAmount:         data.total_amount,
-          paymentMethod:       data.payment_method,
-          gcashName:           data.gcash_name || '',
-          accountNumber:       data.account_number,
-          remarks:             data.remarks,
-          status:              data.status,
-          expenses:            data.expenses    || [],
-          itinerary:           data.itinerary   || [],
-          attachments:         data.attachments || [],
-          paymentReason:       data.payment_reason || '',
-          release_remarks:     data.release_remarks || '',
+          advanceNumber:    data.advance_number,
+          advanceDate:      data.advance_date,
+          requestedBy:      data.requested_by || '',
+          department:       data.department || '',
+          businessUnit:     data.business_unit || '',
+          purpose:          data.purpose || '',
+          projectName:      data.project_name || '',
+          dateNeeded:       data.date_needed || '',
+          startDate:        data.start_date || '',
+          endDate:          data.end_date || '',
+          dateCoverage:     data.date_coverage || '',
+          requestedAmount:  data.requested_amount,
+          paymentMethod:    data.payment_method,
+          gcashName:        data.gcash_name || '',
+          accountNumber:    data.account_number,
+          remarks:          data.remarks,
+          status:           data.status,
+          // Budget breakdown rows from the cash_advance_breakdown table
+          items:            data.items       || [],
+          attachments:      data.attachments || [],
+          paymentReason:    data.payment_reason || '',
+          release_remarks:  data.release_remarks || '',
         };
 
         navigate('/cash-advance', { state: { editData } });
@@ -593,8 +683,7 @@ const MyRequests = () => {
     fetchCashAdvances();
     fetchLiquidations();
     fetchReimbursements();
-    if (location?.state?.tab !== undefined) setTabValue(location.state.tab);
-  }, [location]);
+  }, []);
 
   const formatStatus = (status) => {
     const statusMap = {
@@ -622,9 +711,18 @@ const MyRequests = () => {
     return s;
   };
 
+  const tabKeyMap = { 0: 'cashAdvances', 1: 'liquidations', 2: 'reimbursements' };
+
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
     setSearchTerm('');
+    setPage(prev => ({ ...prev, [tabKeyMap[newValue]]: 1 }));
+    setSearchParams({ tab: TAB_SLUGS[newValue] }, { replace: true });
+  };
+
+  const handlePageSizeChange = (newSize) => {
+    setPageSize(newSize);
+    setPage({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
   };
 
   const getStatusColor = (status) => {
@@ -664,6 +762,38 @@ const MyRequests = () => {
     );
   }, [reimbursements, searchTerm]);
 
+  // Paginated slices for each table, sized by the shared pageSize selector
+  const paginatedCashAdvances = useMemo(() => {
+    const start = (page.cashAdvances - 1) * pageSize;
+    return filteredCashAdvances.slice(start, start + pageSize);
+  }, [filteredCashAdvances, page.cashAdvances, pageSize]);
+
+  const paginatedLiquidations = useMemo(() => {
+    const start = (page.liquidations - 1) * pageSize;
+    return filteredLiquidations.slice(start, start + pageSize);
+  }, [filteredLiquidations, page.liquidations, pageSize]);
+
+  const paginatedReimbursements = useMemo(() => {
+    const start = (page.reimbursements - 1) * pageSize;
+    return filteredReimbursements.slice(start, start + pageSize);
+  }, [filteredReimbursements, page.reimbursements, pageSize]);
+
+  // Clamp each tab's page if data shrinks (e.g. after a delete) and the current page no longer exists
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(filteredCashAdvances.length / pageSize));
+    if (page.cashAdvances > maxPage) setPage(prev => ({ ...prev, cashAdvances: maxPage }));
+  }, [filteredCashAdvances.length, page.cashAdvances, pageSize]);
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(filteredLiquidations.length / pageSize));
+    if (page.liquidations > maxPage) setPage(prev => ({ ...prev, liquidations: maxPage }));
+  }, [filteredLiquidations.length, page.liquidations, pageSize]);
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(filteredReimbursements.length / pageSize));
+    if (page.reimbursements > maxPage) setPage(prev => ({ ...prev, reimbursements: maxPage }));
+  }, [filteredReimbursements.length, page.reimbursements, pageSize]);
+
   // Statistics
   const stats = useMemo(() => ({
     totalCashAdvances: cashAdvances.length,
@@ -674,8 +804,8 @@ const MyRequests = () => {
   }), [cashAdvances, liquidations, reimbursements]);
 
   const tabs = [
-    { label: `Cash Advances (${cashAdvances.length})`, icon: <PhilippinePeso className="w-4 h-4" /> },
-    { label: `Liquidations (${liquidations.length})`, icon: <FileText className="w-4 h-4" /> },
+    { label: `Cash Advances (${cashAdvances.length})`, icon: <HandCoins className="w-4 h-4" /> },
+    { label: `Liquidations (${liquidations.length})`, icon: <ReceiptText className="w-4 h-4" /> },
     { label: `Reimbursements (${reimbursements.length})`, icon: <Coins className="w-4 h-4" /> }
   ];
 
@@ -704,7 +834,7 @@ const MyRequests = () => {
                 <p className="text-white/90 text-sm font-semibold mb-2">Cash Advances</p>
                 <h3 className="text-4xl font-bold">{stats.totalCashAdvances}</h3>
               </div>
-              <PhilippinePeso className="w-12 h-12 opacity-30" />
+              <HandCoins className="w-12 h-12 opacity-30" />
             </div>
           </CardContent>
         </Card>
@@ -716,7 +846,7 @@ const MyRequests = () => {
                 <p className="text-white/90 text-sm font-semibold mb-2">Liquidations</p>
                 <h3 className="text-4xl font-bold">{stats.totalLiquidations}</h3>
               </div>
-              <FileText className="w-12 h-12 opacity-30" />
+              <ReceiptText className="w-12 h-12 opacity-30" />
             </div>
           </CardContent>
         </Card>
@@ -740,7 +870,7 @@ const MyRequests = () => {
                 <p className="text-white/90 text-sm font-semibold mb-2">Pending Approval</p>
                 <h3 className="text-4xl font-bold">{stats.pendingApprovals}</h3>
               </div>
-              <Star className="w-12 h-12 opacity-30" />
+              <Hourglass className="w-12 h-12 opacity-30" />
             </div>
           </CardContent>
         </Card>
@@ -776,7 +906,10 @@ const MyRequests = () => {
               type="text"
               placeholder="Search by reference number or purpose..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPage(prev => ({ ...prev, [tabKeyMap[tabValue]]: 1 }));
+              }}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm outline-none transition-colors"
             />
           </div>
@@ -810,7 +943,7 @@ const MyRequests = () => {
                       </td>
                     </tr>
                   ) : (
-                    filteredCashAdvances.map((request) => (
+                    paginatedCashAdvances.map((request) => (
                       <tr
                         key={request.id}
                         className={`hover:bg-gray-50 transition-colors ${
@@ -888,6 +1021,17 @@ const MyRequests = () => {
             </div>
           )}
 
+          {/* Cash Advances Pagination */}
+          {tabValue === 0 && (
+            <Pagination
+              currentPage={page.cashAdvances}
+              totalItems={filteredCashAdvances.length}
+              pageSize={pageSize}
+              onPageChange={(p) => setPage(prev => ({ ...prev, cashAdvances: p }))}
+              onPageSizeChange={handlePageSizeChange}
+            />
+          )}
+
           {/* Liquidations Tab Panel */}
           {tabValue === 1 && (
             <div className="overflow-x-auto border border-gray-200 rounded-lg">
@@ -911,14 +1055,14 @@ const MyRequests = () => {
                         <Loading message="Loading liquidations..." />
                       </td>
                     </tr>
-                  ) : liquidations.length === 0 ? (
+                  ) : filteredLiquidations.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-12 text-center text-gray-500 text-sm">
                         No liquidations found
                       </td>
                     </tr>
                   ) : (
-                    filteredLiquidations.map((request) => (
+                    paginatedLiquidations.map((request) => (
                       <tr key={request.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-4 text-sm font-semibold font-mono text-gray-900">{request.refNumber}</td>
                         <td className="px-4 py-4 text-sm font-mono text-gray-600">{request.cashAdvanceRef}</td>
@@ -980,6 +1124,17 @@ const MyRequests = () => {
             </div>
           )}
 
+          {/* Liquidations Pagination */}
+          {tabValue === 1 && (
+            <Pagination
+              currentPage={page.liquidations}
+              totalItems={filteredLiquidations.length}
+              pageSize={pageSize}
+              onPageChange={(p) => setPage(prev => ({ ...prev, liquidations: p }))}
+              onPageSizeChange={handlePageSizeChange}
+            />
+          )}
+
           {/* Reimbursements Tab Panel */}
           {tabValue === 2 && (
             <div className="overflow-x-auto border border-gray-200 rounded-lg">
@@ -1008,7 +1163,7 @@ const MyRequests = () => {
                       </td>
                     </tr>
                   ) : (
-                    filteredReimbursements.map((request) => (
+                    paginatedReimbursements.map((request) => (
                       <tr key={request.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-4 text-sm font-semibold font-mono text-gray-900">{request.refNumber}</td>
                         <td className="px-4 py-4 text-sm font-semibold text-right text-gray-900">
@@ -1059,6 +1214,17 @@ const MyRequests = () => {
                 </tbody>
               </table>
             </div>
+          )}
+
+          {/* Reimbursements Pagination */}
+          {tabValue === 2 && (
+            <Pagination
+              currentPage={page.reimbursements}
+              totalItems={filteredReimbursements.length}
+              pageSize={pageSize}
+              onPageChange={(p) => setPage(prev => ({ ...prev, reimbursements: p }))}
+              onPageSizeChange={handlePageSizeChange}
+            />
           )}
         </CardContent>
       </Card>

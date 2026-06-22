@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
-    CheckCircle, XCircle, Eye, X, Clock, DollarSign, Receipt, Coins, List
+    CheckCircle, XCircle, Eye, X, Clock, DollarSign, Receipt, Coins, List,
+    Search, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import api from '../api';
 import { formatLongDate } from '../utils/formatters';
@@ -14,8 +16,92 @@ import Input from '../components/ui/Input';
 import { Alert } from '../components/ui/Alert';
 import { Loading } from '../components/ui/Loading';
 
+// Reusable pagination control
+const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSizeChange }) => {
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    if (totalItems === 0) return null;
+
+    const start = (currentPage - 1) * pageSize + 1;
+    const end = Math.min(currentPage * pageSize, totalItems);
+
+    const pageNumbers = [];
+    for (let i = 1; i <= totalPages; i++) {
+        if (i === 1 || i === totalPages || Math.abs(i - currentPage) <= 1) {
+            pageNumbers.push(i);
+        } else if (pageNumbers[pageNumbers.length - 1] !== '...') {
+            pageNumbers.push('...');
+        }
+    }
+
+    return (
+        <div className="flex items-center justify-between flex-wrap gap-3 px-2 py-3">
+            <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-sm text-gray-600">
+                    Showing <span className="font-medium text-gray-900">{start}</span>–
+                    <span className="font-medium text-gray-900">{end}</span> of{' '}
+                    <span className="font-medium text-gray-900">{totalItems}</span>
+                </p>
+                <div className="flex items-center gap-2">
+                    <label className="text-sm text-gray-600 whitespace-nowrap">Rows per page</label>
+                    <select
+                        value={pageSize}
+                        onChange={(e) => onPageSizeChange(Number(e.target.value))}
+                        className="border border-gray-300 rounded-lg px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
+                    >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                    </select>
+                </div>
+            </div>
+            <div className="flex items-center gap-1">
+                <button
+                    onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+                    disabled={currentPage === 1}
+                    className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    aria-label="Previous page"
+                >
+                    <ChevronLeft className="w-4 h-4" />
+                </button>
+                {pageNumbers.map((p, idx) =>
+                    p === '...' ? (
+                        <span key={`ellipsis-${idx}`} className="px-2 text-sm text-gray-400">…</span>
+                    ) : (
+                        <button
+                            key={p}
+                            onClick={() => onPageChange(p)}
+                            className={`min-w-[2rem] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                p === currentPage
+                                    ? 'bg-primary-600 text-white'
+                                    : 'text-gray-600 hover:bg-gray-50 border border-gray-300'
+                            }`}
+                        >
+                            {p}
+                        </button>
+                    )
+                )}
+                <button
+                    onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+                    disabled={currentPage === totalPages}
+                    className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    aria-label="Next page"
+                >
+                    <ChevronRight className="w-4 h-4" />
+                </button>
+            </div>
+        </div>
+    );
+};
+
 const Approvals = () => {
-    const [activeTab, setActiveTab] = useState(0);
+    const TAB_SLUGS = ['cash-advances', 'liquidations', 'reimbursements'];
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [activeTab, setActiveTab] = useState(() => {
+        const slug = searchParams.get('tab');
+        const idx = TAB_SLUGS.indexOf(slug);
+        return idx !== -1 ? idx : 0;
+    });
     const [loading, setLoading] = useState(false);
     const [data, setData] = useState({ cashAdvances: [], liquidations: [], reimbursements: [] });
     const [selectedRequest, setSelectedRequest] = useState(null);
@@ -24,6 +110,11 @@ const Approvals = () => {
     const [actionType, setActionType] = useState('approve'); // 'approve' or 'reject'
     const [remarks, setRemarks] = useState('');
     const [notification, setNotification] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [pageSize, setPageSize] = useState(10);
+    const [page, setPage] = useState({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
+
+    const tabKeyMap = { 0: 'cashAdvances', 1: 'liquidations', 2: 'reimbursements' };
 
     const fetchPendingApprovals = useCallback(async () => {
         try {
@@ -98,9 +189,85 @@ const Approvals = () => {
         return null;
     };
 
-    const renderTable = (items) => (
-        <div className="overflow-x-auto">
-            <table className="w-full">
+    const handleTabChange = (index) => {
+        setActiveTab(index);
+        setSearchTerm('');
+        setPage(prev => ({ ...prev, [tabKeyMap[index]]: 1 }));
+        setSearchParams({ tab: TAB_SLUGS[index] }, { replace: true });
+    };
+
+    const handlePageSizeChange = (newSize) => {
+        setPageSize(newSize);
+        setPage({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
+    };
+
+    // Filtered lists — search by ref number, requester name, or purpose
+    const filteredCashAdvances = useMemo(() => {
+        if (!searchTerm) return data.cashAdvances;
+        const q = searchTerm.toLowerCase();
+        return data.cashAdvances.filter(item =>
+            (item.advance_number || '').toLowerCase().includes(q) ||
+            (item.requested_by || '').toLowerCase().includes(q) ||
+            (item.purpose || '').toLowerCase().includes(q)
+        );
+    }, [data.cashAdvances, searchTerm]);
+
+    const filteredLiquidations = useMemo(() => {
+        if (!searchTerm) return data.liquidations;
+        const q = searchTerm.toLowerCase();
+        return data.liquidations.filter(item =>
+            (item.liquidation_number || '').toLowerCase().includes(q) ||
+            (item.submitted_by || '').toLowerCase().includes(q) ||
+            (item.purpose || '').toLowerCase().includes(q)
+        );
+    }, [data.liquidations, searchTerm]);
+
+    const filteredReimbursements = useMemo(() => {
+        if (!searchTerm) return data.reimbursements;
+        const q = searchTerm.toLowerCase();
+        return data.reimbursements.filter(item =>
+            (item.reimbursement_number || '').toLowerCase().includes(q) ||
+            (item.submitted_by || '').toLowerCase().includes(q) ||
+            (item.purpose || '').toLowerCase().includes(q)
+        );
+    }, [data.reimbursements, searchTerm]);
+
+    // Paginated slices
+    const paginatedCashAdvances = useMemo(() => {
+        const start = (page.cashAdvances - 1) * pageSize;
+        return filteredCashAdvances.slice(start, start + pageSize);
+    }, [filteredCashAdvances, page.cashAdvances, pageSize]);
+
+    const paginatedLiquidations = useMemo(() => {
+        const start = (page.liquidations - 1) * pageSize;
+        return filteredLiquidations.slice(start, start + pageSize);
+    }, [filteredLiquidations, page.liquidations, pageSize]);
+
+    const paginatedReimbursements = useMemo(() => {
+        const start = (page.reimbursements - 1) * pageSize;
+        return filteredReimbursements.slice(start, start + pageSize);
+    }, [filteredReimbursements, page.reimbursements, pageSize]);
+
+    // Clamp pages when data shrinks
+    useEffect(() => {
+        const maxPage = Math.max(1, Math.ceil(filteredCashAdvances.length / pageSize));
+        if (page.cashAdvances > maxPage) setPage(prev => ({ ...prev, cashAdvances: maxPage }));
+    }, [filteredCashAdvances.length, page.cashAdvances, pageSize]);
+
+    useEffect(() => {
+        const maxPage = Math.max(1, Math.ceil(filteredLiquidations.length / pageSize));
+        if (page.liquidations > maxPage) setPage(prev => ({ ...prev, liquidations: maxPage }));
+    }, [filteredLiquidations.length, page.liquidations, pageSize]);
+
+    useEffect(() => {
+        const maxPage = Math.max(1, Math.ceil(filteredReimbursements.length / pageSize));
+        if (page.reimbursements > maxPage) setPage(prev => ({ ...prev, reimbursements: maxPage }));
+    }, [filteredReimbursements.length, page.reimbursements, pageSize]);
+
+    const renderTable = (items, filteredTotal, tabKey) => (
+        <div>
+            <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                <table className="w-full min-w-[800px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                         <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Reference No.</th>
@@ -115,7 +282,9 @@ const Approvals = () => {
                 <tbody className="divide-y divide-gray-200">
                     {items.length === 0 ? (
                         <tr>
-                            <td colSpan="7" className="py-8 text-center text-gray-500">No pending requests</td>
+                            <td colSpan="7" className="py-8 text-center text-gray-500">
+                                {searchTerm ? 'No results match your search' : 'No pending requests'}
+                            </td>
                         </tr>
                     ) : (
                         items.map((row) => (
@@ -175,6 +344,14 @@ const Approvals = () => {
                     )}
                 </tbody>
             </table>
+        </div>
+            <Pagination
+                currentPage={page[tabKey]}
+                totalItems={filteredTotal}
+                pageSize={pageSize}
+                onPageChange={(p) => setPage(prev => ({ ...prev, [tabKey]: p }))}
+                onPageSizeChange={handlePageSizeChange}
+            />
         </div>
     );
 
@@ -262,7 +439,7 @@ const Approvals = () => {
                         {tabs.map((tab, index) => (
                             <button
                                 key={index}
-                                onClick={() => setActiveTab(index)}
+                                onClick={() => handleTabChange(index)}
                                 className={`px-6 py-4 text-sm font-semibold border-b-2 transition-colors ${
                                     activeTab === index
                                         ? 'border-primary-600 text-primary-600'
@@ -279,10 +456,25 @@ const Approvals = () => {
                 {loading ? (
                     <Loading message="Loading approvals..." />
                 ) : (
-                    <div className="p-6">
-                        {activeTab === 0 && renderTable(data.cashAdvances)}
-                        {activeTab === 1 && renderTable(data.liquidations)}
-                        {activeTab === 2 && renderTable(data.reimbursements)}
+                    <div className="p-6 space-y-4">
+                        {/* Search Bar */}
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <input
+                                type="text"
+                                placeholder="Search by reference number, requester, or purpose..."
+                                value={searchTerm}
+                                onChange={(e) => {
+                                    setSearchTerm(e.target.value);
+                                    setPage(prev => ({ ...prev, [tabKeyMap[activeTab]]: 1 }));
+                                }}
+                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm outline-none transition-colors"
+                            />
+                        </div>
+
+                        {activeTab === 0 && renderTable(paginatedCashAdvances, filteredCashAdvances.length, 'cashAdvances')}
+                        {activeTab === 1 && renderTable(paginatedLiquidations, filteredLiquidations.length, 'liquidations')}
+                        {activeTab === 2 && renderTable(paginatedReimbursements, filteredReimbursements.length, 'reimbursements')}
                     </div>
                 )}
             </Card>
@@ -330,6 +522,7 @@ const Approvals = () => {
                 onClose={() => setActionOpen(false)}
                 title={actionType === 'approve' ? 'Approve Request' : 'Reject Request'}
                 maxWidth="sm"
+                className="text-center "
                 actions={
                     <>
                         <Button variant="secondary" onClick={() => setActionOpen(false)}>Cancel</Button>
@@ -354,6 +547,7 @@ const Approvals = () => {
                         label="Reason for Rejection"
                         multiline
                         rows={3}
+                        fullWidth
                         value={remarks}
                         onChange={(e) => setRemarks(e.target.value)}
                         required

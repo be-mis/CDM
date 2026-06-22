@@ -37,6 +37,7 @@ const ItinerarySheet = ({
   itineraryItems,
   onItineraryItemsChange,
   viewOnly = false,
+  errors = {},
   minDate,
   maxDate,
 }) => {
@@ -182,8 +183,8 @@ const ItinerarySheet = ({
 
                 {/* Date */}
                 <div className="md:col-span-2 relative">
-                  <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-500 z-10">
-                    Date
+                  <span className={`absolute -top-2 left-3 bg-white px-1 text-xs z-10 ${errors[`itinerary_date_${item.id}`] ? 'text-red-500' : 'text-gray-500'}`}>
+                    Date{errors[`itinerary_date_${item.id}`] ? ' *' : ''}
                   </span>
                   {!viewOnly ? (
                     <Input
@@ -193,6 +194,7 @@ const ItinerarySheet = ({
                       onChange={(e) => updateItem(item.id, 'dateCovered', e.target.value)}
                       min={minDate || undefined}
                       max={maxDate || undefined}
+                      error={errors[`itinerary_date_${item.id}`]}
                     />
                   ) : (
                     <Input fullWidth value={formatLongDate(item.dateCovered)} readOnly />
@@ -201,8 +203,8 @@ const ItinerarySheet = ({
 
                 {/* Store Name */}
                 <div className="md:col-span-5 relative">
-                  <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-500 z-10">
-                    Store Name
+                  <span className={`absolute -top-2 left-3 bg-white px-1 text-xs z-10 ${errors[`itinerary_storeName_${item.id}`] ? 'text-red-500' : 'text-gray-500'}`}>
+                    Store Name{errors[`itinerary_storeName_${item.id}`] ? ' *' : ''}
                   </span>
                   <Input
                     fullWidth
@@ -214,13 +216,14 @@ const ItinerarySheet = ({
                     }
                     readOnly={viewOnly}
                     placeholder="Store / Merchant"
+                    error={errors[`itinerary_storeName_${item.id}`]}
                   />
                 </div>
 
                 {/* Amount */}
                 <div className="md:col-span-3 relative">
-                  <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-500 z-10">
-                    Amount
+                  <span className={`absolute -top-2 left-3 bg-white px-1 text-xs z-10 ${errors[`itinerary_amount_${item.id}`] ? 'text-red-500' : 'text-gray-500'}`}>
+                    Amount{errors[`itinerary_amount_${item.id}`] ? ' *' : ''}
                   </span>
                   <Input
                     fullWidth
@@ -234,6 +237,7 @@ const ItinerarySheet = ({
                     }
                     readOnly={viewOnly}
                     startAdornment={<span className="text-gray-500">₱</span>}
+                    error={errors[`itinerary_amount_${item.id}`]}
                   />
                 </div>
 
@@ -307,13 +311,13 @@ const ItinerarySheet = ({
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-9 gap-4">
                   {[
-                    { field: 'fromPlace',             label: 'From',                   span: 3, placeholder: 'Origin'                 },
-                    { field: 'toPlace',               label: 'To',                     span: 3, placeholder: 'Destination'            },
-                    { field: 'modeOfTransportation',  label: 'Mode of Transportation', span: 3, placeholder: 'e.g., Car, Bus, Flight' },
-                  ].map(({ field, label, span, placeholder }) => (
+                    { field: 'fromPlace',             label: 'From',                   span: 3, placeholder: 'Origin',                 errorKey: 'fromPlace'  },
+                    { field: 'toPlace',               label: 'To',                     span: 3, placeholder: 'Destination',            errorKey: 'toPlace'    },
+                    { field: 'modeOfTransportation',  label: 'Mode of Transportation', span: 3, placeholder: 'e.g., Car, Bus, Flight', errorKey: 'mode'       },
+                  ].map(({ field, label, span, placeholder, errorKey }) => (
                     <div key={field} className={`md:col-span-${span} relative`}>
-                      <span className="absolute -top-2 left-3 bg-gray-50 px-1 text-xs text-gray-500 z-10">
-                        {label}
+                      <span className={`absolute -top-2 left-3 bg-gray-50 px-1 text-xs z-10 ${errors[`itinerary_${errorKey}_${item.id}`] ? 'text-red-500' : 'text-gray-500'}`}>
+                        {label}{errors[`itinerary_${errorKey}_${item.id}`] ? ' *' : ''}
                       </span>
                       <Input
                         fullWidth
@@ -325,6 +329,7 @@ const ItinerarySheet = ({
                         }
                         readOnly={viewOnly}
                         placeholder={placeholder}
+                        error={errors[`itinerary_${errorKey}_${item.id}`]}
                       />
                     </div>
                   ))}

@@ -71,7 +71,7 @@ const Modal = ({
           
           {/* Actions */}
           {actions && (
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-lg">
               {actions}
             </div>
           )}

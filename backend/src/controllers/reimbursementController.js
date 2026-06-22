@@ -165,13 +165,13 @@ const createReimbursement = async (req, res) => {
 
     const [headerResult] = await conn.query(
       `INSERT INTO reimbursements
-         (reimbursement_number, reimbursement_date, start_date, end_date,
+        (reimbursement_number, reimbursement_date, start_date, end_date,
           submitted_by, department_id, business_unit, date_needed,
-          total_actual_amount,
-          payment_method, gcash_name, account_number,
+          purpose,
+          total_actual_amount, payment_method, gcash_name, account_number,
           remarks, status, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
         reimbursementNumber || generateReimbursementNumber(),
         reimbursementDate   || new Date().toISOString().split('T')[0],
         dateCoverageFrom    || null,
@@ -180,6 +180,7 @@ const createReimbursement = async (req, res) => {
         resolvedDepartmentId,
         businessUnit        || null,
         dateNeeded          || null,
+        purpose             || null,
         parseFloat(totalAmount) || 0,
         paymentMethod       || null,
         gcashName           || null,
@@ -273,6 +274,7 @@ const updateReimbursement = async (req, res) => {
          end_date            = ?,
          department_id       = ?,
          date_needed         = ?,
+         purpose             = ?,
          business_unit       = ?,
          total_actual_amount = ?,
          payment_method      = ?,
@@ -288,6 +290,7 @@ const updateReimbursement = async (req, res) => {
         dateCoverageTo           || null,
         resolvedDepartmentId,
         dateNeeded               || null,
+        purpose                  || null,
         businessUnit             || null,
         parseFloat(totalAmount)  || 0,
         paymentMethod            || null,

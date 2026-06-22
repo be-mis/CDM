@@ -35,7 +35,7 @@ const getPendingApprovals = async (req, res) => {
         // 2. Fetch pending Cash Advances with calculated total from items
         const [cashAdvances] = await pool.query(
             `SELECT ca.*, d.name as department_name,
-             COALESCE((SELECT SUM(estimated_amount) FROM cash_advance_items WHERE cash_advance_id = ca.id), ca.requested_amount) as calculated_amount
+             COALESCE((SELECT SUM(total_amount) FROM cash_advance_breakdown WHERE cash_advance_id = ca.id), ca.requested_amount) as calculated_amount
        FROM cash_advances ca
        JOIN departments d ON ca.department_id = d.id
        WHERE ca.status = 'pending' AND ca.department_id IN (?)`,
@@ -54,11 +54,13 @@ const getPendingApprovals = async (req, res) => {
         // 4. Fetch pending Reimbursements
         const [reimbursements] = await pool.query(
             `SELECT r.*, d.name as department_name
-       FROM reimbursements r
-       JOIN departments d ON r.department_id = d.id
-       WHERE r.status = 'pending' AND r.department_id IN (?)`,
+            FROM reimbursements r
+            LEFT JOIN departments d ON r.department_id = d.id
+            WHERE r.status = 'pending'
+            AND r.department_id IS NOT NULL
+            AND r.department_id IN (?)`,
             [deptIds]
-        );
+        );  
 
         res.status(200).json({
             success: true,

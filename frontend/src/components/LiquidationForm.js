@@ -855,6 +855,12 @@ const LiquidationForm = (props) => {
                 </div>
               </div>
               <div>
+                <label className="px-1 text-xs text-gray-600">Cash Advance to Liquidate</label>
+                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
+                  {`${editData.cash_advance_number || editData.cashAdvanceNumber}`}
+                </div>
+              </div>
+              <div>
                 <label className="px-1 text-xs text-gray-600">Submitted By</label>
                 <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
                   {formData.submittedBy}
@@ -886,12 +892,6 @@ const LiquidationForm = (props) => {
                     <span className="text-gray-500">—</span>
                     {formatLongDate(formData.dateCoverageTo)}
                   </div>
-                </div>
-              </div>
-              <div>
-                <label className="px-1 text-xs text-gray-600">Cash Advance to Liquidate</label>
-                <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
-                  {`${editData.cash_advance_number || editData.cashAdvanceNumber}`}
                 </div>
               </div>
             </div>
@@ -1079,11 +1079,11 @@ const LiquidationForm = (props) => {
             >
               {submitting ? 'Submitting…' : 'Submit'}
             </Button>
-            {onClose && (
+            {/* {onClose && (
               <Button variant="ghost" onClick={onClose} disabled={submitting}>
                 {isEditMode ? 'Cancel' : 'Close'}
               </Button>
-            )}
+            )} */}
           </>
         )}
       </div>

@@ -76,15 +76,17 @@ const mapIncomingItinerary = (it, idx) => ({
       : null,
 });
 
-// Five business days from today (used as the minimum "Date Needed")
-const getMinDateNeeded = () => {
-  let d = new Date();
-  let count = 0;
-  while (count < 5) {
-    d.setDate(d.getDate() + 1);
-    const day = d.getDay();
-    if (day !== 0 && day !== 6) count++;
+// 7 calendar days from the request date (used as the minimum "Date Needed")
+const getMinDateNeeded = (requestDate) => {
+  let d;
+  if (requestDate) {
+    // Parse "YYYY-MM-DD" as local time to avoid UTC off-by-one shifts
+    const [y, m, day] = requestDate.split('-').map(Number);
+    d = new Date(y, m - 1, day);
+  } else {
+    d = new Date();
   }
+  d.setDate(d.getDate() + 7);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
@@ -152,8 +154,8 @@ const ReimbursementForm = (props) => {
       reimbursementDate:   new Date().toISOString().split('T')[0],
       dateNeeded:          '',
       requestedBy:         user?.name       || '',
-      department:     user?.department_id || '',
-      departmentName: user?.department    || '',
+      department:     user?.department_id || user?.departmentId || '',
+      departmentName: user?.department_name || user?.departmentName || user?.department || '',
       employeeId:          '',
       businessUnit:        'EPC',
       purpose:             '',
@@ -250,17 +252,25 @@ const ReimbursementForm = (props) => {
     if (!editData) generateReimbursementNumber();
   }, [fetchDepartments, generateReimbursementNumber, editData]);
 
-  // After fetchDepartments runs, resolve departmentName from the departments list
-  // if it wasn't returned directly on editData (covers the race-condition case).
+  // After fetchDepartments runs, resolve department ID <-> name for both new and edit forms.
   useEffect(() => {
-    if (!editData || departments.length === 0) return;
+    if (departments.length === 0) return;
     setFormData((prev) => {
-      if (prev.departmentName && prev.departmentName.trim() !== '') return prev;
-      if (!prev.department) return prev;
-      const found = departments.find((d) => String(d.id) === String(prev.department));
-      return found ? { ...prev, departmentName: found.name } : prev;
+      // Case 1: have ID but no name (edit mode race-condition)
+      if (prev.department && (!prev.departmentName || prev.departmentName.trim() === '')) {
+        const found = departments.find((d) => String(d.id) === String(prev.department));
+        if (found) return { ...prev, departmentName: found.name };
+      }
+      // Case 2: have name but no numeric ID (new form - user object only carries name)
+      if ((!prev.department || prev.department === '') && prev.departmentName && prev.departmentName.trim() !== '') {
+        const found = departments.find(
+          (d) => d.name?.toLowerCase() === prev.departmentName.trim().toLowerCase()
+        );
+        if (found) return { ...prev, department: found.id };
+      }
+      return prev;
     });
-  }, [departments, editData]);
+  }, [departments]);
 
   // Fetch full user profile for payment-details auto-fill
   useEffect(() => {
@@ -300,8 +310,15 @@ const ReimbursementForm = (props) => {
   // ── Form field handler ─────────────────────────────────────────────────────
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    setErrors((prev)    => ({ ...prev, [name]: '' }));
+    setFormData((prev) => {
+      const next = { ...prev, [name]: value };
+      // Keep "Period Covered" start in sync with "Date Needed"
+      if (name === 'dateNeeded') {
+        next.dateCoverageFrom = value;
+      }
+      return next;
+    });
+    setErrors((prev) => ({ ...prev, [name]: '', ...(name === 'dateNeeded' ? { dateCoverageFrom: '' } : {}) }));
   }, []);
 
   // ── Top-level supporting documents ────────────────────────────────────────
@@ -453,7 +470,7 @@ const ReimbursementForm = (props) => {
       reimbursementNumber: formData.reimbursementNumber,
       reimbursementDate:   formData.reimbursementDate,
       requestedBy:         formData.requestedBy,
-      department:          formData.department,
+      department:          formData.department || null,
       businessUnit:        formData.businessUnit,
       purpose:             formData.purpose             || null,
       dateNeeded:          formData.dateNeeded          || null,
@@ -527,12 +544,97 @@ const ReimbursementForm = (props) => {
     return true;
   }, [formData, expenses, totalAmount, showSnackbar]);
 
+  // Draft-only validation: Purpose required + at least 1 expense with a Particular
+  const validateDraft = useCallback(() => {
+    const errs = {};
+
+    if (!formData.purpose?.trim()) {
+      errs.purpose = 'Purpose is required';
+    }
+    if (!formData.department) {
+      errs.department = 'Department is required';
+    }
+
+    // At least one expense must have a Particular filled in
+    const hasParticular = expenses.some((it) => it.particulars?.toString().trim());
+    if (!hasParticular) {
+      expenses.forEach((it) => {
+        if (!it.particulars?.toString().trim()) {
+          errs[`expense_particulars_${it.id}`] = 'Required';
+        }
+      });
+      errs.expenses = 'At least one expense with a Particular is required';
+    }
+
+    // Itinerary: any row that exists must not be entirely empty
+    itineraryItems.forEach((it) => {
+      if (!it.dateCovered)                         errs[`itinerary_date_${it.id}`]           = 'Required';
+      if (!it.storeName?.toString().trim())        errs[`itinerary_storeName_${it.id}`]       = 'Required';
+      if (!it.fromPlace?.toString().trim())        errs[`itinerary_fromPlace_${it.id}`]       = 'Required';
+      if (!it.toPlace?.toString().trim())          errs[`itinerary_toPlace_${it.id}`]         = 'Required';
+      if (!it.modeOfTransportation?.toString().trim()) errs[`itinerary_mode_${it.id}`]        = 'Required';
+      if (!(parseFloat(it.amount) > 0))            errs[`itinerary_amount_${it.id}`]          = 'Required';
+    });
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }, [formData, expenses, itineraryItems]);
+
+  // Full submit validation: all expense fields + receipt required
+  const validateSubmit = useCallback(() => {
+    const errs = {};
+    if (!formData.purpose?.trim())
+      errs.purpose = 'Purpose is required';
+    if (!formData.requestedBy?.toString().trim())
+      errs.requestedBy = 'Requested by is required';
+    if (!formData.department)
+      errs.department = 'Department is required';
+
+    expenses.forEach((it) => {
+      if (!it.particulars?.toString().trim())
+        errs[`expense_particulars_${it.id}`] = 'Required';
+      if (!(parseFloat(it.actualAmount) > 0))
+        errs[`expense_amount_${it.id}`] = 'Required';
+      if (!it.attachment)
+        errs[`expense_receipt_${it.id}`] = 'Receipt is required';
+    });
+
+    if (expenses.some((it) => !it.particulars?.toString().trim() || !(parseFloat(it.actualAmount) > 0) || !it.attachment))
+      errs.expenses = 'All expenses must have Particulars, Amount, and a Receipt';
+
+    if (formData.dateCoverageFrom && formData.dateCoverageTo) {
+      const outOfRange = expenses.some((it) => {
+        if (!it.expenseDate) return false;
+        return it.expenseDate < formData.dateCoverageFrom || it.expenseDate > formData.dateCoverageTo;
+      });
+      if (outOfRange)
+        errs.expenses = `Expense dates must be within the coverage period (${formatLongDate(formData.dateCoverageFrom)} – ${formatLongDate(formData.dateCoverageTo)})`;
+    }
+
+    if (totalAmount === 0)
+      errs.total = 'Total amount must be greater than 0';
+
+    itineraryItems.forEach((it) => {
+      if (!it.dateCovered)                              errs[`itinerary_date_${it.id}`]      = 'Required';
+      if (!it.storeName?.toString().trim())             errs[`itinerary_storeName_${it.id}`] = 'Required';
+      if (!it.fromPlace?.toString().trim())             errs[`itinerary_fromPlace_${it.id}`] = 'Required';
+      if (!it.toPlace?.toString().trim())               errs[`itinerary_toPlace_${it.id}`]   = 'Required';
+      if (!it.modeOfTransportation?.toString().trim())  errs[`itinerary_mode_${it.id}`]      = 'Required';
+      if (!(parseFloat(it.amount) > 0))                 errs[`itinerary_amount_${it.id}`]    = 'Required';
+    });
+
+    setErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      showSnackbar(Object.values(errs)[0], 'error');
+      return false;
+    }
+    return true;
+  }, [formData, expenses, itineraryItems, totalAmount, showSnackbar]);
+
   // Persist (save draft or submit) 
   const persistForm = useCallback(async (status) => {
-    if (status === 'pending' && !validateForm()) return;
-    if (status === 'draft' && !formData.purpose?.trim() && totalAmount === 0) {
-      return showSnackbar('Provide at least a purpose or an amount to save as draft', 'warning');
-    }
+    if (status === 'pending' && !validateSubmit()) return;
+    if (status === 'draft'   && !validateDraft())  return;
     setSubmitting(true);
     try {
       // Phase 1: Save reimbursement header + child rows (no new files yet)
@@ -617,8 +719,8 @@ const ReimbursementForm = (props) => {
       reimbursementDate:   new Date().toISOString().split('T')[0],
       dateNeeded:          '',
       requestedBy:         user?.name       || '',
-      department:     user?.department_id || '',
-      departmentName: user?.department    || '',
+      department:     user?.department_id || user?.departmentId || '',
+      departmentName: user?.department_name || user?.departmentName || user?.department || '',
       employeeId:          '',
       businessUnit:        'EPC',
       purpose:             '',
@@ -727,7 +829,7 @@ const ReimbursementForm = (props) => {
                   name="dateNeeded"
                   value={formData.dateNeeded}
                   onChange={handleInputChange}
-                  min={getMinDateNeeded()}
+                  min={getMinDateNeeded(formData.reimbursementDate)}
                   className="px-4 py-2 border border-gray-300 rounded-lg bg-white w-full text-sm text-gray-900 outline-none focus:border-primary-600 hover:border-gray-900"
                 />
               </div>
@@ -871,6 +973,7 @@ const ReimbursementForm = (props) => {
             itineraryItems={itineraryItems}
             onItineraryItemsChange={handleItineraryItemsChange}
             viewOnly={viewOnly}
+            errors={errors}
             minDate={formData.dateCoverageFrom || undefined}
             maxDate={formData.dateCoverageTo   || undefined}
           />
@@ -961,7 +1064,7 @@ const ReimbursementForm = (props) => {
 
       {/* Action Buttons */}
       <div className="flex gap-4 justify-end">
-        {!viewOnly ? (
+        {!viewOnly && (
           <>
             {!isEditMode && (
               <Button variant="secondary" startIcon={<RotateCcw className="w-4 h-4" />} onClick={resetForm} disabled={submitting}>
@@ -989,21 +1092,12 @@ const ReimbursementForm = (props) => {
             >
               {submitting ? 'Submitting…' : 'Submit'}
             </Button>
-            {onClose && (
+            {/* {onClose && (
               <Button variant="ghost" onClick={onClose} disabled={submitting}>
                 {isEditMode ? 'Cancel' : 'Close'}
               </Button>
-            )}
+            )} */}
           </>
-        ) : (
-          !hideCloseButton && (
-            <Button
-              variant="primary"
-              onClick={onClose ?? (() => navigate('/my-requests', { state: { tab: 0 } }))}
-            >
-              Close
-            </Button>
-          )
         )}
       </div>
 

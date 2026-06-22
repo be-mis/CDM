@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import {
-  DollarSign, Receipt, Coins, TrendingUp, AlertTriangle, Eye, X
+  HandCoins, ReceiptText, Coins, TrendingUp, AlertTriangle, Eye, X
 } from 'lucide-react';
 import AttachmentViewer from '../components/AttachmentViewer';
 import CashAdvanceForm from '../components/CashAdvanceForm';
@@ -306,7 +306,7 @@ const EmployeeDashboard = () => {
                   {loading ? <Spinner size="md" className="text-white" /> : cashAdvances.length}
                 </h3>
               </div>
-              <DollarSign className="w-12 h-12 opacity-30" />
+              <HandCoins className="w-12 h-12 opacity-30" />
             </div>
           </CardContent>
         </Card>
@@ -326,7 +326,7 @@ const EmployeeDashboard = () => {
                   {loading ? <Spinner size="md" className="text-white" /> : liquidations.length}
                 </h3>
               </div>
-              <Receipt className="w-12 h-12 opacity-30" />
+              <ReceiptText className="w-12 h-12 opacity-30" />
             </div>
           </CardContent>
         </Card>
@@ -400,7 +400,7 @@ const EmployeeDashboard = () => {
                 variant="secondary"
                 size="md"
                 fullWidth
-                startIcon={<DollarSign className="w-5 h-5" />}
+                startIcon={<HandCoins className="w-5 h-5" />}
                 onClick={() => navigate('/cash-advance')}
                 className="py-3 border-primary-500 text-primary-600 hover:bg-primary-50"
               >
@@ -410,7 +410,7 @@ const EmployeeDashboard = () => {
                 variant="secondary"
                 size="md"
                 fullWidth
-                startIcon={<Receipt className="w-5 h-5" />}
+                startIcon={<ReceiptText className="w-5 h-5" />}
                 onClick={() => navigate('/liquidation')}
                 className="py-3 border-pink-500 text-pink-600 hover:bg-pink-50"
               >
@@ -461,9 +461,9 @@ const EmployeeDashboard = () => {
                   >
                     <div className="flex-shrink-0">
                       {request.type === 'cash-advance' ? (
-                        <DollarSign className="w-6 h-6 text-primary-600" />
+                        <HandCoins className="w-6 h-6 text-primary-600" />
                       ) : (
-                        <Receipt className="w-6 h-6 text-pink-600" />
+                        <ReceiptText className="w-6 h-6 text-pink-600" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
