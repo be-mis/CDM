@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
   HandCoins, Landmark, ReceiptText, Coins, Eye, Edit2, Trash2, Search,
-  XCircle, AlertTriangle, Receipt, Loader2, RefreshCw, Hourglass,
+  XCircle, AlertTriangle, Receipt, Loader2, RefreshCw, Hourglass, CheckCircle,
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import CashAdvanceForm from '../components/CashAdvanceForm';
@@ -743,21 +743,25 @@ const MyRequests = () => {
     return 'bg-gray-50 text-gray-600 border border-gray-200';
   };
 
-  // Derive available statuses dynamically from all data (using rawStatus)
+  // Lookup of each tab's raw dataset, keyed the same way as tabKeyMap
+  const tabDataMap = { cashAdvances, liquidations, reimbursements };
+
+  // Derive available statuses dynamically from the ACTIVE TAB's data only,
+  // so the pill bar reflects what's actually in the tab you're viewing
   const availableStatuses = useMemo(() => {
-    const allItems = [...cashAdvances, ...liquidations, ...reimbursements];
-    const statusSet = new Set(allItems.map(item => (item.rawStatus || '').toLowerCase()).filter(Boolean));
+    const activeItems = tabDataMap[tabKeyMap[tabValue]] || [];
+    const statusSet = new Set(activeItems.map(item => (item.rawStatus || '').toLowerCase()).filter(Boolean));
     const order = ['pending', 'approved', 'released', 'rejected', 'draft', 'cancelled', 'disbursed', 'liquidated'];
     const sorted = order.filter(s => statusSet.has(s));
     statusSet.forEach(s => { if (!order.includes(s)) sorted.push(s); });
     return sorted;
-  }, [cashAdvances, liquidations, reimbursements]);
+  }, [cashAdvances, liquidations, reimbursements, tabValue]);
 
-  const pendingCount = useMemo(() => (
-    cashAdvances.filter(i => (i.rawStatus || '').toLowerCase() === 'pending').length +
-    liquidations.filter(i => (i.rawStatus || '').toLowerCase() === 'pending').length +
-    reimbursements.filter(i => (i.rawStatus || '').toLowerCase() === 'pending').length
-  ), [cashAdvances, liquidations, reimbursements]);
+  // Count of pending items per tab (for badge) — scoped to the active tab only
+  const pendingCount = useMemo(() => {
+    const activeItems = tabDataMap[tabKeyMap[tabValue]] || [];
+    return activeItems.filter(i => (i.rawStatus || '').toLowerCase() === 'pending').length;
+  }, [cashAdvances, liquidations, reimbursements, tabValue]);
 
   // Auto-switch to All if no pending items exist
   useEffect(() => {
@@ -831,19 +835,19 @@ const MyRequests = () => {
     if (page.reimbursements > maxPage) setPage(prev => ({ ...prev, reimbursements: maxPage }));
   }, [filteredReimbursements.length, page.reimbursements, pageSize]);
 
-  // Statistics
+  // Stats reflect only the currently active tab, so switching tabs updates the cards
+  const activeTabData = tabDataMap[tabKeyMap[tabValue]] || [];
+
   const stats = useMemo(() => ({
-    totalCashAdvances: cashAdvances.length,
-    totalLiquidations: liquidations.length,
-    totalReimbursements: reimbursements.length,
-    pendingApprovals: cashAdvances.filter(ca => ca.status === 'Pending Approval').length +
-      reimbursements.filter(r => r.status === 'Pending Approval').length,
-  }), [cashAdvances, liquidations, reimbursements]);
+    pending: activeTabData.filter(item => (item.rawStatus || '').toLowerCase() === 'pending').length,
+    approved: activeTabData.filter(item => (item.rawStatus || '').toLowerCase() === 'approved').length,
+    rejected: activeTabData.filter(item => (item.rawStatus || '').toLowerCase() === 'rejected').length,
+  }), [activeTabData]);
 
   const tabs = [
-    { label: `Cash Advances (${filteredCashAdvances.length})`, icon: <HandCoins className="w-4 h-4" /> },
-    { label: `Liquidations (${filteredLiquidations.length})`, icon: <ReceiptText className="w-4 h-4" /> },
-    { label: `Reimbursements (${filteredReimbursements.length})`, icon: <Coins className="w-4 h-4" /> }
+    { label: 'Cash Advances', icon: <HandCoins className="w-4 h-4" /> },
+    { label: 'Liquidations', icon: <ReceiptText className="w-4 h-4" /> },
+    { label: 'Reimbursements', icon: <Coins className="w-4 h-4" /> }
   ];
 
   return (
@@ -863,51 +867,39 @@ const MyRequests = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
-        <Card className="bg-gradient-to-br from-primary-500 to-secondary-500 text-white shadow-sm hover:shadow-md transition-shadow">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+        <Card className="bg-gradient-to-br from-orange-400 to-amber-600 text-white shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-white/90 text-sm font-semibold mb-2">Cash Advances</p>
-                <h3 className="text-4xl font-bold">{stats.totalCashAdvances}</h3>
-              </div>
-              <HandCoins className="w-12 h-12 opacity-30" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-pink-500 to-rose-500 text-white shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/90 text-sm font-semibold mb-2">Liquidations</p>
-                <h3 className="text-4xl font-bold">{stats.totalLiquidations}</h3>
-              </div>
-              <ReceiptText className="w-12 h-12 opacity-30" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-cyan-500 to-blue-500 text-white shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/90 text-sm font-semibold mb-2">Reimbursements</p>
-                <h3 className="text-4xl font-bold">{stats.totalReimbursements}</h3>
-              </div>
-              <Coins className="w-12 h-12 opacity-30" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-amber-500 to-yellow-500 text-white shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/90 text-sm font-semibold mb-2">Pending Approval</p>
-                <h3 className="text-4xl font-bold">{stats.pendingApprovals}</h3>
+                <p className="text-white/90 text-sm font-semibold mb-2">Pending</p>
+                <h3 className="text-4xl font-bold">{stats.pending}</h3>
               </div>
               <Hourglass className="w-12 h-12 opacity-30" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-green-400 to-emerald-600 text-white shadow-sm hover:shadow-md transition-shadow">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/90 text-sm font-semibold mb-2">Approved</p>
+                <h3 className="text-4xl font-bold">{stats.approved}</h3>
+              </div>
+              <CheckCircle className="w-12 h-12 opacity-30" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-rose-400 to-red-600 text-white shadow-sm hover:shadow-md transition-shadow">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/90 text-sm font-semibold mb-2">Rejected</p>
+                <h3 className="text-4xl font-bold">{stats.rejected}</h3>
+              </div>
+              <XCircle className="w-12 h-12 opacity-30" />
             </div>
           </CardContent>
         </Card>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-    CheckCircle, XCircle, Eye, X, Clock, DollarSign, Receipt, Coins, Banknote,
+    CheckCircle, XCircle, Eye, X, Hourglass, DollarSign, Receipt, Coins,
     Search, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import api from '../api';
@@ -190,9 +190,9 @@ const Disbursements = () => {
     };
 
     const getStatusText = (status) => {
-        if (status === 'approved') return 'PENDING RELEASE';
-        if (status === 'released') return 'RELEASED';
-        return 'REJECTED';
+        if (status === 'approved') return 'Pending Release';
+        if (status === 'released') return 'Released';
+        return 'Rejected';
     };
 
     const handleTabChange = (index) => {
@@ -211,21 +211,34 @@ const Disbursements = () => {
         setPage({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
     };
 
-    // Derive available statuses dynamically from all data
+    // Count of items pending release (status === 'approved'), per tab — used for the active tab's badge
+    const pendingCounts = useMemo(() => ({
+        cashAdvances: data.cashAdvances.filter(i => (i.status || '').toLowerCase() === 'approved').length,
+        liquidations: data.liquidations.filter(i => (i.status || '').toLowerCase() === 'approved').length,
+        reimbursements: data.reimbursements.filter(i => (i.status || '').toLowerCase() === 'approved').length,
+    }), [data]);
+
+    // Derive available statuses dynamically from the ACTIVE TAB's data only,
+    // so the pill bar reflects what's actually in the tab you're viewing
     const availableStatuses = useMemo(() => {
-        const allItems = [
-            ...data.cashAdvances,
-            ...data.liquidations,
-            ...data.reimbursements,
-        ];
-        const statusSet = new Set(allItems.map(item => (item.status || '').toLowerCase()).filter(Boolean));
+        const activeItems = data[tabKeyMap[activeTab]] || [];
+        const statusSet = new Set(activeItems.map(item => (item.status || '').toLowerCase()).filter(Boolean));
         // Preferred display order
         const order = ['approved', 'released', 'rejected'];
         const sorted = order.filter(s => statusSet.has(s));
         // Append any statuses not in the preferred order
         statusSet.forEach(s => { if (!order.includes(s)) sorted.push(s); });
         return sorted;
-    }, [data]);
+    }, [data, activeTab]);
+
+    // Auto-correct statusFilter for the active tab: default to "Pending Release" if that
+    // tab has any approved items, otherwise fall back to "All Requests"
+    useEffect(() => {
+        const activeTabPendingCount = pendingCounts[tabKeyMap[activeTab]];
+        if (statusFilter === 'approved' && activeTabPendingCount === 0 && availableStatuses.length > 0) {
+            setStatusFilter('all');
+        }
+    }, [activeTab, pendingCounts, availableStatuses, statusFilter]);
 
     const applyStatusFilter = useCallback((items) => {
         if (statusFilter === 'all') return items;
@@ -298,23 +311,19 @@ const Disbursements = () => {
         if (page.reimbursements > maxPage) setPage(prev => ({ ...prev, reimbursements: maxPage }));
     }, [filteredReimbursements.length, page.reimbursements, pageSize]);
 
+    // Stats reflect only the currently active tab, so switching tabs updates the cards
+    const activeTabData = data[tabKeyMap[activeTab]] || [];
+
     const stats = useMemo(() => ({
-        pending: data.cashAdvances.filter(ca => ca.status === 'approved').length +
-                 data.liquidations.filter(liq => liq.status === 'approved').length +
-                 data.reimbursements.filter(reimb => reimb.status === 'approved').length,
-        released: data.cashAdvances.filter(ca => ca.status === 'released').length +
-                  data.liquidations.filter(liq => liq.status === 'released').length +
-                  data.reimbursements.filter(reimb => reimb.status === 'released').length,
-        rejected: data.cashAdvances.filter(ca => ca.status === 'rejected').length +
-                  data.liquidations.filter(liq => liq.status === 'rejected').length +
-                  data.reimbursements.filter(reimb => reimb.status === 'rejected').length,
-        total: data.cashAdvances.length + data.liquidations.length + data.reimbursements.length
-    }), [data]);
+        pending: activeTabData.filter(item => item.status === 'approved').length,
+        released: activeTabData.filter(item => item.status === 'released').length,
+        rejected: activeTabData.filter(item => item.status === 'rejected').length,
+    }), [activeTabData]);
 
     const tabs = [
-        `Cash Advances (${filteredCashAdvances.length})`,
-        `Liquidations (${filteredLiquidations.length})`,
-        `Reimbursements (${filteredReimbursements.length})`
+        'Cash Advances',
+        'Liquidations',
+        'Reimbursements'
     ];
 
     const renderTable = (items, filteredTotal, tabKey) => (
@@ -437,19 +446,19 @@ const Disbursements = () => {
             )}
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-                <Card className="bg-gradient-to-br from-amber-500 to-orange-600 text-white">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
+                <Card className="bg-gradient-to-br from-orange-400 to-amber-600 text-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Pending Release</p>
+                                <p className="text-white/90 text-sm font-semibold mb-2">Pending</p>
                                 <h3 className="text-4xl font-bold">{stats.pending}</h3>
                             </div>
-                            <Clock className="w-12 h-12 opacity-30" />
+                            <Hourglass className="w-12 h-12 opacity-30" />
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="bg-gradient-to-br from-emerald-500 to-green-600 text-white">
+                <Card className="bg-gradient-to-br from-green-400 to-emerald-600 text-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
@@ -460,7 +469,7 @@ const Disbursements = () => {
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white">
+                <Card className="bg-gradient-to-br from-rose-400 to-red-600 text-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
@@ -468,17 +477,6 @@ const Disbursements = () => {
                                 <h3 className="text-4xl font-bold">{stats.rejected}</h3>
                             </div>
                             <XCircle className="w-12 h-12 opacity-30" />
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Total Items</p>
-                                <h3 className="text-4xl font-bold">{stats.total}</h3>
-                            </div>
-                            <Banknote className="w-12 h-12 opacity-30" />
                         </div>
                     </CardContent>
                 </Card>
@@ -541,7 +539,7 @@ const Disbursements = () => {
                             {availableStatuses.map((status) => {
                                 const isActive = statusFilter === status;
                                 const isPendingRelease = status === 'approved';
-                                const count = isPendingRelease ? stats.pending : null;
+                                const count = isPendingRelease ? pendingCounts[tabKeyMap[activeTab]] : null;
                                 const label = getStatusText(status);
 
                                 const colorMap = {
@@ -592,8 +590,8 @@ const Disbursements = () => {
                         <span>Request Details</span>
                         {selectedRequest?.status === 'approved' && (
                             <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
-                                PENDING RELEASE
+                                <Hourglass className="w-3 h-3" />
+                                Pending
                             </span>
                         )}
                     </div>

@@ -9,7 +9,7 @@ router.use(verifyToken);
 // GET /api/disbursements/pending - Get all approved requests pending release
 router.get('/pending', disbursementsController.getPendingDisbursements);
 
-// POST /api/disbursements/release - Release funds for a request
-router.post('/release', disbursementsController.processDisbursement);
+// POST /api/disbursements/process - Release or reject funds for a request
+router.post('/process', disbursementsController.processDisbursement);
 
 module.exports = router;

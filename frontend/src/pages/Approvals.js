@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-    CheckCircle, XCircle, Eye, X, Clock, DollarSign, Receipt, Coins, List,
+    CheckCircle, XCircle, Eye, X, Hourglass,
     Search, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import api from '../api';
@@ -208,21 +208,18 @@ const Approvals = () => {
         setPage({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
     };
 
-    // Derive available statuses dynamically from all data
+    // Derive available statuses dynamically from the ACTIVE TAB's data only,
+    // so the pill bar reflects what's actually in the tab you're viewing
     const availableStatuses = useMemo(() => {
-        const allItems = [
-            ...data.cashAdvances,
-            ...data.liquidations,
-            ...data.reimbursements,
-        ];
-        const statusSet = new Set(allItems.map(item => (item.status || '').toLowerCase()).filter(Boolean));
+        const activeItems = data[tabKeyMap[activeTab]] || [];
+        const statusSet = new Set(activeItems.map(item => (item.status || '').toLowerCase()).filter(Boolean));
         // Preferred display order
         const order = ['pending', 'approved', 'rejected', 'released'];
         const sorted = order.filter(s => statusSet.has(s));
         // Append any statuses not in the preferred order
         statusSet.forEach(s => { if (!order.includes(s)) sorted.push(s); });
         return sorted;
-    }, [data]);
+    }, [data, activeTab]);
 
     // Count of pending items per tab (for badge)
     const pendingCounts = useMemo(() => ({
@@ -231,14 +228,14 @@ const Approvals = () => {
         reimbursements: data.reimbursements.filter(i => (i.status || '').toLowerCase() === 'pending').length,
     }), [data]);
 
-    const totalPendingCount = pendingCounts.cashAdvances + pendingCounts.liquidations + pendingCounts.reimbursements;
-
-    // Auto-correct statusFilter: default pending if items exist, else all
+    // Auto-correct statusFilter for the active tab: default to "Pending" if that
+    // tab has any pending items, otherwise fall back to "All Requests"
     useEffect(() => {
-        if (statusFilter === 'pending' && totalPendingCount === 0 && availableStatuses.length > 0) {
+        const activeTabPendingCount = pendingCounts[tabKeyMap[activeTab]];
+        if (statusFilter === 'pending' && activeTabPendingCount === 0 && availableStatuses.length > 0) {
             setStatusFilter('all');
         }
-    }, [totalPendingCount, availableStatuses, statusFilter]);
+    }, [activeTab, pendingCounts, availableStatuses, statusFilter]);
 
     const applyStatusFilter = useCallback((items) => {
         if (statusFilter === 'all') return items;
@@ -416,17 +413,19 @@ const Approvals = () => {
         </div>
     );
 
+    // Stats reflect only the currently active tab, so switching tabs updates the cards
+    const activeTabData = data[tabKeyMap[activeTab]] || [];
+
     const stats = useMemo(() => ({
-        cashAdvances: pendingCounts.cashAdvances,
-        liquidations: pendingCounts.liquidations,
-        reimbursements: pendingCounts.reimbursements,
-        total: totalPendingCount,
-    }), [pendingCounts, totalPendingCount]);
+        pending: activeTabData.filter(item => (item.status || '').toLowerCase() === 'pending').length,
+        approved: activeTabData.filter(item => (item.status || '').toLowerCase() === 'approved').length,
+        rejected: activeTabData.filter(item => (item.status || '').toLowerCase() === 'rejected').length,
+    }), [activeTabData]);
 
     const tabs = [
-        `Cash Advances (${filteredCashAdvances.length})`,
-        `Liquidations (${filteredLiquidations.length})`,
-        `Reimbursements (${filteredReimbursements.length})`,
+        'Cash Advances',
+        'Liquidations',
+        'Reimbursements',
     ];
 
     return (
@@ -445,48 +444,37 @@ const Approvals = () => {
             )}
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-                <Card className="bg-gradient-to-br from-primary-500 to-secondary-500 text-white">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
+                <Card className="bg-gradient-to-br from-orange-400 to-amber-600 text-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Cash Advances</p>
-                                <h3 className="text-4xl font-bold">{stats.cashAdvances}</h3>
+                                <p className="text-white/90 text-sm font-semibold mb-2">Pending</p>
+                                <h3 className="text-4xl font-bold">{stats.pending}</h3>
                             </div>
-                            <DollarSign className="w-12 h-12 opacity-30" />
+                            <Hourglass className="w-12 h-12 opacity-30" />
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="bg-gradient-to-br from-pink-400 to-rose-500 text-white">
+                <Card className="bg-gradient-to-br from-green-400 to-emerald-600 text-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Liquidations</p>
-                                <h3 className="text-4xl font-bold">{stats.liquidations}</h3>
+                                <p className="text-white/90 text-sm font-semibold mb-2">Approved</p>
+                                <h3 className="text-4xl font-bold">{stats.approved}</h3>
                             </div>
-                            <Receipt className="w-12 h-12 opacity-30" />
+                            <CheckCircle className="w-12 h-12 opacity-30" />
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="bg-gradient-to-br from-cyan-400 to-blue-500 text-white">
+                <Card className="bg-gradient-to-br from-rose-400 to-red-600 text-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Reimbursements</p>
-                                <h3 className="text-4xl font-bold">{stats.reimbursements}</h3>
+                                <p className="text-white/90 text-sm font-semibold mb-2">Rejected</p>
+                                <h3 className="text-4xl font-bold">{stats.rejected}</h3>
                             </div>
-                            <Coins className="w-12 h-12 opacity-30" />
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card className="bg-gradient-to-br from-rose-400 to-yellow-400 text-white">
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Total Pending</p>
-                                <h3 className="text-4xl font-bold">{stats.total}</h3>
-                            </div>
-                            <List className="w-12 h-12 opacity-30" />
+                            <XCircle className="w-12 h-12 opacity-30" />
                         </div>
                     </CardContent>
                 </Card>
@@ -549,7 +537,7 @@ const Approvals = () => {
                             {availableStatuses.map((status) => {
                                 const isActive = statusFilter === status;
                                 const isPending = status === 'pending';
-                                const count = isPending ? totalPendingCount : null;
+                                const count = isPending ? pendingCounts[tabKeyMap[activeTab]] : null;
                                 const label = status.charAt(0).toUpperCase() + status.slice(1);
 
                                 const colorMap = {
@@ -602,7 +590,7 @@ const Approvals = () => {
                     <div className="flex items-center gap-3">
                         <span>Request Details</span>
                         <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
+                            <Hourglass className="w-3 h-3" />
                             PENDING APPROVAL
                         </span>
                     </div>
