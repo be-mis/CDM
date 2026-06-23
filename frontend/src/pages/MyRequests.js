@@ -108,6 +108,7 @@ const MyRequests = () => {
     return idx !== -1 ? idx : 0;
   });
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('pending');
   const [loading, setLoading] = useState(true);
   const [viewLoading, setViewLoading] = useState(false);
   const [cashAdvances, setCashAdvances] = useState([]);
@@ -725,6 +726,11 @@ const MyRequests = () => {
     setPage({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
   };
 
+  const handleStatusFilterChange = (status) => {
+    setStatusFilter(status);
+    setPage({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
+  };
+
   const getStatusColor = (status) => {
     const statusLower = (status || '').toLowerCase();
     if (statusLower.includes('pending')) return 'bg-amber-50 text-amber-700 border border-amber-200';
@@ -737,30 +743,61 @@ const MyRequests = () => {
     return 'bg-gray-50 text-gray-600 border border-gray-200';
   };
 
+  // Derive available statuses dynamically from all data (using rawStatus)
+  const availableStatuses = useMemo(() => {
+    const allItems = [...cashAdvances, ...liquidations, ...reimbursements];
+    const statusSet = new Set(allItems.map(item => (item.rawStatus || '').toLowerCase()).filter(Boolean));
+    const order = ['pending', 'approved', 'released', 'rejected', 'draft', 'cancelled', 'disbursed', 'liquidated'];
+    const sorted = order.filter(s => statusSet.has(s));
+    statusSet.forEach(s => { if (!order.includes(s)) sorted.push(s); });
+    return sorted;
+  }, [cashAdvances, liquidations, reimbursements]);
+
+  const pendingCount = useMemo(() => (
+    cashAdvances.filter(i => (i.rawStatus || '').toLowerCase() === 'pending').length +
+    liquidations.filter(i => (i.rawStatus || '').toLowerCase() === 'pending').length +
+    reimbursements.filter(i => (i.rawStatus || '').toLowerCase() === 'pending').length
+  ), [cashAdvances, liquidations, reimbursements]);
+
+  // Auto-switch to All if no pending items exist
+  useEffect(() => {
+    if (statusFilter === 'pending' && pendingCount === 0 && availableStatuses.length > 0) {
+      setStatusFilter('all');
+    }
+  }, [pendingCount, availableStatuses, statusFilter]);
+
+  const applyStatusFilter = (items) => {
+    if (statusFilter === 'all') return items;
+    return items.filter(item => (item.rawStatus || '').toLowerCase() === statusFilter);
+  };
+
   // Filtered lists
   const filteredCashAdvances = useMemo(() => {
-    if (!searchTerm) return cashAdvances;
-    return cashAdvances.filter(item =>
+    const base = applyStatusFilter(cashAdvances);
+    if (!searchTerm) return base;
+    return base.filter(item =>
       item.refNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.purpose && item.purpose.toLowerCase().includes(searchTerm.toLowerCase()))
     );
-  }, [cashAdvances, searchTerm]);
+  }, [cashAdvances, searchTerm, statusFilter]);
 
   const filteredLiquidations = useMemo(() => {
-    if (!searchTerm) return liquidations;
-    return liquidations.filter(item =>
+    const base = applyStatusFilter(liquidations);
+    if (!searchTerm) return base;
+    return base.filter(item =>
       item.refNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.cashAdvanceRef && item.cashAdvanceRef.toLowerCase().includes(searchTerm.toLowerCase()))
     );
-  }, [liquidations, searchTerm]);
+  }, [liquidations, searchTerm, statusFilter]);
 
   const filteredReimbursements = useMemo(() => {
-    if (!searchTerm) return reimbursements;
-    return reimbursements.filter(item =>
+    const base = applyStatusFilter(reimbursements);
+    if (!searchTerm) return base;
+    return base.filter(item =>
       item.refNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.purpose && item.purpose.toLowerCase().includes(searchTerm.toLowerCase()))
     );
-  }, [reimbursements, searchTerm]);
+  }, [reimbursements, searchTerm, statusFilter]);
 
   // Paginated slices for each table, sized by the shared pageSize selector
   const paginatedCashAdvances = useMemo(() => {
@@ -804,9 +841,9 @@ const MyRequests = () => {
   }), [cashAdvances, liquidations, reimbursements]);
 
   const tabs = [
-    { label: `Cash Advances (${cashAdvances.length})`, icon: <HandCoins className="w-4 h-4" /> },
-    { label: `Liquidations (${liquidations.length})`, icon: <ReceiptText className="w-4 h-4" /> },
-    { label: `Reimbursements (${reimbursements.length})`, icon: <Coins className="w-4 h-4" /> }
+    { label: `Cash Advances (${filteredCashAdvances.length})`, icon: <HandCoins className="w-4 h-4" /> },
+    { label: `Liquidations (${filteredLiquidations.length})`, icon: <ReceiptText className="w-4 h-4" /> },
+    { label: `Reimbursements (${filteredReimbursements.length})`, icon: <Coins className="w-4 h-4" /> }
   ];
 
   return (
@@ -912,6 +949,50 @@ const MyRequests = () => {
               }}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm outline-none transition-colors"
             />
+          </div>
+
+          {/* Status Filter Bar */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => handleStatusFilterChange('all')}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
+                statusFilter === 'all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              All Requests
+            </button>
+            {availableStatuses.map((status) => {
+              const isActive = statusFilter === status;
+              const isPending = status === 'pending';
+              const label = status === 'pending' ? 'Pending Approval' : status.charAt(0).toUpperCase() + status.slice(1);
+              const colorMap = {
+                pending:   isActive ? 'bg-yellow-500 text-white' : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100',
+                approved:  isActive ? 'bg-green-600 text-white'  : 'bg-green-50 text-green-700 hover:bg-green-100',
+                rejected:  isActive ? 'bg-red-600 text-white'    : 'bg-red-50 text-red-700 hover:bg-red-100',
+                released:  isActive ? 'bg-teal-600 text-white'   : 'bg-teal-50 text-teal-700 hover:bg-teal-100',
+                draft:     isActive ? 'bg-gray-600 text-white'   : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                cancelled: isActive ? 'bg-gray-600 text-white'   : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                disbursed: isActive ? 'bg-blue-600 text-white'   : 'bg-blue-50 text-blue-700 hover:bg-blue-100',
+                liquidated:isActive ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100',
+              };
+              const colorClass = colorMap[status] || (isActive ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200');
+              return (
+                <button
+                  key={status}
+                  onClick={() => handleStatusFilterChange(status)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${colorClass}`}
+                >
+                  {label}
+                  {isPending && pendingCount > 0 && (
+                    <span className={`inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-xs font-bold ${
+                      isActive ? 'bg-white/25 text-white' : 'bg-yellow-500 text-white'
+                    }`}>
+                      {pendingCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* Cash Advances Tab Panel */}

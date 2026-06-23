@@ -5,8 +5,7 @@ const pool = require('../config/db');
  * Handles fetching and processing approved requests ready for fund release
  * by Accounting.
  *
- * NOTE: The reimbursement table is named `reimbursement` (singular) in this
- * database. Cash advances and liquidations use their own table names below.
+ * NOTE: All three tables use plural names: cash_advances, liquidations, reimbursements.
  */
 
 // ─── GET all approved requests pending disbursement / release ────────────────
@@ -16,8 +15,8 @@ const getPendingDisbursements = async (req, res) => {
     const [cashAdvances] = await pool.query(
       `SELECT ca.*, d.name AS department_name,
               COALESCE(
-                (SELECT SUM(estimated_amount)
-                 FROM cash_advance_items
+                (SELECT SUM(total_amount)
+                 FROM cash_advance_breakdown
                  WHERE cash_advance_id = ca.id),
                 ca.requested_amount
               ) AS calculated_amount
@@ -38,10 +37,10 @@ const getPendingDisbursements = async (req, res) => {
        ORDER BY l.created_at DESC`,
     );
 
-    // Reimbursements  ← table is `reimbursement` (singular)
+    // Reimbursements
     const [reimbursements] = await pool.query(
       `SELECT r.*, d.name AS department_name
-       FROM reimbursement r
+       FROM reimbursements r
        JOIN departments d ON r.department_id = d.id
        WHERE r.status IN ('approved', 'released', 'rejected')
        ORDER BY r.created_at DESC`,
@@ -77,7 +76,7 @@ const processDisbursement = async (req, res) => {
   const tableMap = {
     'cash-advance':   'cash_advances',
     'liquidation':    'liquidations',
-    'reimbursement':  'reimbursement',  // singular — matches the actual table
+    'reimbursement':  'reimbursements',
   };
 
   const tableName = tableMap[type];

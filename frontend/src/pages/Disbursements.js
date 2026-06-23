@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-    CheckCircle, XCircle, Eye, X, Clock, DollarSign, Receipt, Coins, Banknote
+    CheckCircle, XCircle, Eye, X, Clock, DollarSign, Receipt, Coins, Banknote,
+    Search, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import api from '../api';
 import { formatLongDate } from '../utils/formatters';
@@ -14,6 +15,84 @@ import Input from '../components/ui/Input';
 import { Alert } from '../components/ui/Alert';
 import { Loading } from '../components/ui/Loading';
 
+// Reusable pagination control
+const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSizeChange }) => {
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    if (totalItems === 0) return null;
+
+    const start = (currentPage - 1) * pageSize + 1;
+    const end = Math.min(currentPage * pageSize, totalItems);
+
+    const pageNumbers = [];
+    for (let i = 1; i <= totalPages; i++) {
+        if (i === 1 || i === totalPages || Math.abs(i - currentPage) <= 1) {
+            pageNumbers.push(i);
+        } else if (pageNumbers[pageNumbers.length - 1] !== '...') {
+            pageNumbers.push('...');
+        }
+    }
+
+    return (
+        <div className="flex items-center justify-between flex-wrap gap-3 px-2 py-3">
+            <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-sm text-gray-600">
+                    Showing <span className="font-medium text-gray-900">{start}</span>–
+                    <span className="font-medium text-gray-900">{end}</span> of{' '}
+                    <span className="font-medium text-gray-900">{totalItems}</span>
+                </p>
+                <div className="flex items-center gap-2">
+                    <label className="text-sm text-gray-600 whitespace-nowrap">Rows per page</label>
+                    <select
+                        value={pageSize}
+                        onChange={(e) => onPageSizeChange(Number(e.target.value))}
+                        className="border border-gray-300 rounded-lg px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
+                    >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                    </select>
+                </div>
+            </div>
+            <div className="flex items-center gap-1">
+                <button
+                    onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+                    disabled={currentPage === 1}
+                    className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    aria-label="Previous page"
+                >
+                    <ChevronLeft className="w-4 h-4" />
+                </button>
+                {pageNumbers.map((p, idx) =>
+                    p === '...' ? (
+                        <span key={`ellipsis-${idx}`} className="px-2 text-sm text-gray-400">…</span>
+                    ) : (
+                        <button
+                            key={p}
+                            onClick={() => onPageChange(p)}
+                            className={`min-w-[2rem] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                p === currentPage
+                                    ? 'bg-primary-600 text-white'
+                                    : 'text-gray-600 hover:bg-gray-50 border border-gray-300'
+                            }`}
+                        >
+                            {p}
+                        </button>
+                    )
+                )}
+                <button
+                    onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+                    disabled={currentPage === totalPages}
+                    className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    aria-label="Next page"
+                >
+                    <ChevronRight className="w-4 h-4" />
+                </button>
+            </div>
+        </div>
+    );
+};
+
 const Disbursements = () => {
     const [activeTab, setActiveTab] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -24,6 +103,12 @@ const Disbursements = () => {
     const [actionType, setActionType] = useState('release'); // 'release' or 'reject'
     const [remarks, setRemarks] = useState('');
     const [notification, setNotification] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState('approved');
+    const [pageSize, setPageSize] = useState(10);
+    const [page, setPage] = useState({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
+
+    const tabKeyMap = { 0: 'cashAdvances', 1: 'liquidations', 2: 'reimbursements' };
 
     const fetchPendingDisbursements = useCallback(async () => {
         try {
@@ -66,7 +151,7 @@ const Disbursements = () => {
     const handleAction = async () => {
         try {
             const typeMap = { 0: 'cash-advance', 1: 'liquidation', 2: 'reimbursement' };
-            const res = await api.post('/disbursements/release', {
+            const res = await api.post('/disbursements/process', {
                 type: typeMap[activeTab],
                 id: selectedRequest.id,
                 action: actionType,
@@ -110,9 +195,132 @@ const Disbursements = () => {
         return 'REJECTED';
     };
 
-    const renderTable = (items) => (
-        <div className="overflow-x-auto">
-            <table className="w-full">
+    const handleTabChange = (index) => {
+        setActiveTab(index);
+        setSearchTerm('');
+        setPage(prev => ({ ...prev, [tabKeyMap[index]]: 1 }));
+    };
+
+    const handlePageSizeChange = (newSize) => {
+        setPageSize(newSize);
+        setPage({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
+    };
+
+    const handleStatusFilterChange = (status) => {
+        setStatusFilter(status);
+        setPage({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
+    };
+
+    // Derive available statuses dynamically from all data
+    const availableStatuses = useMemo(() => {
+        const allItems = [
+            ...data.cashAdvances,
+            ...data.liquidations,
+            ...data.reimbursements,
+        ];
+        const statusSet = new Set(allItems.map(item => (item.status || '').toLowerCase()).filter(Boolean));
+        // Preferred display order
+        const order = ['approved', 'released', 'rejected'];
+        const sorted = order.filter(s => statusSet.has(s));
+        // Append any statuses not in the preferred order
+        statusSet.forEach(s => { if (!order.includes(s)) sorted.push(s); });
+        return sorted;
+    }, [data]);
+
+    const applyStatusFilter = useCallback((items) => {
+        if (statusFilter === 'all') return items;
+        return items.filter(item => (item.status || '').toLowerCase() === statusFilter);
+    }, [statusFilter]);
+
+    // Filtered lists — search by ref number, requester, purpose, or department
+    const filteredCashAdvances = useMemo(() => {
+        const q = searchTerm.toLowerCase();
+        return applyStatusFilter(data.cashAdvances).filter(item =>
+            !searchTerm ||
+            (item.advance_number || '').toLowerCase().includes(q) ||
+            (item.requested_by || '').toLowerCase().includes(q) ||
+            (item.purpose || '').toLowerCase().includes(q) ||
+            (item.department_name || '').toLowerCase().includes(q)
+        );
+    }, [data.cashAdvances, searchTerm, applyStatusFilter]);
+
+    const filteredLiquidations = useMemo(() => {
+        const q = searchTerm.toLowerCase();
+        return applyStatusFilter(data.liquidations).filter(item =>
+            !searchTerm ||
+            (item.liquidation_number || '').toLowerCase().includes(q) ||
+            (item.submitted_by || '').toLowerCase().includes(q) ||
+            (item.purpose || '').toLowerCase().includes(q) ||
+            (item.department_name || '').toLowerCase().includes(q)
+        );
+    }, [data.liquidations, searchTerm, applyStatusFilter]);
+
+    const filteredReimbursements = useMemo(() => {
+        const q = searchTerm.toLowerCase();
+        return applyStatusFilter(data.reimbursements).filter(item =>
+            !searchTerm ||
+            (item.reimbursement_number || '').toLowerCase().includes(q) ||
+            (item.submitted_by || '').toLowerCase().includes(q) ||
+            (item.purpose || '').toLowerCase().includes(q) ||
+            (item.department_name || '').toLowerCase().includes(q)
+        );
+    }, [data.reimbursements, searchTerm, applyStatusFilter]);
+
+    // Paginated slices
+    const paginatedCashAdvances = useMemo(() => {
+        const start = (page.cashAdvances - 1) * pageSize;
+        return filteredCashAdvances.slice(start, start + pageSize);
+    }, [filteredCashAdvances, page.cashAdvances, pageSize]);
+
+    const paginatedLiquidations = useMemo(() => {
+        const start = (page.liquidations - 1) * pageSize;
+        return filteredLiquidations.slice(start, start + pageSize);
+    }, [filteredLiquidations, page.liquidations, pageSize]);
+
+    const paginatedReimbursements = useMemo(() => {
+        const start = (page.reimbursements - 1) * pageSize;
+        return filteredReimbursements.slice(start, start + pageSize);
+    }, [filteredReimbursements, page.reimbursements, pageSize]);
+
+    // Clamp pages when data shrinks
+    useEffect(() => {
+        const maxPage = Math.max(1, Math.ceil(filteredCashAdvances.length / pageSize));
+        if (page.cashAdvances > maxPage) setPage(prev => ({ ...prev, cashAdvances: maxPage }));
+    }, [filteredCashAdvances.length, page.cashAdvances, pageSize]);
+
+    useEffect(() => {
+        const maxPage = Math.max(1, Math.ceil(filteredLiquidations.length / pageSize));
+        if (page.liquidations > maxPage) setPage(prev => ({ ...prev, liquidations: maxPage }));
+    }, [filteredLiquidations.length, page.liquidations, pageSize]);
+
+    useEffect(() => {
+        const maxPage = Math.max(1, Math.ceil(filteredReimbursements.length / pageSize));
+        if (page.reimbursements > maxPage) setPage(prev => ({ ...prev, reimbursements: maxPage }));
+    }, [filteredReimbursements.length, page.reimbursements, pageSize]);
+
+    const stats = useMemo(() => ({
+        pending: data.cashAdvances.filter(ca => ca.status === 'approved').length +
+                 data.liquidations.filter(liq => liq.status === 'approved').length +
+                 data.reimbursements.filter(reimb => reimb.status === 'approved').length,
+        released: data.cashAdvances.filter(ca => ca.status === 'released').length +
+                  data.liquidations.filter(liq => liq.status === 'released').length +
+                  data.reimbursements.filter(reimb => reimb.status === 'released').length,
+        rejected: data.cashAdvances.filter(ca => ca.status === 'rejected').length +
+                  data.liquidations.filter(liq => liq.status === 'rejected').length +
+                  data.reimbursements.filter(reimb => reimb.status === 'rejected').length,
+        total: data.cashAdvances.length + data.liquidations.length + data.reimbursements.length
+    }), [data]);
+
+    const tabs = [
+        `Cash Advances (${filteredCashAdvances.length})`,
+        `Liquidations (${filteredLiquidations.length})`,
+        `Reimbursements (${filteredReimbursements.length})`
+    ];
+
+    const renderTable = (items, filteredTotal, tabKey) => (
+        <div>
+            <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                <table className="w-full min-w-[900px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                         <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Reference No.</th>
@@ -128,7 +336,13 @@ const Disbursements = () => {
                 <tbody className="divide-y divide-gray-200">
                     {items.length === 0 ? (
                         <tr>
-                            <td colSpan="8" className="py-8 text-center text-gray-500">No disbursements found</td>
+                            <td colSpan="8" className="py-8 text-center text-gray-500">
+                                {searchTerm
+                                    ? 'No results match your search'
+                                    : statusFilter === 'all'
+                                        ? 'No disbursements found'
+                                        : `No ${statusFilter} disbursements`}
+                            </td>
                         </tr>
                     ) : (
                         items.map((row) => (
@@ -196,26 +410,16 @@ const Disbursements = () => {
                 </tbody>
             </table>
         </div>
+            <Pagination
+                currentPage={page[tabKey]}
+                totalItems={filteredTotal}
+                pageSize={pageSize}
+                onPageChange={(p) => setPage(prev => ({ ...prev, [tabKey]: p }))}
+                onPageSizeChange={handlePageSizeChange}
+            />
+        </div>
     );
 
-    const stats = useMemo(() => ({
-        pending: data.cashAdvances.filter(ca => ca.status === 'approved').length +
-                 data.liquidations.filter(liq => liq.status === 'approved').length +
-                 data.reimbursements.filter(reimb => reimb.status === 'approved').length,
-        released: data.cashAdvances.filter(ca => ca.status === 'released').length +
-                  data.liquidations.filter(liq => liq.status === 'released').length +
-                  data.reimbursements.filter(reimb => reimb.status === 'released').length,
-        rejected: data.cashAdvances.filter(ca => ca.status === 'rejected').length +
-                  data.liquidations.filter(liq => liq.status === 'rejected').length +
-                  data.reimbursements.filter(reimb => reimb.status === 'rejected').length,
-        total: data.cashAdvances.length + data.liquidations.length + data.reimbursements.length
-    }), [data]);
-
-    const tabs = [
-        `Cash Advances (${data.cashAdvances.length})`,
-        `Liquidations (${data.liquidations.length})`,
-        `Reimbursements (${data.reimbursements.length})`
-    ];
 
     return (
         <div>
@@ -288,7 +492,7 @@ const Disbursements = () => {
                         {tabs.map((tab, index) => (
                             <button
                                 key={index}
-                                onClick={() => setActiveTab(index)}
+                                onClick={() => handleTabChange(index)}
                                 className={`px-6 py-4 text-sm font-semibold border-b-2 transition-colors ${
                                     activeTab === index
                                         ? 'border-primary-600 text-primary-600'
@@ -305,10 +509,76 @@ const Disbursements = () => {
                 {loading ? (
                     <Loading message="Loading disbursements..." />
                 ) : (
-                    <div className="p-6">
-                        {activeTab === 0 && renderTable(data.cashAdvances)}
-                        {activeTab === 1 && renderTable(data.liquidations)}
-                        {activeTab === 2 && renderTable(data.reimbursements)}
+                    <div className="p-6 space-y-4">
+                        {/* Search Bar */}
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <input
+                                type="text"
+                                placeholder="Search by reference number, requester, department, or purpose..."
+                                value={searchTerm}
+                                onChange={(e) => {
+                                    setSearchTerm(e.target.value);
+                                    setPage(prev => ({ ...prev, [tabKeyMap[activeTab]]: 1 }));
+                                }}
+                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm outline-none transition-colors"
+                            />
+                        </div>
+
+                        {/* Status Filter Bar */}
+                        <div className="flex flex-wrap gap-2">
+                            {/* All Requests pill */}
+                            <button
+                                onClick={() => handleStatusFilterChange('all')}
+                                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
+                                    statusFilter === 'all'
+                                        ? 'bg-gray-800 text-white'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                }`}
+                            >
+                                All Requests
+                            </button>
+                            {availableStatuses.map((status) => {
+                                const isActive = statusFilter === status;
+                                const isPendingRelease = status === 'approved';
+                                const count = isPendingRelease ? stats.pending : null;
+                                const label = getStatusText(status);
+
+                                const colorMap = {
+                                    approved: isActive
+                                        ? 'bg-yellow-500 text-white'
+                                        : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100',
+                                    released: isActive
+                                        ? 'bg-green-600 text-white'
+                                        : 'bg-green-50 text-green-700 hover:bg-green-100',
+                                    rejected: isActive
+                                        ? 'bg-red-600 text-white'
+                                        : 'bg-red-50 text-red-700 hover:bg-red-100',
+                                };
+                                const colorClass = colorMap[status] || (isActive ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200');
+
+                                return (
+                                    <button
+                                        key={status}
+                                        onClick={() => handleStatusFilterChange(status)}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${colorClass}`}
+                                    >
+                                        {label}
+                                        {isPendingRelease && count > 0 && (
+                                            <span className={`inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-xs font-bold ${
+                                                isActive ? 'bg-white/25 text-white' : 'bg-yellow-500 text-white'
+                                            }`}>
+                                                {count}
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {activeTab === 0 && renderTable(paginatedCashAdvances, filteredCashAdvances.length, 'cashAdvances')}
+                        {activeTab === 1 && renderTable(paginatedLiquidations, filteredLiquidations.length, 'liquidations')}
+                        {activeTab === 2 && renderTable(paginatedReimbursements, filteredReimbursements.length, 'reimbursements')}
                     </div>
                 )}
             </Card>

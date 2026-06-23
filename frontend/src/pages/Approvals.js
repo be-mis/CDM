@@ -111,6 +111,7 @@ const Approvals = () => {
     const [remarks, setRemarks] = useState('');
     const [notification, setNotification] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState('pending');
     const [pageSize, setPageSize] = useState(10);
     const [page, setPage] = useState({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
 
@@ -119,17 +120,18 @@ const Approvals = () => {
     const fetchPendingApprovals = useCallback(async () => {
         try {
             setLoading(true);
-            const res = await api.get('/approvals/pending');
+            const res = await api.get('/approvals/all');
             if (res.data.success) {
                 setData(res.data.data);
             }
         } catch (error) {
-            console.error('Error fetching pending approvals:', error);
-            setNotification({ message: 'Failed to load pending approvals', severity: 'error' });
+            console.error('Error fetching approvals:', error);
+            setNotification({ message: 'Failed to load approvals', severity: 'error' });
         } finally {
             setLoading(false);
         }
     }, []);
+
 
     useEffect(() => {
         fetchPendingApprovals();
@@ -201,36 +203,78 @@ const Approvals = () => {
         setPage({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
     };
 
+    const handleStatusFilterChange = (status) => {
+        setStatusFilter(status);
+        setPage({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
+    };
+
+    // Derive available statuses dynamically from all data
+    const availableStatuses = useMemo(() => {
+        const allItems = [
+            ...data.cashAdvances,
+            ...data.liquidations,
+            ...data.reimbursements,
+        ];
+        const statusSet = new Set(allItems.map(item => (item.status || '').toLowerCase()).filter(Boolean));
+        // Preferred display order
+        const order = ['pending', 'approved', 'rejected', 'released'];
+        const sorted = order.filter(s => statusSet.has(s));
+        // Append any statuses not in the preferred order
+        statusSet.forEach(s => { if (!order.includes(s)) sorted.push(s); });
+        return sorted;
+    }, [data]);
+
+    // Count of pending items per tab (for badge)
+    const pendingCounts = useMemo(() => ({
+        cashAdvances: data.cashAdvances.filter(i => (i.status || '').toLowerCase() === 'pending').length,
+        liquidations: data.liquidations.filter(i => (i.status || '').toLowerCase() === 'pending').length,
+        reimbursements: data.reimbursements.filter(i => (i.status || '').toLowerCase() === 'pending').length,
+    }), [data]);
+
+    const totalPendingCount = pendingCounts.cashAdvances + pendingCounts.liquidations + pendingCounts.reimbursements;
+
+    // Auto-correct statusFilter: default pending if items exist, else all
+    useEffect(() => {
+        if (statusFilter === 'pending' && totalPendingCount === 0 && availableStatuses.length > 0) {
+            setStatusFilter('all');
+        }
+    }, [totalPendingCount, availableStatuses, statusFilter]);
+
+    const applyStatusFilter = useCallback((items) => {
+        if (statusFilter === 'all') return items;
+        return items.filter(item => (item.status || '').toLowerCase() === statusFilter);
+    }, [statusFilter]);
+
     // Filtered lists — search by ref number, requester name, or purpose
     const filteredCashAdvances = useMemo(() => {
-        if (!searchTerm) return data.cashAdvances;
         const q = searchTerm.toLowerCase();
-        return data.cashAdvances.filter(item =>
+        return applyStatusFilter(data.cashAdvances).filter(item =>
+            !searchTerm ||
             (item.advance_number || '').toLowerCase().includes(q) ||
             (item.requested_by || '').toLowerCase().includes(q) ||
             (item.purpose || '').toLowerCase().includes(q)
         );
-    }, [data.cashAdvances, searchTerm]);
+    }, [data.cashAdvances, searchTerm, applyStatusFilter]);
 
     const filteredLiquidations = useMemo(() => {
-        if (!searchTerm) return data.liquidations;
         const q = searchTerm.toLowerCase();
-        return data.liquidations.filter(item =>
+        return applyStatusFilter(data.liquidations).filter(item =>
+            !searchTerm ||
             (item.liquidation_number || '').toLowerCase().includes(q) ||
             (item.submitted_by || '').toLowerCase().includes(q) ||
             (item.purpose || '').toLowerCase().includes(q)
         );
-    }, [data.liquidations, searchTerm]);
+    }, [data.liquidations, searchTerm, applyStatusFilter]);
 
     const filteredReimbursements = useMemo(() => {
-        if (!searchTerm) return data.reimbursements;
         const q = searchTerm.toLowerCase();
-        return data.reimbursements.filter(item =>
+        return applyStatusFilter(data.reimbursements).filter(item =>
+            !searchTerm ||
             (item.reimbursement_number || '').toLowerCase().includes(q) ||
             (item.submitted_by || '').toLowerCase().includes(q) ||
             (item.purpose || '').toLowerCase().includes(q)
         );
-    }, [data.reimbursements, searchTerm]);
+    }, [data.reimbursements, searchTerm, applyStatusFilter]);
 
     // Paginated slices
     const paginatedCashAdvances = useMemo(() => {
@@ -272,22 +316,35 @@ const Approvals = () => {
                     <tr>
                         <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Reference No.</th>
                         <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Requested By</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Department</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Purpose</th>
                         <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Amount</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Date</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Requested Date</th>
+                        <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Status</th>
                         <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                     {items.length === 0 ? (
                         <tr>
-                            <td colSpan="7" className="py-8 text-center text-gray-500">
-                                {searchTerm ? 'No results match your search' : 'No pending requests'}
+                            <td colSpan="6" className="py-8 text-center text-gray-500">
+                                {searchTerm
+                                    ? 'No results match your search'
+                                    : statusFilter === 'all'
+                                        ? 'No requests found'
+                                        : `No ${statusFilter} requests`}
                             </td>
                         </tr>
                     ) : (
-                        items.map((row) => (
+                        items.map((row) => {
+                            const status = (row.status || '').toLowerCase();
+                            const statusStyles = {
+                                pending:  'bg-yellow-100 text-yellow-800',
+                                approved: 'bg-green-100 text-green-800',
+                                rejected: 'bg-red-100 text-red-800',
+                                released: 'bg-blue-100 text-blue-800',
+                            };
+                            const statusClass = statusStyles[status] || 'bg-gray-100 text-gray-700';
+                            const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+                            return (
                             <tr key={row.id} className="hover:bg-gray-50">
                                 <td className="px-4 py-4 text-sm font-semibold font-mono text-gray-900">
                                     {row.advance_number || row.liquidation_number || row.reimbursement_number}
@@ -302,17 +359,16 @@ const Approvals = () => {
                                         </span>
                                     </div>
                                 </td>
-                                <td className="px-4 py-4 text-sm text-gray-700 max-w-[150px] truncate" title={row.department_name}>
-                                    {row.department_name}
-                                </td>
-                                <td className="px-4 py-4 text-sm text-gray-700 max-w-[200px] truncate" title={row.purpose}>
-                                    {row.purpose}
-                                </td>
                                 <td className="px-4 py-4 text-sm font-semibold text-right text-gray-900">
                                     ₱{parseFloat(row.calculated_amount || row.requested_amount || row.total_actual_amount || row.total_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </td>
                                 <td className="px-4 py-4 text-sm text-gray-700">
                                     {formatLongDate(row.advance_date || row.liquidation_date || row.reimbursement_date)}
+                                </td>
+                                <td className="px-4 py-4 text-center">
+                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${statusClass}`}>
+                                        {statusLabel}
+                                    </span>
                                 </td>
                                 <td className="px-4 py-4">
                                     <div className="flex items-center justify-center gap-2">
@@ -323,24 +379,29 @@ const Approvals = () => {
                                         >
                                             <Eye className="w-4 h-4" />
                                         </button>
-                                        <button
-                                            onClick={() => { setSelectedRequest(row); setActionType('approve'); setActionOpen(true); }}
-                                            className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
-                                            title="Approve"
-                                        >
-                                            <CheckCircle className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onClick={() => { setSelectedRequest(row); setActionType('reject'); setActionOpen(true); }}
-                                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-                                            title="Reject"
-                                        >
-                                            <XCircle className="w-4 h-4" />
-                                        </button>
+                                        {status === 'pending' && (
+                                            <>
+                                                <button
+                                                    onClick={() => { setSelectedRequest(row); setActionType('approve'); setActionOpen(true); }}
+                                                    className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                                    title="Approve"
+                                                >
+                                                    <CheckCircle className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => { setSelectedRequest(row); setActionType('reject'); setActionOpen(true); }}
+                                                    className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                    title="Reject"
+                                                >
+                                                    <XCircle className="w-4 h-4" />
+                                                </button>
+                                            </>
+                                        )}
                                     </div>
                                 </td>
                             </tr>
-                        ))
+                            );
+                        })
                     )}
                 </tbody>
             </table>
@@ -356,23 +417,23 @@ const Approvals = () => {
     );
 
     const stats = useMemo(() => ({
-        cashAdvances: data.cashAdvances.length,
-        liquidations: data.liquidations.length,
-        reimbursements: data.reimbursements.length,
-        total: data.cashAdvances.length + data.liquidations.length + data.reimbursements.length
-    }), [data]);
+        cashAdvances: pendingCounts.cashAdvances,
+        liquidations: pendingCounts.liquidations,
+        reimbursements: pendingCounts.reimbursements,
+        total: totalPendingCount,
+    }), [pendingCounts, totalPendingCount]);
 
     const tabs = [
-        `Cash Advances (${data.cashAdvances.length})`,
-        `Liquidations (${data.liquidations.length})`,
-        `Reimbursements (${data.reimbursements.length})`
+        `Cash Advances (${filteredCashAdvances.length})`,
+        `Liquidations (${filteredLiquidations.length})`,
+        `Reimbursements (${filteredReimbursements.length})`,
     ];
 
     return (
         <div>
             <div className="mb-8">
                 <h1 className="text-3xl font-bold text-gray-900 mb-2">Approvals ✅</h1>
-                <p className="text-gray-600">Review and process pending disbursement requests</p>
+                <p className="text-gray-600">Review and process disbursement requests</p>
             </div>
 
             {notification && (
@@ -470,6 +531,60 @@ const Approvals = () => {
                                 }}
                                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm outline-none transition-colors"
                             />
+                        </div>
+
+                        {/* Status Filter Bar */}
+                        <div className="flex flex-wrap gap-2">
+                            {/* All Requests pill */}
+                            <button
+                                onClick={() => handleStatusFilterChange('all')}
+                                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
+                                    statusFilter === 'all'
+                                        ? 'bg-gray-800 text-white'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                }`}
+                            >
+                                All Requests
+                            </button>
+                            {availableStatuses.map((status) => {
+                                const isActive = statusFilter === status;
+                                const isPending = status === 'pending';
+                                const count = isPending ? totalPendingCount : null;
+                                const label = status.charAt(0).toUpperCase() + status.slice(1);
+
+                                const colorMap = {
+                                    pending: isActive
+                                        ? 'bg-yellow-500 text-white'
+                                        : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100',
+                                    approved: isActive
+                                        ? 'bg-green-600 text-white'
+                                        : 'bg-green-50 text-green-700 hover:bg-green-100',
+                                    rejected: isActive
+                                        ? 'bg-red-600 text-white'
+                                        : 'bg-red-50 text-red-700 hover:bg-red-100',
+                                    released: isActive
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-blue-50 text-blue-700 hover:bg-blue-100',
+                                };
+                                const colorClass = colorMap[status] || (isActive ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200');
+
+                                return (
+                                    <button
+                                        key={status}
+                                        onClick={() => handleStatusFilterChange(status)}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${colorClass}`}
+                                    >
+                                        {label}
+                                        {isPending && count > 0 && (
+                                            <span className={`inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-xs font-bold ${
+                                                isActive ? 'bg-white/25 text-white' : 'bg-yellow-500 text-white'
+                                            }`}>
+                                                {count}
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
                         </div>
 
                         {activeTab === 0 && renderTable(paginatedCashAdvances, filteredCashAdvances.length, 'cashAdvances')}

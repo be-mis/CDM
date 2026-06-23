@@ -1,10 +1,5 @@
 const pool = require('../config/db');
 
-/**
- * Approvals Controller
- * Handles fetching and processing requests that need approval
- */
-
 // Get all requests pending approval for the current logged-in approver
 const getPendingApprovals = async (req, res) => {
     try {
@@ -81,6 +76,82 @@ const getPendingApprovals = async (req, res) => {
     }
 };
 
+// Get ALL requests (all statuses) for the current logged-in approver
+const getAllApprovals = async (req, res) => {
+    try {
+        const userEmail = req.user.email;
+
+        // 1. Get departments this user is authorized to approve
+        const [authDeptRows] = await pool.query(
+            `SELECT d.id, d.name 
+       FROM approver a
+       JOIN departments d ON a.department = d.name
+       WHERE a.email = ?`,
+            [userEmail]
+        );
+
+        if (authDeptRows.length === 0) {
+            return res.status(200).json({
+                success: true,
+                data: {
+                    cashAdvances: [],
+                    liquidations: [],
+                    reimbursements: []
+                }
+            });
+        }
+
+        const deptIds = authDeptRows.map(d => d.id);
+
+        // 2. Fetch ALL Cash Advances (exclude drafts)
+        const [cashAdvances] = await pool.query(
+            `SELECT ca.*, d.name as department_name,
+             COALESCE((SELECT SUM(total_amount) FROM cash_advance_breakdown WHERE cash_advance_id = ca.id), ca.requested_amount) as calculated_amount
+       FROM cash_advances ca
+       JOIN departments d ON ca.department_id = d.id
+       WHERE ca.department_id IN (?) AND ca.status != 'draft'`,
+            [deptIds]
+        );
+
+        // 3. Fetch ALL Liquidations (exclude drafts)
+        const [liquidations] = await pool.query(
+            `SELECT l.*, d.name as department_name
+       FROM liquidations l
+       JOIN departments d ON l.department_id = d.id
+       WHERE l.department_id IN (?) AND l.status != 'draft'`,
+            [deptIds]
+        );
+
+        // 4. Fetch ALL Reimbursements (exclude drafts)
+        const [reimbursements] = await pool.query(
+            `SELECT r.*, d.name as department_name
+            FROM reimbursements r
+            LEFT JOIN departments d ON r.department_id = d.id
+            WHERE r.department_id IS NOT NULL
+            AND r.department_id IN (?)
+            AND r.status != 'draft'`,
+            [deptIds]
+        );
+
+        res.status(200).json({
+            success: true,
+            data: {
+                cashAdvances,
+                liquidations,
+                reimbursements
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching all approvals:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching all approvals',
+            error: error.message
+        });
+    }
+};
+
 // Approve or Reject a request
 const processApproval = async (req, res) => {
     const { type, id, action, remarks } = req.body;
@@ -149,5 +220,6 @@ const processApproval = async (req, res) => {
 
 module.exports = {
     getPendingApprovals,
+    getAllApprovals,
     processApproval
 };

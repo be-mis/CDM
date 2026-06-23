@@ -9,6 +9,9 @@ router.use(verifyToken);
 // GET /api/approvals/pending - Get all requests pending approval for the current user
 router.get('/pending', approvalsController.getPendingApprovals);
 
+// GET /api/approvals/all - Get all requests (all statuses) for the current user
+router.get('/all', approvalsController.getAllApprovals);
+
 // POST /api/approvals/process - Approve or Reject a request
 router.post('/process', approvalsController.processApproval);
 
