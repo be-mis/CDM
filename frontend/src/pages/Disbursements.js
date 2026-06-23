@@ -149,6 +149,12 @@ const Disbursements = () => {
     };
 
     const handleAction = async () => {
+        if (!selectedRequest) {
+            console.error('handleAction called with no selectedRequest');
+            setNotification({ message: 'No request selected. Please try again.', severity: 'error' });
+            return;
+        }
+
         try {
             const typeMap = { 0: 'cash-advance', 1: 'liquidation', 2: 'reimbursement' };
             const res = await api.post('/disbursements/process', {
@@ -168,10 +174,20 @@ const Disbursements = () => {
                 setSelectedRequest(null);
                 fetchPendingDisbursements();
                 setTimeout(() => setNotification(null), 3000);
+            } else {
+                // Backend responded but explicitly signaled failure (e.g. status already changed)
+                console.error('Disbursement action failed:', res.data);
+                setNotification({
+                    message: res.data?.message || 'Error processing action',
+                    severity: 'error'
+                });
             }
         } catch (error) {
-            console.error('Error processing action:', error);
-            setNotification({ message: 'Error processing action', severity: 'error' });
+            console.error('Error processing action:', error?.response?.data || error);
+            setNotification({
+                message: error?.response?.data?.message || 'Error processing action',
+                severity: 'error'
+            });
         }
     };
 
@@ -653,6 +669,7 @@ const Disbursements = () => {
                     <Input
                         label="Reason for Rejection"
                         multiline
+                        fullWidth
                         rows={3}
                         value={remarks}
                         onChange={(e) => setRemarks(e.target.value)}

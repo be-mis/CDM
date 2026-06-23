@@ -842,6 +842,7 @@ const MyRequests = () => {
     pending: activeTabData.filter(item => (item.rawStatus || '').toLowerCase() === 'pending').length,
     approved: activeTabData.filter(item => (item.rawStatus || '').toLowerCase() === 'approved').length,
     rejected: activeTabData.filter(item => (item.rawStatus || '').toLowerCase() === 'rejected').length,
+    released: activeTabData.filter(item => (item.rawStatus || '').toLowerCase() === 'released').length,
   }), [activeTabData]);
 
   const tabs = [
@@ -867,7 +868,7 @@ const MyRequests = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
         <Card className="bg-gradient-to-br from-orange-400 to-amber-600 text-white shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -900,6 +901,17 @@ const MyRequests = () => {
                 <h3 className="text-4xl font-bold">{stats.rejected}</h3>
               </div>
               <XCircle className="w-12 h-12 opacity-30" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-blue-400 to-blue-600 text-white shadow-sm hover:shadow-md transition-shadow">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/90 text-sm font-semibold mb-2">Released</p>
+                <h3 className="text-4xl font-bold">{stats.released}</h3>
+              </div>
+              <CheckCircle className="w-12 h-12 opacity-30" />
             </div>
           </CardContent>
         </Card>
@@ -1310,24 +1322,27 @@ const MyRequests = () => {
           <div className="flex items-center gap-3">
             <span>Request Details</span>
             {selectedRequest && (
-              <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border ${getStatusColor(selectedRequest.status)}`}>
+              <span className={`px-3 py-1 text-xs font-semibold rounded-full flex items-center gap-1 ${getStatusColor(selectedRequest.status)}`}>
                 {selectedRequest.status?.toUpperCase()}
               </span>
             )}
           </div>
         }
         maxWidth="xl"
+        actions={
+          <Button variant="secondary" onClick={handleCloseModal}>Close</Button>
+        }
       >
         {viewLoading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
           </div>
         ) : selectedRequest ? (
-          <div className="max-h-[75vh] overflow-y-auto pr-2">
+          <>
             {tabValue === 0 && <CashAdvanceForm editData={selectedRequest} viewOnly onClose={handleCloseModal} hideCloseButton />}
             {tabValue === 1 && <LiquidationForm editData={selectedRequest} viewOnly onClose={handleCloseModal} hideCloseButton />}
             {tabValue === 2 && <ReimbursementForm editData={selectedRequest} viewOnly onClose={handleCloseModal} hideCloseButton />}
-          </div>
+          </>
         ) : (
           <div className="text-sm text-gray-500 py-6 text-center">No details available.</div>
         )}
