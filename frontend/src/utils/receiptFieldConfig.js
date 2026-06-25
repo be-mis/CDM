@@ -24,6 +24,7 @@ export const RECEIPT_NUMBER_LABELS = [
   // Sales Invoice variants
   'SALES INVOICE NO',
   'SALES INVOICE NO.',
+  'SALES INVOICE NO,',
   'SALES INVOICE #',
   'SALES INVOICE NUMBER',
   'SI NO',

@@ -1,354 +1,749 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import api from '../api';
 import {
-  DollarSign, Receipt, Coins, TrendingUp,
-  CreditCard, ShieldCheck, Clock, CheckCircle,
-  FileCheck
+  Receipt, Coins, TrendingUp,
+  CreditCard, ShieldCheck, CheckCircle,
+  Search, Filter, ChevronDown, ChevronRight,
+  Clock, Eye, HandCoins, XCircle, Send,
 } from 'lucide-react';
+import { formatLongDate } from '../utils/formatters';
+import CashAdvanceForm from '../components/CashAdvanceForm';
+import LiquidationForm from '../components/LiquidationForm';
+import ReimbursementForm from '../components/ReimbursementForm';
 import { Card, CardContent } from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import Modal from '../components/ui/Modal';
+import Input from '../components/ui/Input';
+import { Alert } from '../components/ui/Alert';
+import { Loading } from '../components/ui/Loading';
+
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+const formatPeso = (amount) =>
+  `₱${parseFloat(amount || 0).toLocaleString('en-PH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+const TYPE_STYLES = {
+  'Cash Advance':  'bg-indigo-50 text-indigo-700',
+  'Liquidation':   'bg-pink-50 text-pink-700',
+  'Reimbursement': 'bg-cyan-50 text-cyan-700',
+};
+
+// Maps raw DB row → normalised display row
+const normaliseRow = (item, type) => {
+  const refNumber =
+    item.advance_number ||
+    item.liquidation_number ||
+    item.reimbursement_number ||
+    '—';
+
+  const employee =
+    item.requested_by ||
+    item.submitted_by ||
+    item.employee_name ||
+    '—';
+
+  const amount = parseFloat(
+    item.calculated_amount ||
+    item.requested_amount  ||
+    item.total_actual_amount ||
+    item.total_amount      ||
+    0,
+  );
+
+  const approvalType =
+    type === 'Cash Advance'  ? 'cash-advance'   :
+    type === 'Liquidation'   ? 'liquidation'    :
+    'reimbursement';
+
+  return {
+    ...item,
+    type,
+    approvalType,
+    refNumber,
+    employee,
+    department: item.department_name || item.department || '—',
+    amount,
+    date:       item.created_at,
+    releasedBy: item.released_by  || null,
+    releasedAt: item.released_at  || null,
+  };
+};
+
+// Simple SVG donut chart (no recharts dependency)
+const DonutChart = ({ data, size = 120 }) => {
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (total === 0)
+    return <div className="text-center text-sm text-gray-400 py-4">No data</div>;
+  let cumulative = 0;
+  const r = 45, cx = 60, cy = 60, circumference = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size} viewBox="0 0 120 120">
+      {data.map((d, i) => {
+        const ratio    = d.value / total;
+        const dashArray = `${ratio * circumference} ${circumference}`;
+        const rotation  = (cumulative / total) * 360 - 90;
+        cumulative += d.value;
+        return (
+          <circle
+            key={i}
+            cx={cx} cy={cy} r={r}
+            fill="none"
+            stroke={d.color}
+            strokeWidth="18"
+            strokeDasharray={dashArray}
+            strokeDashoffset="0"
+            transform={`rotate(${rotation} ${cx} ${cy})`}
+          />
+        );
+      })}
+      <text x={cx} y={cy - 6} textAnchor="middle" fontSize="14" fontWeight="700" fill="#111827">
+        {total}
+      </text>
+      <text x={cx} y={cy + 10} textAnchor="middle" fontSize="9" fill="#6b7280">items</text>
+    </svg>
+  );
+};
+
+// ─── main component ──────────────────────────────────────────────────────────
 
 const AccountingDashboard = () => {
-  const navigate = useNavigate();
-  const { user } = useAuth();
-  const displayName = user?.name || user?.username || user?.email || 'Accounting';
-  const [activeTab, setActiveTab] = useState(0);
+  const navigate     = useNavigate();
+  const { user }     = useAuth();
+  const displayName  = user?.name || user?.username || user?.email || 'Accounting';
 
-  // Sample data for processing
-  const [pendingDisbursements] = useState([
-    {
-      id: 1,
-      type: 'Cash Advance',
-      refNumber: 'CA-202512-0045',
-      employee: 'Juan Dela Cruz',
-      department: 'Operations',
-      amount: 50000,
-      status: 'Approved - For Disbursement',
-      approvedBy: 'Manager A',
-      approvedDate: '2025-12-26'
-    },
-    {
-      id: 2,
-      type: 'Reimbursement',
-      refNumber: 'RMB-202512-0033',
-      employee: 'Maria Santos',
-      department: 'Sales',
-      amount: 8500,
-      status: 'Approved - For Disbursement',
-      approvedBy: 'Manager B',
-      approvedDate: '2025-12-25'
-    },
-    {
-      id: 3,
-      type: 'Liquidation',
-      refNumber: 'LIQ-202512-0029',
-      employee: 'Pedro Garcia',
-      department: 'Operations',
-      amount: 1750,
-      status: 'For Verification',
-      approvedBy: 'Manager A',
-      approvedDate: '2025-12-24'
-    },
-  ]);
+  // ── raw data from API ──────────────────────────────────────────────────────
+  const [loading, setLoading]           = useState(true);
+  const [notification, setNotification] = useState(null);
 
-  const [recentTransactions] = useState([
-    { refNumber: 'CA-202512-0044', amount: 75000, status: 'Disbursed', date: '2025-12-26' },
-    { refNumber: 'RMB-202512-0032', amount: 3500, status: 'Disbursed', date: '2025-12-26' },
-    { refNumber: 'LIQ-202512-0028', amount: 2250, status: 'Processed', date: '2025-12-25' },
-    { refNumber: 'CA-202512-0043', amount: 60000, status: 'Disbursed', date: '2025-12-25' },
-  ]);
+  const [cashAdvances,    setCashAdvances]    = useState([]);
+  const [liquidations,    setLiquidations]    = useState([]);
+  const [reimbursements,  setReimbursements]  = useState([]);
 
-  const handleProcess = (id) => {
-    console.log('Process disbursement:', id);
-    // TODO: Implement process logic
-  };
+  // ── queue UI state ─────────────────────────────────────────────────────────
+  const [queueSearch,     setQueueSearch]     = useState('');
+  const [queueTypeFilter, setQueueTypeFilter] = useState('all');
 
-  const handleVerify = (id) => {
-    console.log('Verify liquidation:', id);
-    // TODO: Implement verify logic
-  };
+  // ── view modal ─────────────────────────────────────────────────────────────
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [viewOpen,        setViewOpen]        = useState(false);
+  const [viewLoading,     setViewLoading]     = useState(false);
+  const [viewData,        setViewData]        = useState(null);
 
-  const getStatusColor = (status) => {
-    if (status.includes('Approved')) return 'bg-yellow-100 text-yellow-700';
-    if (status.includes('Verification')) return 'bg-blue-100 text-blue-700';
-    if (status.includes('Disbursed')) return 'bg-green-100 text-green-700';
-    if (status.includes('Processed')) return 'bg-indigo-100 text-indigo-700';
-    return 'bg-gray-100 text-gray-700';
-  };
+  // ── action modal ───────────────────────────────────────────────────────────
+  const [actionOpen,    setActionOpen]    = useState(false);
+  const [actionVerb,    setActionVerb]    = useState('release'); // 'release' | 'reject'
+  const [remarks,       setRemarks]       = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const getRequestIcon = (type) => {
-    switch (type) {
-      case 'Cash Advance':
-        return <DollarSign className="w-5 h-5 text-primary-600" />;
-      case 'Liquidation':
-        return <Receipt className="w-5 h-5 text-pink-600" />;
-      case 'Reimbursement':
-        return <Coins className="w-5 h-5 text-cyan-600" />;
-      default:
-        return null;
+  // ── fetch ──────────────────────────────────────────────────────────────────
+  const fetchAll = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/disbursements/pending');
+      if (res.data.success) {
+        const { cashAdvances = [], liquidations = [], reimbursements = [] } = res.data.data;
+        setCashAdvances(cashAdvances.map(i => normaliseRow(i, 'Cash Advance')));
+        setLiquidations(liquidations.map(i => normaliseRow(i, 'Liquidation')));
+        setReimbursements(reimbursements.map(i => normaliseRow(i, 'Reimbursement')));
+      }
+    } catch (error) {
+      console.error('Error fetching disbursements:', error);
+      setNotification({ message: 'Failed to load disbursement data.', severity: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // ── derived lists ──────────────────────────────────────────────────────────
+  const allRows = useMemo(
+    () => [...cashAdvances, ...liquidations, ...reimbursements],
+    [cashAdvances, liquidations, reimbursements],
+  );
+
+  const approvedRows  = useMemo(() => allRows.filter(r => r.status === 'approved'),  [allRows]);
+  const releasedRows  = useMemo(() => allRows.filter(r => r.status === 'released'),  [allRows]);
+  const rejectedRows  = useMemo(() => allRows.filter(r => r.status === 'rejected'),  [allRows]);
+
+  const filteredQueue = useMemo(() => {
+    let rows = approvedRows;
+    if (queueTypeFilter !== 'all') rows = rows.filter(r => r.type === queueTypeFilter);
+    if (queueSearch) {
+      const q = queueSearch.toLowerCase();
+      rows = rows.filter(r =>
+        (r.refNumber  || '').toLowerCase().includes(q) ||
+        (r.employee   || '').toLowerCase().includes(q) ||
+        (r.department || '').toLowerCase().includes(q),
+      );
+    }
+    return rows;
+  }, [approvedRows, queueTypeFilter, queueSearch]);
+
+  // ── summary stats (derived from the single API response) ──────────────────
+  const stats = useMemo(() => {
+    const today = new Date().toDateString();
+    const processedToday = releasedRows.filter(
+      r => r.releasedAt && new Date(r.releasedAt).toDateString() === today,
+    ).length;
+
+    const now = new Date();
+    const totalReleasedMonth = releasedRows
+      .filter(r => {
+        if (!r.releasedAt) return false;
+        const d = new Date(r.releasedAt);
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      })
+      .reduce((sum, r) => sum + r.amount, 0);
+
+    return {
+      forRelease:          approvedRows.length,
+      released:            releasedRows.length,
+      processedToday,
+      totalReleasedMonth,
+    };
+  }, [approvedRows, releasedRows]);
+
+  // ── donut chart data ───────────────────────────────────────────────────────
+  const typeDonutData = useMemo(() => [
+    { label: 'Cash Advance',  value: cashAdvances.filter(r => r.status === 'approved').length,   color: '#6366f1' },
+    { label: 'Liquidation',   value: liquidations.filter(r => r.status === 'approved').length,   color: '#ec4899' },
+    { label: 'Reimbursement', value: reimbursements.filter(r => r.status === 'approved').length, color: '#06b6d4' },
+  ], [cashAdvances, liquidations, reimbursements]);
+
+  const statusDonutData = useMemo(() => [
+    { label: 'Approved (Pending Release)', value: approvedRows.length,  color: '#f59e0b' },
+    { label: 'Released',                   value: releasedRows.length,  color: '#22c55e' },
+    { label: 'Rejected',                   value: rejectedRows.length,  color: '#ef4444' },
+  ], [approvedRows, releasedRows, rejectedRows]);
+
+  // ── handlers ───────────────────────────────────────────────────────────────
+  const handleView = async (row) => {
+    try {
+      setViewLoading(true);
+      setSelectedRequest(row);
+      setViewOpen(true);
+      const endpointMap = {
+        'cash-advance':  'cash-advances',
+        'liquidation':   'liquidations',
+        'reimbursement': 'reimbursements',
+      };
+      const res = await api.get(`/${endpointMap[row.approvalType]}/${row.id}`);
+      if (res.data.success) setViewData(res.data.data);
+    } catch (error) {
+      console.error('Error fetching request details:', error);
+      setNotification({ message: 'Failed to load request details.', severity: 'error' });
+    } finally {
+      setViewLoading(false);
     }
   };
 
-  const tabs = ['For Disbursement', 'For Verification', 'Recent Transactions'];
+  const openAction = (row, verb) => {
+    setSelectedRequest(row);
+    setActionVerb(verb);
+    setRemarks('');
+    setViewOpen(false);
+    setActionOpen(true);
+  };
 
+  const handleAction = async () => {
+    if (!selectedRequest) return;
+    try {
+      setActionLoading(true);
+      const res = await api.post('/disbursements/process', {
+        type:    selectedRequest.approvalType,
+        id:      selectedRequest.id,
+        action:  actionVerb,           // 'release' | 'reject'
+        remarks: remarks || null,
+      });
+      if (res.data.success) {
+        setNotification({
+          message: actionVerb === 'release'
+            ? 'Funds released successfully.'
+            : 'Request rejected successfully.',
+          severity: 'success',
+        });
+        setActionOpen(false);
+        setRemarks('');
+        setSelectedRequest(null);
+        fetchAll();
+        setTimeout(() => setNotification(null), 4000);
+      }
+    } catch (error) {
+      console.error('Error processing disbursement:', error);
+      setNotification({ message: 'Error processing action. Please try again.', severity: 'error' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCloseView = () => {
+    setViewOpen(false);
+    setViewData(null);
+    setSelectedRequest(null);
+  };
+
+  // ── sub-renderers ──────────────────────────────────────────────────────────
+  const getRequestIcon = (type) => {
+    if (type === 'Cash Advance')  return <HandCoins className="w-4 h-4 text-indigo-500" />;
+    if (type === 'Liquidation')   return <Receipt   className="w-4 h-4 text-pink-500" />;
+    if (type === 'Reimbursement') return <Coins     className="w-4 h-4 text-cyan-500" />;
+    return null;
+  };
+
+  const getStatusBadgeClass = (status) => {
+    switch ((status || '').toLowerCase()) {
+      case 'approved': return 'bg-yellow-50 text-yellow-700 border border-yellow-200';
+      case 'released': return 'bg-green-50 text-green-700 border border-green-200';
+      case 'rejected': return 'bg-red-50 text-red-700 border border-red-200';
+      default:         return 'bg-gray-50 text-gray-600 border border-gray-200';
+    }
+  };
+
+  const renderViewForm = () => {
+    if (!viewData) return null;
+    const { approvalType } = selectedRequest || {};
+    if (approvalType === 'cash-advance')  return <CashAdvanceForm  editData={viewData} viewOnly />;
+    if (approvalType === 'liquidation')   return <LiquidationForm  editData={viewData} viewOnly />;
+    if (approvalType === 'reimbursement') return <ReimbursementForm editData={viewData} viewOnly />;
+    return null;
+  };
+
+  // ── render ─────────────────────────────────────────────────────────────────
   return (
-    <div>
-      {/* Welcome Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          Accounting Dashboard 💰
-        </h1>
-        <p className="text-gray-600">Manage disbursements, payments, and financial reconciliation</p>
+    <div className="space-y-8">
+
+      {/* ── Header ── */}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900 mb-1">Accounting Dashboard 💰</h1>
+        <p className="text-gray-500">
+          Welcome back, <span className="font-medium text-gray-700">{displayName}</span> — manage disbursements and financial reconciliation.
+        </p>
       </div>
 
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-        <Card className="bg-gradient-to-br from-amber-500 to-orange-600 text-white">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/90 text-sm mb-2">For Disbursement</p>
-                <h3 className="text-4xl font-bold">18</h3>
-              </div>
-              <Clock className="w-12 h-12 opacity-30" />
-            </div>
-          </CardContent>
-        </Card>
+      {notification && (
+        <Alert severity={notification.severity} onClose={() => setNotification(null)}>
+          {notification.message}
+        </Alert>
+      )}
 
-        <Card className="bg-gradient-to-br from-blue-600 to-blue-700 text-white">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/90 text-sm mb-2">For Verification</p>
-                <h3 className="text-4xl font-bold">12</h3>
-              </div>
-              <ShieldCheck className="w-12 h-12 opacity-30" />
-            </div>
-          </CardContent>
-        </Card>
+      {/* ── Section 1: Summary Cards ── */}
+      <div>
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Financial Summary</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
 
-        <Card className="bg-gradient-to-br from-emerald-500 to-green-600 text-white">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/90 text-sm mb-2">Processed Today</p>
-                <h3 className="text-4xl font-bold">45</h3>
+          <Card className="bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white/90 text-sm font-semibold mb-2">For Release</p>
+                  <span className="text-3xl font-extrabold">{loading ? '—' : stats.forRelease}</span>
+                </div>
+                <Clock className="w-12 h-12 opacity-30" />
               </div>
-              <CheckCircle className="w-12 h-12 opacity-30" />
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
 
-        <Card className="bg-gradient-to-br from-purple-600 to-purple-700 text-white">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/90 text-sm mb-2">Total Disbursed</p>
-                <h3 className="text-4xl font-bold">₱3.2M</h3>
+          <Card className="bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-sm hover:shadow-md transition-shadow col-span-2 md:col-span-1">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white/90 text-sm font-semibold mb-2">Total Released</p>
+                  <span className="text-3xl font-extrabold">{loading ? '—' : stats.released}</span>
+                </div>
+                <ShieldCheck className="w-12 h-12 opacity-30" />
               </div>
-              <TrendingUp className="w-12 h-12 opacity-30" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
 
-      {/* Main Content with Tabs */}
-      <Card>
-        {/* Tab Headers */}
-        <div className="border-b border-gray-200">
-          <div className="flex">
-            {tabs.map((tab, index) => (
-              <button
-                key={index}
-                onClick={() => setActiveTab(index)}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === index
-                    ? 'border-primary-600 text-primary-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
+          <Card className="bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-sm hover:shadow-md transition-shadow col-span-2 md:col-span-1">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white/90 text-sm font-semibold mb-2">Processed Today</p>
+                  <span className="text-3xl font-extrabold">{loading ? '—' : stats.processedToday}</span>
+                </div>
+                <CheckCircle className="w-12 h-12 opacity-30" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-purple-600 to-purple-700 text-white shadow-sm hover:shadow-md transition-shadow col-span-2 md:col-span-1">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white/90 text-sm font-semibold mb-2">Released This Month</p>
+                  <span className="text-3xl font-extrabold">
+                    {loading ? '—' : `₱${(stats.totalReleasedMonth / 1_000_000).toFixed(1)}M`}
+                  </span>
+                </div>
+                <TrendingUp className="w-12 h-12 opacity-30" />
+              </div>
+            </CardContent>
+          </Card>
+
         </div>
+      </div>
 
+      {/* ── Section 2: Disbursement Queue ── */}
+      <Card>
         <CardContent className="p-6">
-          {/* For Disbursement Tab */}
-          {activeTab === 0 && (
+
+          {/* Header row */}
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
             <div>
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Approved Requests - Ready for Disbursement
-                </h2>
-                <span className="px-3 py-1 bg-yellow-100 text-yellow-700 text-sm font-semibold rounded-full">
-                  {pendingDisbursements.filter(p => p.status.includes('Approved')).length} items
-                </span>
+              <h2 className="text-lg font-bold text-gray-900">Disbursement Queue</h2>
+              <p className="text-sm text-gray-500 mt-0.5">
+                {filteredQueue.length} of {approvedRows.length} items shown
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search ref, employee, dept…"
+                  value={queueSearch}
+                  onChange={e => setQueueSearch(e.target.value)}
+                  className="pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none w-56"
+                />
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[800px]">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Type</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Reference No.</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Employee</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Department</th>
-                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Amount</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Approved By</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                      <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {pendingDisbursements.filter(p => p.status.includes('Approved')).map((request) => (
-                      <tr key={request.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-2">
-                            {getRequestIcon(request.type)}
-                            <span className="text-sm font-medium text-gray-900">{request.type}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="text-sm font-mono text-gray-700">{request.refNumber}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="text-sm text-gray-900">{request.employee}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="text-sm text-gray-600">{request.department}</span>
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <span className="text-sm font-semibold text-green-600">
-                            ₱{request.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="text-sm text-gray-600">{request.approvedBy}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(request.status)}`}>
-                            {request.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <Button
-                            variant="success"
-                            size="sm"
-                            startIcon={<CreditCard className="w-4 h-4" />}
-                            onClick={() => handleProcess(request.id)}
-                          >
-                            Process
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="relative">
+                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                <select
+                  value={queueTypeFilter}
+                  onChange={e => setQueueTypeFilter(e.target.value)}
+                  className="pl-8 pr-8 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none appearance-none bg-white"
+                >
+                  <option value="all">All Types</option>
+                  <option value="Cash Advance">Cash Advance</option>
+                  <option value="Liquidation">Liquidation</option>
+                  <option value="Reimbursement">Reimbursement</option>
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
               </div>
             </div>
-          )}
+          </div>
 
-          {/* For Verification Tab */}
-          {activeTab === 1 && (
-            <div>
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Liquidations - For Verification
-                </h2>
-                <span className="px-3 py-1 bg-blue-100 text-blue-700 text-sm font-semibold rounded-full">
-                  {pendingDisbursements.filter(p => p.status.includes('Verification')).length} items
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[800px]">
-                  <thead className="bg-gray-50 border-b border-gray-200">
+          {/* Table */}
+          {loading ? (
+            <Loading message="Loading disbursements…" />
+          ) : (
+            <div className="overflow-x-auto border border-gray-200 rounded-lg">
+              <table className="w-full min-w-[900px]">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reference No.</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Employee</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Department</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date Filed</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {filteredQueue.length === 0 ? (
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Type</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Reference No.</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Employee</th>
-                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Amount</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                      <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Action</th>
+                      <td colSpan={8} className="py-10 text-center text-gray-400 text-sm">
+                        No items found.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {pendingDisbursements.filter(p => p.status.includes('Verification')).map((request) => (
-                      <tr key={request.id} className="hover:bg-gray-50 transition-colors">
+                  ) : (
+                    filteredQueue.map((row, i) => (
+                      <tr key={`${row.approvalType}-${row.id}`} className="hover:bg-gray-50 transition-colors">
+
+                        {/* Type */}
+                        <td className="px-4 py-4">
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${TYPE_STYLES[row.type] || 'bg-gray-100 text-gray-600'}`}>
+                            {getRequestIcon(row.type)}
+                            {row.type}
+                          </span>
+                        </td>
+
+                        {/* Reference */}
+                        <td className="px-4 py-4">
+                          <span className="text-sm font-mono font-semibold text-gray-900">{row.refNumber}</span>
+                        </td>
+
+                        {/* Employee */}
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-2">
-                            {getRequestIcon(request.type)}
-                            <span className="text-sm font-medium text-gray-900">{request.type}</span>
+                            <div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                              {(row.employee || '?').charAt(0).toUpperCase()}
+                            </div>
+                            <span className="text-sm text-gray-900 truncate max-w-[130px]" title={row.employee}>
+                              {row.employee}
+                            </span>
                           </div>
                         </td>
-                        <td className="px-4 py-4">
-                          <span className="text-sm font-mono text-gray-700">{request.refNumber}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="text-sm text-gray-900">{request.employee}</span>
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <span className="text-sm font-semibold text-gray-900">
-                            ₱{request.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(request.status)}`}>
-                            {request.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            startIcon={<FileCheck className="w-4 h-4" />}
-                            onClick={() => handleVerify(request.id)}
-                          >
-                            Verify
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
 
-          {/* Recent Transactions Tab */}
-          {activeTab === 2 && (
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-6">Recent Transactions</h2>
-              <ul className="space-y-3">
-                {recentTransactions.map((transaction, index) => (
-                  <li
-                    key={index}
-                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                        <CheckCircle className="w-5 h-5 text-green-600" />
-                      </div>
-                      <div>
-                        <p className="font-mono text-sm font-medium text-gray-900">{transaction.refNumber}</p>
-                        <p className="text-xs text-gray-600">{transaction.date}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-gray-900">
-                        ₱{transaction.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                      </p>
-                      <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(transaction.status)}`}>
-                        {transaction.status}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                        {/* Department */}
+                        <td className="px-4 py-4">
+                          <span className="text-sm text-gray-600">{row.department}</span>
+                        </td>
+
+                        {/* Amount */}
+                        <td className="px-4 py-4 text-right">
+                          <span className="text-sm font-semibold text-gray-900">{formatPeso(row.amount)}</span>
+                        </td>
+
+                        {/* Date Filed */}
+                        <td className="px-4 py-4">
+                          <span className="text-sm text-gray-500">{formatLongDate(row.date)}</span>
+                        </td>
+
+                        {/* Released / Rejected By (tabs 1 & 2) */}
+
+                        {/* Status */}
+                        <td className="px-4 py-4">
+                          <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full capitalize ${getStatusBadgeClass(row.status)}`}>
+                            {row.status}
+                          </span>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-4 py-4">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => handleView(row)}
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                              title="View Details"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => openAction(row, 'release')}
+                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
+                              title="Release Funds"
+                            >
+                              <Send className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => openAction(row, 'reject')}
+                              className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                              title="Reject"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* ── Section 3: Charts ── */}
+      <div>
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Disbursement Monitoring</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+          {/* Pending for Release by Type */}
+          <Card>
+            <CardContent className="p-6">
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Pending Release by Type</h3>
+              <div className="flex flex-col items-center gap-4">
+                <DonutChart data={typeDonutData} size={130} />
+                <div className="w-full space-y-1.5">
+                  {typeDonutData.map(d => (
+                    <div key={d.label} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                        <span className="text-gray-600">{d.label}</span>
+                      </div>
+                      <span className="font-bold text-gray-900">{d.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Overall Status Breakdown */}
+          <Card>
+            <CardContent className="p-6">
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Overall Status Breakdown</h3>
+              <div className="flex flex-col items-center gap-4">
+                <DonutChart data={statusDonutData} size={130} />
+                <div className="w-full space-y-1.5">
+                  {statusDonutData.map(d => (
+                    <div key={d.label} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                        <span className="text-gray-600">{d.label}</span>
+                      </div>
+                      <span className="font-bold text-gray-900">{d.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+        </div>
+      </div>
+
+      {/* ── Section 4: Recent Releases ── */}
+      <div>
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Recent Releases</h2>
+        <Card>
+          <CardContent className="p-6">
+            {loading ? (
+              <Loading message="Loading recent releases…" />
+            ) : releasedRows.length === 0 ? (
+              <p className="text-gray-400 text-center py-8 text-sm">No released transactions yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[700px]">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      {['Reference No.', 'Type', 'Employee', 'Amount', 'Date Filed', 'Released By', 'Status'].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {releasedRows.slice(0, 10).map((item, i) => (
+                      <tr key={i} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 text-sm font-mono font-semibold text-gray-900">{item.refNumber}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${TYPE_STYLES[item.type] || 'bg-gray-100 text-gray-600'}`}>
+                            {getRequestIcon(item.type)}{item.type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-700">{item.employee}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">{formatPeso(item.amount)}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{formatLongDate(item.date)}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{item.releasedBy || '—'}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full capitalize ${getStatusBadgeClass(item.status)}`}>
+                            {item.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {releasedRows.length > 10 && (
+              <div className="mt-4 pt-4 border-t border-gray-100 flex justify-end">
+                <Button
+                  variant="secondary"
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  startIcon={<ChevronRight className="w-4 h-4" />}
+                >
+                  View All Released ({releasedRows.length})
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          VIEW DETAILS MODAL
+      ══════════════════════════════════════════════════════════════════════ */}
+      <Modal
+        open={viewOpen}
+        onClose={handleCloseView}
+        title={
+          <div className="flex items-center gap-3">
+            <span>Request Details</span>
+            <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full flex items-center gap-1">
+              <CreditCard className="w-3 h-3" />
+              FOR DISBURSEMENT
+            </span>
+          </div>
+        }
+        maxWidth="xl"
+        actions={
+          <>
+            <Button variant="secondary" onClick={handleCloseView}>Close</Button>
+            <Button
+              variant="danger"
+              startIcon={<XCircle className="w-4 h-4" />}
+              onClick={() => openAction(selectedRequest, 'reject')}
+            >
+              Reject
+            </Button>
+            <Button
+              variant="success"
+              startIcon={<Send className="w-4 h-4" />}
+              onClick={() => openAction(selectedRequest, 'release')}
+            >
+              Release Funds
+            </Button>
+          </>
+        }
+      >
+        {viewLoading ? (
+          <Loading message="Loading request details…" />
+        ) : viewData ? (
+          renderViewForm()
+        ) : (
+          <p className="text-sm text-gray-500 text-center py-8">No details available.</p>
+        )}
+      </Modal>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          ACTION CONFIRMATION MODAL
+      ══════════════════════════════════════════════════════════════════════ */}
+      <Modal
+        open={actionOpen}
+        onClose={() => setActionOpen(false)}
+        title={actionVerb === 'release' ? 'Confirm Fund Release' : 'Confirm Rejection'}
+        maxWidth="sm"
+        className="text-center"
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setActionOpen(false)} disabled={actionLoading}>
+              Cancel
+            </Button>
+            <Button
+              variant={actionVerb === 'release' ? 'success' : 'danger'}
+              startIcon={actionVerb === 'release' ? <Send className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+              onClick={handleAction}
+              disabled={actionLoading || (actionVerb === 'reject' && !remarks.trim())}
+            >
+              {actionLoading
+                ? 'Processing…'
+                : actionVerb === 'release' ? 'Confirm Release' : 'Confirm Rejection'}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-gray-700 mb-4">
+          {actionVerb === 'release'
+            ? 'Are you sure you want to release funds for this request?'
+            : 'Are you sure you want to reject this request? Please provide a reason below.'}
+        </p>
+        {actionVerb === 'reject' && (
+          <Input
+            label="Reason for Rejection"
+            multiline
+            rows={3}
+            fullWidth
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            required
+            autoFocus
+          />
+        )}
+      </Modal>
+
     </div>
   );
 };

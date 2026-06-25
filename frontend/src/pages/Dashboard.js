@@ -215,11 +215,17 @@ const Dashboard = () => {
               <h2 className="text-lg font-bold text-gray-900 mb-4">My Requests</h2>
               <EmployeeDashboard />
             </div>
-            {user?.isApprover && (
+            {user?.role === 'accounting' ? (
               <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 md:p-6">
-                <h2 className="text-lg font-bold text-gray-900 mb-4">Pending Approvals (Manager)</h2>
-                <ManagerDashboard />
+                <AccountingDashboard />
               </div>
+            ) : (
+              user?.isApprover && (
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 md:p-6">
+                  <h2 className="text-lg font-bold text-gray-900 mb-4">Pending Approvals (Manager)</h2>
+                  <ManagerDashboard />
+                </div>
+              )
             )}
           </div>
         );

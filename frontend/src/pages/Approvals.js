@@ -312,9 +312,9 @@ const Approvals = () => {
                 <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                         <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Reference No.</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Requested By</th>
-                        <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Amount</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Requested Date</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Request By</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Amount</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Request Date</th>
                         <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Status</th>
                         <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
                     </tr>
@@ -356,10 +356,10 @@ const Approvals = () => {
                                         </span>
                                     </div>
                                 </td>
-                                <td className="px-4 py-4 text-sm font-semibold text-right text-gray-900">
+                                <td className="px-4 py-4 text-sm font-semibold text-left text-gray-900">
                                     ₱{parseFloat(row.calculated_amount || row.requested_amount || row.total_actual_amount || row.total_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </td>
-                                <td className="px-4 py-4 text-sm text-gray-700">
+                                <td className="px-4 py-4 text-sm text-left text-gray-700">
                                     {formatLongDate(row.advance_date || row.liquidation_date || row.reimbursement_date)}
                                 </td>
                                 <td className="px-4 py-4 text-center">
@@ -635,7 +635,7 @@ const Approvals = () => {
             <Modal
                 open={actionOpen}
                 onClose={() => setActionOpen(false)}
-                title={actionType === 'approve' ? 'Approve Request' : 'Reject Request'}
+                title={actionType === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
                 maxWidth="sm"
                 className="text-center "
                 actions={
