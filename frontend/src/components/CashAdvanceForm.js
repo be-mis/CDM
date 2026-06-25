@@ -77,6 +77,12 @@ const CashAdvanceForm = (props) => {
                 gcashName: editData.gcashName || editData.gcash_name || '',
                 accountNumber: editData.accountNumber || editData.account_number || '',
                 status: editData.status === 'Draft' ? 'draft' : (editData.status === 'Pending Approval' ? 'pending' : editData.status?.toLowerCase() || 'draft'),
+                // Approver should always reflect the logged-in user who is
+                // doing the (self-)approving — never trust whatever name(s)
+                // came back from editData, since the backend may return a
+                // joined string of every approver in the department.
+                approver: user?.name || '',
+                approvedDate: normalizeDate(editData.approvedDate || editData.approved_at || '') || '',
             };
         }
         return {
@@ -97,6 +103,8 @@ const CashAdvanceForm = (props) => {
             gcashName: '',
             accountNumber: '',
             status: 'draft',
+            approver: '',
+            approvedDate: '',
         };
     });
 
@@ -378,6 +386,16 @@ const CashAdvanceForm = (props) => {
         }
     };
 
+    // When the requestor is themselves an approver, their request skips the
+    // approval queue and goes directly to Accounting for disbursement.
+    // The status is set to 'approved' (same as a manager-approved request) so
+    // the Accounting Dashboard picks it up without any extra handling.
+    const isApprover = !!(
+        user?.role?.toLowerCase().includes('approver') ||
+        user?.role?.toLowerCase().includes('manager') ||
+        user?.is_approver
+    );
+
     const handleSubmit = async () => {
         if (isSubmitting) return;
         const { isValid } = validateForm();
@@ -388,11 +406,46 @@ const CashAdvanceForm = (props) => {
         try {
             // FIX 3: Same date preservation logic as handleSaveDraft.
             const advanceDate = editData?.id ? formData.advanceDate : getTodayString();
-            const payload = { ...formData, advanceDate, items, requestedAmount: calculateTotal(), status: 'pending' };
-            let res = editData?.id ? await api.put(`/cash-advances/${editData.id}`, payload) : await api.post('/cash-advances', payload);
+
+            // If the requestor is an approver, auto-approve and route directly
+            // to Accounting — no manager sign-off needed.
+            // - approver is always the logged-in user (never the joined
+            //   department-approvers string from the backend).
+            // - approvedDate is always "today" at the moment of (re-)approval,
+            //   even when editing an existing request, since re-submitting
+            //   counts as a fresh approval action. advanceDate (Request Date)
+            //   is left untouched/preserved above.
+            const submitStatus = isApprover ? 'approved' : 'pending';
+            const approvedDate = getTodayString();
+            const approverFields = isApprover
+                ? {
+                    approver: user.name,
+                    approvedDate,
+                    approved_by: user.name,
+                    approved_at: approvedDate,
+                }
+                : {};
+
+            const payload = {
+                ...formData,
+                advanceDate,
+                items,
+                requestedAmount: calculateTotal(),
+                status: submitStatus,
+                ...approverFields,
+            };
+
+            let res = editData?.id
+                ? await api.put(`/cash-advances/${editData.id}`, payload)
+                : await api.post('/cash-advances', payload);
+
             if (res.data.success) {
                 if (attachments.length > 0 || pendingDeletes.length > 0) await uploadAttachments(res.data.data.id);
-                showNotification('Request submitted successfully!');
+                showNotification(
+                    isApprover
+                        ? 'Request submitted and forwarded to Accounting for disbursement.'
+                        : 'Request submitted successfully!'
+                );
                 onClose ? onClose() : navigate('/my-requests', { state: { tab: 0 } });
             }
         } catch (e) {
@@ -637,7 +690,7 @@ const CashAdvanceForm = (props) => {
                                         </div>
                                     </div>
                                 </div>
-                                <div className="col-span-1 md:col-span-4">
+                                <div className="col-span-1 md:col-span-8">
                                     <label className="px-1 text-xs text-gray-600">Purpose</label>
                                     <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
                                         {formData.purpose || '-'}
@@ -724,7 +777,11 @@ const CashAdvanceForm = (props) => {
                             onClick={handleSubmit}
                             disabled={isSubmitting}
                         >
-                            {isSubmitting ? 'Submitting…' : 'Submit Request'}
+                            {isSubmitting
+                                ? 'Submitting…'
+                                : isApprover
+                                    ? 'Submit for Disbursement'
+                                    : 'Submit Request'}
                         </Button>
                     </>
                 )}

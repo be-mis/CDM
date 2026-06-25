@@ -147,6 +147,8 @@ const ReimbursementForm = (props) => {
         accountNumber:       editData.accountNumber || editData.account_number || '',
         remarks:             editData.remarks       || '',
         status:              editData.status        || 'draft',
+        approver:            editData.approver || editData.approved_by_name || '',
+        approvedDate:        toDateString(editData.approvedDate || editData.approved_at || '') || '',
       };
     }
     return {
@@ -166,6 +168,8 @@ const ReimbursementForm = (props) => {
       accountNumber:       '',
       remarks:             '',
       status:              'draft',
+      approver:            '',
+      approvedDate:        '',
     };
   });
 
@@ -483,6 +487,8 @@ const ReimbursementForm = (props) => {
       accountNumber:       formData.accountNumber       || null,
       remarks:             formData.remarks             || null,
       status,
+      approver:            formData.approver     || null,
+      approvedDate:        formData.approvedDate || null,
 
       items: finalExpenses.map((item) => ({
         description:    item.particulars,
@@ -631,14 +637,32 @@ const ReimbursementForm = (props) => {
     return true;
   }, [formData, expenses, itineraryItems, totalAmount, showSnackbar]);
 
+  // When the requestor is themselves an approver, their reimbursement skips
+  // the approval queue and is auto-approved on submit — same rule as
+  // CashAdvanceForm. The approver is always the logged-in user, and the
+  // approved date is today's date at the moment of (re-)submission.
+  const isApprover = !!(
+    user?.role?.toLowerCase().includes('approver') ||
+    user?.role?.toLowerCase().includes('manager') ||
+    user?.is_approver
+  );
+
   // Persist (save draft or submit) 
-  const persistForm = useCallback(async (status) => {
-    if (status === 'pending' && !validateSubmit()) return;
-    if (status === 'draft'   && !validateDraft())  return;
+  const persistForm = useCallback(async (requestedStatus) => {
+    if (requestedStatus === 'pending' && !validateSubmit()) return;
+    if (requestedStatus === 'draft'   && !validateDraft())  return;
     setSubmitting(true);
     try {
+      // Auto-approve when the requestor is also an approver. Draft saves
+      // are left untouched — auto-approval only applies on actual submit.
+      const autoApprove = requestedStatus === 'pending' && isApprover;
+      const status = autoApprove ? 'approved' : requestedStatus;
+      const approverFields = autoApprove
+        ? { approver: user.name, approvedDate: new Date().toISOString().split('T')[0] }
+        : { approver: '', approvedDate: '' };
+
       // Phase 1: Save reimbursement header + child rows (no new files yet)
-      const phase1Payload = buildPayload(status, expenses, itineraryItems);
+      const phase1Payload = { ...buildPayload(status, expenses, itineraryItems), ...approverFields };
 
       const response = isEditMode && editData?.id
         ? await api.put(`/reimbursements/${editData.id}`, phase1Payload)
@@ -665,7 +689,7 @@ const ReimbursementForm = (props) => {
           : itineraryItems;
 
         // Phase 3: Re-save with resolved file paths in the receipt objects 
-        const phase3Payload = buildPayload(status, finalExpenses, finalItinerary);
+        const phase3Payload = { ...buildPayload(status, finalExpenses, finalItinerary), ...approverFields };
         await api.put(`/reimbursements/${reimbursementId}`, phase3Payload);
       }
 
@@ -693,7 +717,7 @@ const ReimbursementForm = (props) => {
 
     } catch (error) {
       showSnackbar(
-        `Error ${status === 'draft' ? 'saving draft' : 'submitting'}: ` +
+        `Error ${requestedStatus === 'draft' ? 'saving draft' : 'submitting'}: ` +
           (error.response?.data?.message || error.message),
         'error',
       );
@@ -702,7 +726,7 @@ const ReimbursementForm = (props) => {
     }
   }, [
     validateForm, buildPayload, expenses, itineraryItems,
-    isEditMode, editData?.id,
+    isEditMode, editData?.id, isApprover, user,
     uploadExpenseAttachments, uploadItineraryReceipts,
     attachments, uploadSupportingDocuments,
     pendingDeletes, showSnackbar, onClose, navigate,

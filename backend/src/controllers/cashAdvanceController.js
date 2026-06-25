@@ -42,7 +42,9 @@ const createCashAdvance = async (req, res) => {
       status,
       items,
       otherItems,
-      requestedAmount
+      requestedAmount,
+      approver,
+      approvedDate
     } = req.body;
     // Compute liquidation deadline:
     // - For travel advances, if endDate is provided, use endDate + 3 days.
@@ -100,14 +102,18 @@ const createCashAdvance = async (req, res) => {
     }
 
     const departmentId = departments[0].id;
-    const [approverRows] = await connection.query(
-        'SELECT name FROM approver WHERE department = ?',
-        [department]
-    );
-    // Store all approver names as comma-separated string
-    const approvedBy = approverRows.length > 0
-        ? approverRows.map(r => r.name).join(', ')
-        : null;
+
+    // The approver is whoever is actually submitting/approving this request
+    // (the logged-in requestor, when they are also an approver — see
+    // isApprover logic on the frontend). Only set approved_by/approved_at
+    // when the request is actually being auto-approved; otherwise leave
+    // them null since no one has approved it yet.
+    // NOTE: previously this queried every approver row for the department
+    // and joined all their names together, which is why "approved_by" was
+    // showing all approvers in the department instead of just one.
+    const isApproved = String(status || '').toLowerCase() === 'approved';
+    const approvedBy = isApproved ? (approver || requestedBy || null) : null;
+    const approvedAt = isApproved ? (approvedDate || advanceDate || null) : null;
     const createdBy = req.user?.email || null;
 
     // Insert cash advance
@@ -116,8 +122,8 @@ const createCashAdvance = async (req, res) => {
           advance_number, advance_date, requested_by, department_id, 
           employee_id, business_unit, purpose, project_name, destination, start_date, 
           end_date, requested_amount, payment_method, gcash_name, 
-          account_number, date_needed, date_coverage, liquidation_deadline, status, created_by, advance_type, approved_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          account_number, date_needed, date_coverage, liquidation_deadline, status, created_by, advance_type, approved_by, approved_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
           advanceNumber, advanceDate, requestedBy, departmentId,
           employeeId, businessUnit || null, purpose, projectName || null,
@@ -127,7 +133,8 @@ const createCashAdvance = async (req, res) => {
           accountNumber || null, dateNeeded || null, dateCoverage || null,
           computedLiquidationDeadline || null, status || 'draft', createdBy,
           advanceType || 'cash',
-          approvedBy   // ← new
+          approvedBy,
+          approvedAt
       ]
     );
 
@@ -246,7 +253,9 @@ const updateCashAdvance = async (req, res) => {
       items,
       otherItems,
       requestedAmount,
-      advanceNumber
+      advanceNumber,
+      approver,
+      approvedDate
     } = req.body;
 
     // Check if cash advance exists
@@ -301,15 +310,12 @@ const updateCashAdvance = async (req, res) => {
 
     const departmentId = departments[0].id;
 
-    // Look up approver by department name
-    const [approverRows] = await connection.query(
-        'SELECT name FROM approver WHERE department = ?',
-        [department]
-    );
-    // Store all approver names as comma-separated string
-    const approvedBy = approverRows.length > 0
-        ? approverRows.map(r => r.name).join(', ')
-        : null;
+    // Same fix as createCashAdvance: only set approved_by/approved_at when
+    // this update is actually an (re-)approval, using the real approver
+    // (the logged-in user submitting), not every approver in the department.
+    const isApproved = String(status || '').toLowerCase() === 'approved';
+    const approvedBy = isApproved ? (approver || requestedBy || null) : null;
+    const approvedAt = isApproved ? (approvedDate || advanceDate || null) : null;
 
     // Fetch advance number for folder naming
     let existingAdvanceNumber = null;
@@ -349,7 +355,7 @@ const updateCashAdvance = async (req, res) => {
           start_date = ?, end_date = ?, requested_amount = ?, 
           payment_method = ?, gcash_name = ?, account_number = ?, 
           date_needed = ?, date_coverage = ?, liquidation_deadline = ?, status = ?, advance_type = ?,
-          approved_by = ?   
+          approved_by = ?, approved_at = ?
       WHERE id = ?`,
       [
           advanceNumber || existing[0].advance_number, advanceDate, requestedBy, departmentId,
@@ -360,7 +366,8 @@ const updateCashAdvance = async (req, res) => {
           accountNumber || null, dateNeeded || null, dateCoverage || null,
           computedLiquidationDeadline || null, status || 'draft',
           advanceType || existing[0].advance_type,
-          approvedBy,  // ← new
+          approvedBy,
+          approvedAt,
           id
       ]
     );

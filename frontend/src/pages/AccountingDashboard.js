@@ -273,6 +273,13 @@ const AccountingDashboard = () => {
         setSelectedRequest(null);
         fetchAll();
         setTimeout(() => setNotification(null), 4000);
+      } else {
+        // Backend responded but explicitly signaled failure (e.g. status already changed)
+        console.error('Disbursement action failed:', res.data);
+        setNotification({
+          message: res.data?.message || 'Error processing action. Please try again.',
+          severity: 'error',
+        });
       }
     } catch (error) {
       console.error('Error processing disbursement:', error);

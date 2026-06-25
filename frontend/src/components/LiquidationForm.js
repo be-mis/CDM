@@ -141,6 +141,8 @@ const LiquidationForm = (props) => {
         accountNumber:      editData.accountNumber || editData.account_number || '',
         remarks:            editData.remarks       || '',
         status:             editData.status        || 'draft',
+        approver:           editData.approver || editData.approved_by_name || '',
+        approvedDate:       normalizeDate(editData.approvedDate || editData.approved_at || '') || '',
       };
     }
     return {
@@ -160,6 +162,8 @@ const LiquidationForm = (props) => {
       accountNumber:      '',
       remarks:            '',
       status:             'draft',
+      approver:           '',
+      approvedDate:       '',
     };
   });
 
@@ -593,6 +597,8 @@ const LiquidationForm = (props) => {
       accountNumber:      formData.accountNumber     || null,
       remarks:            formData.remarks           || null,
       status,
+      approver:           formData.approver     || null,
+      approvedDate:       formData.approvedDate || null,
 
       // ── Expenses Breakdown ─────────────────────────────────────────────────
       // Controller key: `items`
@@ -659,14 +665,32 @@ const LiquidationForm = (props) => {
     return true;
   }, [formData, expenses, showSnackbar]);
 
+  // When the requestor is themselves an approver, their liquidation skips
+  // the approval queue and is auto-approved on submit — same rule as
+  // CashAdvanceForm. The approver is always the logged-in user, and the
+  // approved date is today's date at the moment of (re-)submission.
+  const isApprover = !!(
+    user?.role?.toLowerCase().includes('approver') ||
+    user?.role?.toLowerCase().includes('manager') ||
+    user?.is_approver
+  );
+
   // ── Persist (save draft or submit) ─────────────────────────────────────────
-  const persistForm = useCallback(async (status) => {
+  const persistForm = useCallback(async (requestedStatus) => {
     if (!validateForm()) return;
     setSubmitting(true);
     try {
+      // Auto-approve when the requestor is also an approver. Draft saves
+      // are left untouched — auto-approval only applies on actual submit.
+      const autoApprove = requestedStatus === 'pending' && isApprover;
+      const status = autoApprove ? 'approved' : requestedStatus;
+      const approverFields = autoApprove
+        ? { approver: user.name, approvedDate: new Date().toISOString().split('T')[0] }
+        : { approver: '', approvedDate: '' };
+
       // ── Phase 1: Save liquidation with existing/no attachments first ──────
       // Pass expenses/itinerary as-is (existing receipts stay, new ones pending)
-      const phase1Payload = buildPayload(status, expenses, itineraryItems);
+      const phase1Payload = { ...buildPayload(status, expenses, itineraryItems), ...approverFields };
 
       const response = isEditMode && editData?.id
         ? await api.put(`/liquidations/${editData.id}`, phase1Payload)
@@ -693,7 +717,7 @@ const LiquidationForm = (props) => {
           : itineraryItems;
 
         // ── Phase 3: Update liquidation with resolved file paths ─────────────
-        const phase3Payload = buildPayload(status, finalExpenses, finalItinerary);
+        const phase3Payload = { ...buildPayload(status, finalExpenses, finalItinerary), ...approverFields };
         await api.put(`/liquidations/${liquidationId}`, phase3Payload);
       }
 
@@ -721,7 +745,7 @@ const LiquidationForm = (props) => {
 
     } catch (error) {
       showSnackbar(
-        `Error ${status === 'draft' ? 'saving draft' : 'submitting'}: ` +
+        `Error ${requestedStatus === 'draft' ? 'saving draft' : 'submitting'}: ` +
           (error.response?.data?.message || error.message),
         'error',
       );
@@ -730,7 +754,7 @@ const LiquidationForm = (props) => {
     }
   }, [
     validateForm, buildPayload, expenses, itineraryItems,
-    isEditMode, editData?.id,
+    isEditMode, editData?.id, isApprover, user,
     uploadExpenseAttachments, uploadItineraryReceipts,
     attachments, uploadSupportingDocuments,
     pendingDeletes, showSnackbar, onClose, navigate,
@@ -884,7 +908,7 @@ const LiquidationForm = (props) => {
                   {formData.liquidationDate}
                 </div>
               </div>
-              <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="col-span-1 md:col-span-8">
                 <div className="col-span-1 md:col-span-2">
                   <label className="px-1 text-xs text-gray-600">Date Coverage</label>
                   <div className={` border-b border-gray-200 flex items-center justify-between gap-2 px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900`}>
