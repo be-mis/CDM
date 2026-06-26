@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-    CheckCircle, XCircle, Eye, X, Hourglass,
+    CheckCircle, XCircle, Eye, X, Hourglass, Banknote,
     Search, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import api from '../api';
@@ -311,18 +311,18 @@ const Approvals = () => {
                 <table className="w-full min-w-[800px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Reference No.</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Request By</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Amount</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Request Date</th>
-                        <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Status</th>
-                        <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
+                        <th className="px-4 py-3 w-1/6 text-left text-sm font-semibold text-gray-700">Reference No.</th>
+                        <th className="px-4 py-3 w-1/6 text-left text-sm font-semibold text-gray-700">Request By</th>
+                        <th className="px-4 py-3 w-1/6 text-left text-sm font-semibold text-gray-700">Amount</th>
+                        <th className="px-4 py-3 w-1/6 text-left text-sm font-semibold text-gray-700">Request Date</th>
+                        <th className="px-4 py-3 w-1/6 text-left text-sm font-semibold text-gray-700">Status</th>
+                        <th className="px-4 py-3 w-1/6 text-center text-sm font-semibold text-gray-700">Actions</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                     {items.length === 0 ? (
                         <tr>
-                            <td colSpan="6" className="py-8 text-center text-gray-500">
+                            <td colSpan="6" className="py-8 text-left text-gray-500">
                                 {searchTerm
                                     ? 'No results match your search'
                                     : statusFilter === 'all'
@@ -347,7 +347,7 @@ const Approvals = () => {
                                     {row.advance_number || row.liquidation_number || row.reimbursement_number}
                                 </td>
                                 <td className="px-4 py-4">
-                                    <div className="flex items-center gap-2 max-w-[180px]">
+                                    <div className="flex items-left gap-2 max-w-[180px]">
                                         <div className="w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center text-xs font-semibold text-indigo-600">
                                             {(row.requested_by || row.submitted_by)?.charAt(0)}
                                         </div>
@@ -362,8 +362,8 @@ const Approvals = () => {
                                 <td className="px-4 py-4 text-sm text-left text-gray-700">
                                     {formatLongDate(row.advance_date || row.liquidation_date || row.reimbursement_date)}
                                 </td>
-                                <td className="px-4 py-4 text-center">
-                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${statusClass}`}>
+                                <td className="px-4 py-4 text-left">
+                                    <span className={`inline-flex items-left px-2.5 py-1 rounded-full text-xs font-semibold ${statusClass}`}>
                                         {statusLabel}
                                     </span>
                                 </td>
@@ -601,30 +601,53 @@ const Approvals = () => {
                 title={
                     <div className="flex items-center gap-3">
                         <span>Request Details</span>
-                        <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full flex items-center gap-1">
-                            <Hourglass className="w-3 h-3" />
-                            PENDING APPROVAL
-                        </span>
+                        {selectedRequest && (() => {
+                            const status = (selectedRequest.status || '').toLowerCase();
+                            const badgeStyles = {
+                                pending:  'bg-yellow-100 text-yellow-800',
+                                approved: 'bg-green-100 text-green-800',
+                                rejected: 'bg-red-100 text-red-800',
+                                released: 'bg-blue-100 text-blue-800',
+                            };
+                            const badgeIcons = {
+                                pending:  <Hourglass className="w-3 h-3" />,
+                                approved: <CheckCircle className="w-3 h-3" />,
+                                rejected: <XCircle className="w-3 h-3" />,
+                                released: <Banknote className="w-3 h-3" />,
+                            };
+                            const badgeClass = badgeStyles[status] || 'bg-gray-100 text-gray-700';
+                            const badgeIcon = badgeIcons[status] || <Hourglass className="w-3 h-3" />;
+                            const badgeLabel = status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown';
+                            return (
+                                <span className={`px-3 py-1 text-xs font-semibold rounded-full flex items-center gap-1 ${badgeClass}`}>
+                                    {badgeLabel.toUpperCase()}
+                                </span>
+                            );
+                        })()}
                     </div>
                 }
                 maxWidth="xl"
                 actions={
                     <>
                         <Button variant="secondary" onClick={() => setViewOpen(false)}>Close</Button>
-                        <Button
-                            variant="danger"
-                            startIcon={<XCircle className="w-4 h-4" />}
-                            onClick={() => { setViewOpen(false); setActionType('reject'); setActionOpen(true); }}
-                        >
-                            Reject
-                        </Button>
-                        <Button
-                            variant="success"
-                            startIcon={<CheckCircle className="w-4 h-4" />}
-                            onClick={() => { setViewOpen(false); setActionType('approve'); setActionOpen(true); }}
-                        >
-                            Approve
-                        </Button>
+                        {selectedRequest && (selectedRequest.status || '').toLowerCase() === 'pending' && (
+                            <>
+                                <Button
+                                    variant="danger"
+                                    startIcon={<XCircle className="w-4 h-4" />}
+                                    onClick={() => { setViewOpen(false); setActionType('reject'); setActionOpen(true); }}
+                                >
+                                    Reject
+                                </Button>
+                                <Button
+                                    variant="success"
+                                    startIcon={<CheckCircle className="w-4 h-4" />}
+                                    onClick={() => { setViewOpen(false); setActionType('approve'); setActionOpen(true); }}
+                                >
+                                    Approve
+                                </Button>
+                            </>
+                        )}
                     </>
                 }
             >

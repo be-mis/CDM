@@ -102,12 +102,15 @@ const processDisbursement = async (req, res) => {
 
     const newStatus = action === 'release' ? 'released' : 'rejected';
 
+    // Release remarks go to release_remarks; rejection remarks overwrite reject_remarks
+    const remarksColumn = action === 'reject' ? 'reject_remarks' : 'release_remarks';
+
     await pool.query(
       `UPDATE \`${tableName}\`
        SET status          = ?,
            released_by     = ?,
            released_at     = NOW(),
-           release_remarks = ?
+           \`${remarksColumn}\` = ?
        WHERE id = ?`,
       [newStatus, userName, remarks || null, id],
     );

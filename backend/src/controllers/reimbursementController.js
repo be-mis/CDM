@@ -335,7 +335,8 @@ const getReimbursements = async (req, res) => {
     const submittedBy = req.user?.name || req.user?.email;
 
     const [rows] = await pool.query(
-      `SELECT r.*, d.name AS department_name
+      `SELECT r.*, d.name AS department_name,
+              r.approved_by AS approver_name
        FROM reimbursements r
        LEFT JOIN departments d ON r.department_id = d.id
        WHERE r.submitted_by = ?

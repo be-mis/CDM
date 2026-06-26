@@ -203,6 +203,9 @@ const EmployeeDashboard = () => {
             accountNumber: data.account_number || data.accountNumber,
             liquidationDeadline: data.liquidation_deadline || data.liquidationDeadline,
             status: data.status,
+            remarks: data.remarks,
+            reject_remarks: data.reject_remarks || '',
+            release_remarks: data.release_remarks || '',
             items: Array.isArray(data.items) ? data.items.map(it => ({ id: it.id, description: it.description || it.item_description || '', estimatedAmount: it.estimated_amount ?? it.estimatedAmount ?? it.amount ?? 0 })) : [],
             attachments: data.attachments || [],
             type: 'cash-advance'
@@ -231,6 +234,8 @@ const EmployeeDashboard = () => {
             checkNumber: data.check_number,
             accountNumber: data.account_number,
             remarks: data.remarks,
+            reject_remarks: data.reject_remarks || '',
+            release_remarks: data.release_remarks || '',
             status: data.status,
             items: Array.isArray(data.items) ? data.items.map(it => ({ id: it.id, description: it.description || '', category: it.category || '', estimatedAmount: it.estimated_amount ?? it.estimatedAmount ?? 0, actualAmount: it.actual_amount ?? it.actualAmount ?? 0, receiptNumber: it.receipt_number || '', vendor: it.vendor || '', expenseDate: it.expense_date || '' })) : [],
             attachments: data.attachments || [],

@@ -473,7 +473,8 @@ const getCashAdvances = async (req, res) => {
         ca.approved_amount, ca.status, ca.payment_method, ca.advance_type,
         ca.created_at, ca.updated_at, ca.approved_at,
         ca.approved_by as approver_name,
-        ca.remarks, ca.release_remarks,
+        ca.released_by, ca.released_at,
+        ca.remarks, ca.reject_remarks, ca.release_remarks,
         ca.liquidation_deadline,
         CASE 
           WHEN ca.status IN ('released','disbursed')

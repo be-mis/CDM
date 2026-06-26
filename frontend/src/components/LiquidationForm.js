@@ -801,6 +801,14 @@ const LiquidationForm = (props) => {
         </div>
       )}
 
+      {/* Rejection Reason Banner */}
+      {viewOnly && editData?.status?.toLowerCase() === 'rejected' && editData?.reject_remarks && (
+        <Alert severity="error">
+          <div className="font-semibold mb-1">Rejection Reason:</div>
+          <div>{editData.reject_remarks}</div>
+        </Alert>
+      )}
+
       {/* Liquidation Information */}
       <Card>
         <CardContent>

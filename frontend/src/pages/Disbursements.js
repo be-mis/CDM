@@ -348,14 +348,13 @@ const Disbursements = () => {
                 <table className="w-full min-w-[900px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Reference No.</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Requested By</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Department</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Purpose</th>
-                        <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Amount</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Approved By</th>
-                        <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
+                        <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Reference No.</th>
+                        <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Requested By</th>
+                        <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Department</th>
+                        <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Amount</th>
+                        <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Status</th>
+                        <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Approved By</th>
+                        <th className="px-4 py-3 w-2/12 text-center text-sm font-semibold text-gray-700">Actions</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -388,10 +387,7 @@ const Disbursements = () => {
                                 <td className="px-4 py-4 text-sm text-gray-700 max-w-[150px] truncate" title={row.department_name}>
                                     {row.department_name}
                                 </td>
-                                <td className="px-4 py-4 text-sm text-gray-700 max-w-[200px] truncate" title={row.purpose}>
-                                    {row.purpose}
-                                </td>
-                                <td className="px-4 py-4 text-sm font-semibold text-right text-gray-900">
+                                <td className="px-4 py-4 text-sm font-semibold text-left text-gray-900">
                                     ₱{parseFloat(row.calculated_amount || row.requested_amount || row.total_actual_amount || row.total_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </td>
                                 <td className="px-4 py-4">

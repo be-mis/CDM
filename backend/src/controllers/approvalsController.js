@@ -196,9 +196,11 @@ const processApproval = async (req, res) => {
         }
 
         // Perform update
+        // Rejection remarks go to reject_remarks; approval remarks go to remarks
+        const remarksColumn = action === 'reject' ? 'reject_remarks' : 'remarks';
         const [result] = await pool.query(
             `UPDATE ${tableName} 
-       SET status = ?, approved_by = ?, approved_at = NOW(), remarks = ?
+       SET status = ?, approved_by = ?, approved_at = NOW(), ${remarksColumn} = ?
        WHERE id = ?`,
             [newStatus, userName, remarks || null, id]
         );

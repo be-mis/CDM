@@ -98,6 +98,10 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
 
 const MyRequests = () => {
   const { user } = useAuth();
+  // When the logged-in user is an Approver/Manager, the "Approver" column
+  // is replaced with "Disburse By", showing the accounting person who
+  // released/disbursed the funds (released_by) instead of the approver name.
+  const isApproverUser = user?.role === 'approver' || user?.role === 'manager';
   const navigate = useNavigate();
   const location = useLocation();
   const TAB_SLUGS = ['cash-advances', 'liquidations', 'reimbursements'];
@@ -158,6 +162,7 @@ const MyRequests = () => {
           gcashName:        data.gcash_name || '',
           accountNumber:    data.account_number,
           remarks:          data.remarks,
+          reject_remarks:   data.reject_remarks || '',
           status:           data.status,
           // Budget breakdown rows from the cash_advance_breakdown table
           items:            data.items       || [],
@@ -207,6 +212,7 @@ const MyRequests = () => {
           checkNumber:         data.check_number,
           accountNumber:       data.account_number,
           remarks:             data.remarks,
+          reject_remarks:      data.reject_remarks || '',
           status:              data.status,
           items:               data.items         || [],
           transportation:      data.transportation || [],
@@ -252,6 +258,7 @@ const MyRequests = () => {
           checkNumber:         data.check_number,
           accountNumber:       data.account_number,
           remarks:             data.remarks,
+          reject_remarks:      data.reject_remarks || '',
           status:              data.status,
           expenses:            data.expenses    || [],
           itinerary:           data.itinerary   || [],
@@ -416,11 +423,12 @@ const MyRequests = () => {
           status: formatStatus(item.status),
           rawStatus: item.status,
           approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || 'N/A'),
+          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || 'N/A'),
           department: item.department,
           advanceType: item.advance_type,
           remarks: item.remarks || '',
+          rejectRemarks: item.reject_remarks || '',
           releaseRemarks: item.release_remarks || '',
-          isOverdue: !!item.is_overdue,
           liquidationDeadline: item.liquidation_deadline || null
         }));
         setCashAdvances(mappedData);
@@ -459,10 +467,12 @@ const MyRequests = () => {
           rawStatus: item.status,
           department: item.department,
           approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || 'N/A'),
+          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || 'N/A'),
           paymentMethod: item.payment_method,
           gcashName: item.gcash_name,
           accountNumber: item.account_number,
           remarks: item.remarks || '',
+          rejectRemarks: item.reject_remarks || '',
           releaseRemarks: item.release_remarks || ''
         }));
         setLiquidations(mappedData);
@@ -498,13 +508,14 @@ const MyRequests = () => {
           submitDate: item.reimbursement_date,
           status: formatStatus(item.status),
           rawStatus: item.status,
-          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || 'N/A'),
-          department:     item.department_id,
+          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || item.approved_by || 'N/A'),
+          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || 'N/A'),
           departmentName: item.department_name,
           paymentMethod: item.payment_method,
           gcashName: item.gcash_name,
           accountNumber: item.account_number,
           remarks: item.remarks || '',
+          rejectRemarks: item.reject_remarks || '',
           releaseRemarks: item.release_remarks || ''
         }));
         setReimbursements(mapped);
@@ -1005,13 +1016,13 @@ const MyRequests = () => {
               <table className="w-full min-w-[800px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Reference No.</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Purpose</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Amount</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Request Date</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Approver</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
+                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Reference No.</th>
+                    <th className="px-4 py-3 w-3/12 text-left text-sm font-semibold text-gray-700">Purpose</th>
+                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Amount</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Request Date</th>
+                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Status</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">{isApproverUser ? 'Accounting Handler' : 'Approver'}</th>
+                    <th className="px-4 py-3 w-2/12 text-center text-sm font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -1039,7 +1050,7 @@ const MyRequests = () => {
                         <td className="px-4 py-4 text-sm text-gray-700 max-w-[200px] truncate" title={request.purpose}>
                           {request.purpose}
                         </td>
-                        <td className="px-4 py-4 text-sm font-semibold text-right text-gray-900">
+                        <td className="px-4 py-4 text-sm font-semibold text-left text-gray-900">
                           ₱{request.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                         </td>
                         <td className="px-4 py-4 text-sm text-gray-600">{formatLongDate(request.requestDate)}</td>
@@ -1058,8 +1069,8 @@ const MyRequests = () => {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-sm text-gray-700 max-w-[150px] truncate" title={request.approver}>
-                          {request.approver}
+                        <td className="px-4 py-4 text-sm text-gray-700 max-w-[150px] truncate" title={isApproverUser ? request.releasedBy : request.approver}>
+                          {isApproverUser ? request.releasedBy : request.approver}
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-1.5">
@@ -1129,7 +1140,7 @@ const MyRequests = () => {
                     <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Refund/Additional</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Submit Date</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Approver</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">{isApproverUser ? 'Disburse By' : 'Approver'}</th>
                     <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
@@ -1168,8 +1179,8 @@ const MyRequests = () => {
                             {request.status}
                           </span>
                         </td>
-                        <td className="px-4 py-4 text-sm text-gray-700 max-w-[150px] truncate" title={request.approver}>
-                          {request.approver}
+                        <td className="px-4 py-4 text-sm text-gray-700 max-w-[150px] truncate" title={isApproverUser ? request.releasedBy : request.approver}>
+                          {isApproverUser ? request.releasedBy : request.approver}
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-1.5">
@@ -1230,7 +1241,7 @@ const MyRequests = () => {
                     <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Amount</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Submit Date</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Approver</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">{isApproverUser ? 'Disburse By' : 'Approver'}</th>
                     <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
@@ -1260,8 +1271,8 @@ const MyRequests = () => {
                             {request.status}
                           </span>
                         </td>
-                        <td className="px-4 py-4 text-sm text-gray-700 max-w-[150px] truncate" title={request.approver}>
-                          {request.approver}
+                        <td className="px-4 py-4 text-sm text-gray-700 max-w-[150px] truncate" title={isApproverUser ? request.releasedBy : request.approver}>
+                          {isApproverUser ? request.releasedBy : request.approver}
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-1.5">

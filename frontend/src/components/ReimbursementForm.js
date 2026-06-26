@@ -783,10 +783,10 @@ const ReimbursementForm = (props) => {
       )}
 
       {/* Rejection Reason Banner */}
-      {viewOnly && editData?.status?.toLowerCase() === 'rejected' && (editData?.remarks || editData?.release_remarks) && (
+      {viewOnly && editData?.status?.toLowerCase() === 'rejected' && editData?.reject_remarks && (
         <InlineAlert severity="error">
           <div className="font-semibold mb-1">Rejection Reason:</div>
-          <div>{editData.remarks || editData.release_remarks}</div>
+          <div>{editData.reject_remarks}</div>
         </InlineAlert>
       )}
 

@@ -598,12 +598,15 @@ const getLiquidations = async (req, res) => {
         l.gcash_name,
         l.account_number,
         l.remarks,
+        l.reject_remarks,
         l.release_remarks,
         l.status,
         l.created_at,
         l.updated_at,
         l.approved_at,
-        l.approved_by_name AS approver_name
+        l.approved_by_name AS approver_name,
+        l.released_by,
+        l.released_at
       FROM liquidations l
       LEFT JOIN departments d    ON l.department_id   = d.id
       LEFT JOIN cash_advances ca ON l.cash_advance_id = ca.id
@@ -642,7 +645,7 @@ const getLiquidationById = async (req, res) => {
          l.total_advance_amount, l.total_actual_amount, l.variance,
          l.refund_amount, l.additional_payment,
          l.payment_method, l.gcash_name, l.account_number,
-         l.remarks, l.release_remarks, l.status,
+         l.remarks, l.reject_remarks, l.release_remarks, l.status,
          l.created_at, l.updated_at,
          l.approved_at, l.approved_by_name
        FROM liquidations l
