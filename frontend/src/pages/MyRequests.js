@@ -3,7 +3,7 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
   HandCoins, Landmark, ReceiptText, Coins, Eye, Edit2, Trash2, Search,
   XCircle, AlertTriangle, Receipt, Loader2, RefreshCw, Hourglass, CheckCircle,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Clock, Send, Banknote, FileEdit,
 } from 'lucide-react';
 import CashAdvanceForm from '../components/CashAdvanceForm';
 import LiquidationForm from '../components/LiquidationForm';
@@ -96,6 +96,192 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
   );
 };
 
+// Formats a timestamp for the timeline (date + time). Falls back gracefully
+// if the value is missing or unparsable.
+const formatDateTime = (value) => {
+  if (!value) return null;
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleString('en-PH', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
+// Builds a timeline of events for a request from whatever fields the API
+// happens to return. Supports a few common naming conventions (snake_case
+// from the raw API payload, or camelCase if a caller already mapped it) so
+// it works across cash advances, liquidations, and reimbursements without
+// requiring a specific backend shape. Steps with no matching timestamp are
+// skipped, except "Submitted", which always shows.
+const buildTimelineSteps = (request) => {
+  if (!request) return [];
+
+  const pick = (...keys) => {
+    for (const k of keys) {
+      if (request[k]) return request[k];
+    }
+    return null;
+  };
+
+  const status = (request.rawStatus || request.status || '').toLowerCase();
+  const steps = [];
+
+  // 1. Submitted — always already done
+  const submittedAt = pick(
+    'created_at', 'submitted_at', 'date_filed', 'requested_at',
+    'advanceDate', 'liquidationDate', 'reimbursementDate'
+  );
+  steps.push({
+    key: 'submitted',
+    label: 'Request Submitted',
+    actor: pick('requested_by', 'submitted_by', 'created_by', 'requestedBy'),
+    timestamp: submittedAt,
+    icon: Send,
+    isDone: true,
+  });
+
+  // 2. Edited/Resubmitted (optional, only if the API tracks it and it differs from submission)
+  const updatedAt = pick('updated_at', 'last_modified_at');
+  if (updatedAt && submittedAt && new Date(updatedAt).getTime() > new Date(submittedAt).getTime() && status === 'pending') {
+    steps.push({
+      key: 'updated',
+      label: 'Request Updated',
+      actor: pick('updated_by', 'modified_by'),
+      timestamp: updatedAt,
+      icon: FileEdit,
+      isDone: true,
+    });
+  }
+
+  // 3. Approved / Rejected (mutually exclusive, depends on final status / fields present)
+  const approvedAt = pick('approved_at', 'approval_date');
+  const rejectedAt = pick('rejected_at', 'rejection_date', 'declined_at');
+
+  if (status === 'rejected' || rejectedAt) {
+    steps.push({
+      key: 'rejected',
+      label: 'Request Rejected',
+      actor: pick('rejected_by', 'reviewed_by', 'approver_name', 'action_by'),
+      timestamp: rejectedAt,
+      remarks: pick('reject_remarks', 'rejectRemarks', 'rejection_reason', 'remarks'),
+      icon: XCircle,
+      isDone: true,
+      doneColor: 'text-red-600 bg-red-100',
+    });
+  } else {
+    steps.push({
+      key: 'approved',
+      label: 'Request Approved',
+      actor: pick('approved_by', 'reviewed_by', 'approver_name', 'action_by', 'approver'),
+      timestamp: approvedAt,
+      remarks: pick('approval_remarks', 'remarks'),
+      icon: CheckCircle,
+      isDone: Boolean(approvedAt) || ['approved', 'released', 'disbursed', 'liquidated'].includes(status),
+      doneColor: 'text-green-600 bg-green-100',
+    });
+  }
+
+  // 4. Released / Processed (only relevant once approved, and only shown if applicable)
+  const releasedAt = pick('released_at', 'processed_at', 'disbursed_at');
+  if (['released', 'disbursed', 'liquidated'].includes(status) || releasedAt) {
+    steps.push({
+      key: 'released',
+      label: 'Funds Released',
+      actor: pick('released_by', 'processed_by', 'disbursed_by', 'releasedBy'),
+      timestamp: releasedAt,
+      remarks: pick('release_remarks', 'releaseRemarks'),
+      icon: Banknote,
+      isDone: Boolean(releasedAt) || ['released', 'disbursed', 'liquidated'].includes(status),
+      doneColor: 'text-blue-600 bg-blue-100',
+    });
+  }
+
+  // Resolve each step into a final state: 'done', 'current' (the next step
+  // waiting to happen), or 'upcoming' (further down the line, not relevant yet).
+  // Only the first not-done step becomes "current" — everything after it
+  // stays a muted "upcoming" so the active step is unambiguous.
+  let currentAssigned = false;
+  return steps.map((step) => {
+    if (step.isDone) {
+      return { ...step, state: 'done', color: step.doneColor || 'text-gray-500 bg-gray-100' };
+    }
+    if (!currentAssigned) {
+      currentAssigned = true;
+      return { ...step, state: 'current', color: 'text-amber-600 bg-amber-100 ring-2 ring-amber-300 ring-offset-2' };
+    }
+    return { ...step, state: 'upcoming', color: 'text-gray-400 bg-gray-100' };
+  });
+};
+
+const RequestTimeline = ({ request }) => {
+  const steps = useMemo(() => buildTimelineSteps(request), [request]);
+
+  if (steps.length === 0) return null;
+
+  return (
+    <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50/50">
+      <div className="flex items-center gap-2 mb-5">
+        <Clock className="w-4 h-4 text-gray-500" />
+        <h4 className="text-sm font-semibold text-gray-700">Request Timeline</h4>
+      </div>
+      <div className="overflow-x-auto">
+        <ol className="flex items-start min-w-max md:min-w-0">
+          {steps.map((step, idx) => {
+            const Icon = step.icon;
+            const isLast = idx === steps.length - 1;
+            const dateLabel = formatDateTime(step.timestamp);
+            const isDone = step.state === 'done';
+            const isCurrent = step.state === 'current';
+            // Connector after this step is colored only once this step is done —
+            // it represents "has the process moved past this point yet?"
+            const connectorClass = isDone ? 'bg-gray-400' : 'bg-gray-200';
+            return (
+              <li key={step.key} className={`flex items-start ${isLast ? '' : 'flex-1'}`}>
+                <div className="flex flex-col items-center w-32 shrink-0 text-center">
+                  <span className={`relative z-10 flex items-center justify-center w-8 h-8 rounded-full shrink-0 transition-all ${step.color} ${isCurrent ? 'animate-pulse' : ''}`}>
+                    <Icon className="w-4 h-4" />
+                  </span>
+                  <p className={`mt-2 text-xs leading-snug ${
+                    isCurrent ? 'font-bold text-amber-700' : isDone ? 'font-medium text-gray-900' : 'font-medium text-gray-400'
+                  }`}>
+                    {step.label}
+                    {isCurrent && (
+                      <span className="block text-[11px] font-semibold text-amber-600">In Progress</span>
+                    )}
+                    {step.state === 'upcoming' && (
+                      <span className="block text-[11px] font-normal text-gray-400">Not yet</span>
+                    )}
+                  </p>
+                  <p className={`text-[11px] mt-0.5 leading-snug ${isDone ? 'text-gray-500' : 'text-gray-400'}`}>
+                    {dateLabel || (isDone ? 'Date not recorded' : isCurrent ? 'Awaiting action' : 'Not yet processed')}
+                  </p>
+                  {step.actor && (
+                    <p className={`text-[11px] leading-snug truncate max-w-full ${isDone ? 'text-gray-500' : 'text-gray-400'}`} title={step.actor}>
+                      {step.actor}
+                    </p>
+                  )}
+                  {step.remarks && (
+                    <p className="text-[11px] text-gray-600 mt-1 italic px-1.5 border-l-2 border-gray-200 text-left w-full">
+                      "{step.remarks}"
+                    </p>
+                  )}
+                </div>
+                {!isLast && (
+                  <div className={`flex-1 min-w-[2.5rem] h-px mt-4 transition-colors ${connectorClass}`} aria-hidden="true" />
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </div>
+  );
+};
+
 const MyRequests = () => {
   const { user } = useAuth();
   // When the logged-in user is an Approver/Manager, the "Approver" column
@@ -169,6 +355,15 @@ const MyRequests = () => {
           attachments:      data.attachments || [],
           paymentReason:    data.payment_reason || '',
           release_remarks:  data.release_remarks || '',
+          // Timeline fields — passed through as-is from the API so
+          // RequestTimeline can render submission/approval/release history
+          created_at:       data.created_at || data.advance_date,
+          approved_at:      data.approved_at,
+          approved_by:      data.approver_name || data.approved_by,
+          rejected_at:      data.rejected_at,
+          rejected_by:      data.rejected_by || data.approver_name,
+          released_at:      data.released_at,
+          released_by:      data.released_by,
         };
         setSelectedRequest(viewData);
       } else {
@@ -219,6 +414,14 @@ const MyRequests = () => {
           attachments:         data.attachments    || [],
           paymentReason:       data.payment_reason || '',
           release_remarks:     data.release_remarks || '',
+          // Timeline fields
+          created_at:          data.created_at || data.liquidation_date,
+          approved_at:         data.approved_at,
+          approved_by:         data.approver_name || data.approved_by,
+          rejected_at:         data.rejected_at,
+          rejected_by:         data.rejected_by || data.approver_name,
+          released_at:         data.released_at,
+          released_by:         data.released_by,
         };
         setSelectedRequest(viewData);
       } else {
@@ -265,6 +468,14 @@ const MyRequests = () => {
           attachments:         data.attachments || [],
           paymentReason:       data.payment_reason || '',
           release_remarks:     data.release_remarks || '',
+          // Timeline fields
+          created_at:          data.created_at || data.reimbursement_date,
+          approved_at:         data.approved_at,
+          approved_by:         data.approver_name || data.approved_by,
+          rejected_at:         data.rejected_at,
+          rejected_by:         data.rejected_by || data.approver_name,
+          released_at:         data.released_at,
+          released_by:         data.released_by,
         };
         setSelectedRequest(viewData);
       } else {
@@ -1016,11 +1227,10 @@ const MyRequests = () => {
               <table className="w-full min-w-[800px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Reference No.</th>
-                    <th className="px-4 py-3 w-3/12 text-left text-sm font-semibold text-gray-700">Purpose</th>
-                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Amount</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Reference No.</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Amount</th>
                     <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Request Date</th>
-                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Status</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Status</th>
                     <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">{isApproverUser ? 'Accounting Handler' : 'Approver'}</th>
                     <th className="px-4 py-3 w-2/12 text-center text-sm font-semibold text-gray-700">Actions</th>
                   </tr>
@@ -1047,9 +1257,6 @@ const MyRequests = () => {
                         }`}
                       >
                         <td className="px-4 py-4 text-sm font-semibold font-mono text-gray-900">{request.refNumber}</td>
-                        <td className="px-4 py-4 text-sm text-gray-700 max-w-[200px] truncate" title={request.purpose}>
-                          {request.purpose}
-                        </td>
                         <td className="px-4 py-4 text-sm font-semibold text-left text-gray-900">
                           ₱{request.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                         </td>
@@ -1134,14 +1341,13 @@ const MyRequests = () => {
               <table className="w-full min-w-[800px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Reference No.</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Advance Ref No.</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total Expenses</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Refund/Additional</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Submit Date</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">{isApproverUser ? 'Disburse By' : 'Approver'}</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Reference No.</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Cash Advance Ref No.</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Total Expenses</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Submit Date</th>
+                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Status</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">{isApproverUser ? 'Disburse By' : 'Approver'}</th>
+                    <th className="px-4 py-3 w-1/12 text-center text-sm font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -1162,16 +1368,8 @@ const MyRequests = () => {
                       <tr key={request.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-4 text-sm font-semibold font-mono text-gray-900">{request.refNumber}</td>
                         <td className="px-4 py-4 text-sm font-mono text-gray-600">{request.cashAdvanceRef}</td>
-                        <td className="px-4 py-4 text-sm font-semibold text-right text-gray-900">
+                        <td className="px-4 py-4 text-sm font-semibold text-left text-gray-900">
                           ₱{request.totalExpenses.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-4 py-4 text-sm font-semibold text-right">
-                          <span className={request.variance > 0 ? 'text-red-600' : 'text-green-600'}>
-                            ₱{(request.variance > 0 ? request.refundAmount : request.additionalPayment).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                            <span className="text-xs font-normal text-gray-500 ml-1">
-                              {request.variance > 0 ? '(Refund)' : '(Additional)'}
-                            </span>
-                          </span>
                         </td>
                         <td className="px-4 py-4 text-sm text-gray-600">{formatLongDate(request.submitDate)}</td>
                         <td className="px-4 py-4">
@@ -1237,12 +1435,12 @@ const MyRequests = () => {
               <table className="w-full min-w-[800px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Reference No.</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Amount</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Submit Date</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">{isApproverUser ? 'Disburse By' : 'Approver'}</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Reference No.</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Amount</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Submit Date</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Status</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">{isApproverUser ? 'Disburse By' : 'Approver'}</th>
+                    <th className="px-4 py-3 w-2/12 text-center text-sm font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -1262,7 +1460,7 @@ const MyRequests = () => {
                     paginatedReimbursements.map((request) => (
                       <tr key={request.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-4 text-sm font-semibold font-mono text-gray-900">{request.refNumber}</td>
-                        <td className="px-4 py-4 text-sm font-semibold text-right text-gray-900">
+                        <td className="px-4 py-4 text-sm font-semibold text-left text-gray-900">
                           ₱{request.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                         </td>
                         <td className="px-4 py-4 text-sm text-gray-600">{formatLongDate(request.submitDate)}</td>
@@ -1350,6 +1548,7 @@ const MyRequests = () => {
           </div>
         ) : selectedRequest ? (
           <>
+            <RequestTimeline request={selectedRequest} />
             {tabValue === 0 && <CashAdvanceForm editData={selectedRequest} viewOnly onClose={handleCloseModal} hideCloseButton />}
             {tabValue === 1 && <LiquidationForm editData={selectedRequest} viewOnly onClose={handleCloseModal} hideCloseButton />}
             {tabValue === 2 && <ReimbursementForm editData={selectedRequest} viewOnly onClose={handleCloseModal} hideCloseButton />}
