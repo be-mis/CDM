@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import {
-  Receipt, Coins, TrendingUp,
-  CreditCard, ShieldCheck, CheckCircle,
+  Receipt, Coins,
+  CreditCard, CheckCircle,
   Search, Filter, ChevronDown, ChevronRight,
   Clock, Eye, HandCoins, XCircle, Send, Banknote, FileEdit,
 } from 'lucide-react';
@@ -26,6 +26,15 @@ const formatPeso = (amount) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+
+// Returns how many calendar days have elapsed since a given date string/value.
+const daysPending = (dateValue) => {
+  if (!dateValue) return null;
+  const filed = new Date(dateValue);
+  if (isNaN(filed.getTime())) return null;
+  const now = new Date();
+  return Math.floor((now - filed) / (1000 * 60 * 60 * 24));
+};
 
 const TYPE_STYLES = {
   'Cash Advance':  'bg-indigo-50 text-indigo-700',
@@ -370,27 +379,36 @@ const AccountingDashboard = () => {
 
   // ── summary stats (derived from the single API response) ──────────────────
   const stats = useMemo(() => {
-    const today = new Date().toDateString();
-    const processedToday = releasedRows.filter(
-      r => r.releasedAt && new Date(r.releasedAt).toDateString() === today,
-    ).length;
-
     const now = new Date();
-    const totalReleasedMonth = releasedRows
-      .filter(r => {
-        if (!r.releasedAt) return false;
-        const d = new Date(r.releasedAt);
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-      })
-      .reduce((sum, r) => sum + r.amount, 0);
+
+    // Overdue: approved (pending release) requests filed more than 3 days ago
+    const overdueCount = approvedRows.filter(r => {
+      const days = daysPending(r.date);
+      return days !== null && days > 3;
+    }).length;
+
+    // Released this month (count)
+    const releasedThisMonth = releasedRows.filter(r => {
+      if (!r.releasedAt) return false;
+      const d = new Date(r.releasedAt);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }).length;
+
+    // Rejected this month (count)
+    const rejectedThisMonth = rejectedRows.filter(r => {
+      const dateField = r.releasedAt || r.date;
+      if (!dateField) return false;
+      const d = new Date(dateField);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }).length;
 
     return {
-      forRelease:          approvedRows.length,
-      released:            releasedRows.length,
-      processedToday,
-      totalReleasedMonth,
+      forRelease: approvedRows.length,
+      overdueCount,
+      releasedThisMonth,
+      rejectedThisMonth,
     };
-  }, [approvedRows, releasedRows]);
+  }, [approvedRows, releasedRows, rejectedRows]);
 
   // ── donut chart data ───────────────────────────────────────────────────────
   const typeDonutData = useMemo(() => [
@@ -405,7 +423,21 @@ const AccountingDashboard = () => {
     { label: 'Rejected',                   value: rejectedRows.length,  color: '#ef4444' },
   ], [approvedRows, releasedRows, rejectedRows]);
 
-  // ── handlers ───────────────────────────────────────────────────────────────
+  // ── release aging buckets ──────────────────────────────────────────────────
+  const releaseAgingData = useMemo(() => {
+    const buckets = [
+      { label: '0–2 Days', min: 0,  max: 2,        color: '#22c55e' },
+      { label: '3 Days',   min: 3,  max: 3,        color: '#f59e0b' },
+      { label: 'Overdue',  min: 4,  max: Infinity,  color: '#ef4444' },
+    ];
+    return buckets.map(b => ({
+      ...b,
+      value: approvedRows.filter(r => {
+        const d = daysPending(r.date);
+        return d !== null && d >= b.min && d <= b.max;
+      }).length,
+    }));
+  }, [approvedRows]);
   const handleView = async (row) => {
     try {
       setViewLoading(true);
@@ -527,7 +559,7 @@ const AccountingDashboard = () => {
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Financial Summary</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
 
-          <Card className="bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-sm hover:shadow-md transition-shadow">
+          <Card className="bg-gradient-to-br from-orange-400 to-amber-600 text-white shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -539,40 +571,41 @@ const AccountingDashboard = () => {
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-sm hover:shadow-md transition-shadow col-span-2 md:col-span-1">
+          <Card className="bg-gradient-to-br from-rose-400 to-red-600 text-white shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white/90 text-sm font-semibold mb-2">Total Released</p>
-                  <span className="text-3xl font-extrabold">{loading ? '—' : stats.released}</span>
+                  <p className="text-white/90 text-sm font-semibold mb-2">Overdue Requests</p>
+                  <span className="text-3xl font-extrabold">{loading ? '—' : stats.overdueCount}</span>
+                  {/* <p className="text-white/70 text-xs mt-1">Pending &gt; 3 days</p> */}
                 </div>
-                <ShieldCheck className="w-12 h-12 opacity-30" />
+                <Clock className="w-12 h-12 opacity-30" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-sm hover:shadow-md transition-shadow col-span-2 md:col-span-1">
+          <Card className="bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white/90 text-sm font-semibold mb-2">Processed Today</p>
-                  <span className="text-3xl font-extrabold">{loading ? '—' : stats.processedToday}</span>
+                  <p className="text-white/90 text-sm font-semibold mb-2">Released This Month</p>
+                  <span className="text-3xl font-extrabold">{loading ? '—' : stats.releasedThisMonth}</span>
+                  {/* <p className="text-white/70 text-xs mt-1">transactions</p> */}
                 </div>
                 <CheckCircle className="w-12 h-12 opacity-30" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-purple-600 to-purple-700 text-white shadow-sm hover:shadow-md transition-shadow col-span-2 md:col-span-1">
+          <Card className="bg-gradient-to-br from-pink-500 to-rose-500 text-white shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white/90 text-sm font-semibold mb-2">Released This Month</p>
-                  <span className="text-3xl font-extrabold">
-                    {loading ? '—' : `₱${(stats.totalReleasedMonth / 1_000_000).toFixed(1)}M`}
-                  </span>
+                  <p className="text-white/90 text-sm font-semibold mb-2">Rejected This Month</p>
+                  <span className="text-3xl font-extrabold">{loading ? '—' : stats.rejectedThisMonth}</span>
+                  {/* <p className="text-white/70 text-xs mt-1">transactions</p> */}
                 </div>
-                <TrendingUp className="w-12 h-12 opacity-30" />
+                <XCircle className="w-12 h-12 opacity-30" />
               </div>
             </CardContent>
           </Card>
@@ -634,6 +667,7 @@ const AccountingDashboard = () => {
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Department</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date Filed</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Days Pending</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                   </tr>
@@ -641,7 +675,7 @@ const AccountingDashboard = () => {
                 <tbody className="divide-y divide-gray-200">
                   {filteredQueue.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-10 text-center text-gray-400 text-sm">
+                      <td colSpan={9} className="py-10 text-center text-gray-400 text-sm">
                         No items found.
                       </td>
                     </tr>
@@ -689,7 +723,27 @@ const AccountingDashboard = () => {
                           <span className="text-sm text-gray-500">{formatLongDate(row.date)}</span>
                         </td>
 
-                        {/* Released / Rejected By (tabs 1 & 2) */}
+                        {/* Days Pending */}
+                        <td className="px-4 py-4 text-center">
+                          {(() => {
+                            const days = daysPending(row.date);
+                            if (days === null) return <span className="text-gray-400 text-sm">—</span>;
+                            const isOverdue = days > 3;
+                            const isWarning = days === 3;
+                            return (
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                                isOverdue
+                                  ? 'bg-red-100 text-red-700 border border-red-200'
+                                  : isWarning
+                                  ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                                  : 'bg-green-100 text-green-700 border border-green-200'
+                              }`}>
+                                {isOverdue && <span>⚠</span>}
+                                {days}d
+                              </span>
+                            );
+                          })()}
+                        </td>
 
                         {/* Status */}
                         <td className="px-4 py-4">
@@ -713,7 +767,7 @@ const AccountingDashboard = () => {
                               className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
                               title="Release Funds"
                             >
-                              <Send className="w-4 h-4" />
+                              <CheckCircle className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => openAction(row, 'reject')}
@@ -738,7 +792,7 @@ const AccountingDashboard = () => {
       {/* ── Section 3: Charts ── */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Disbursement Monitoring</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 
           {/* Pending for Release by Type */}
           <Card>
@@ -769,6 +823,27 @@ const AccountingDashboard = () => {
                 <DonutChart data={statusDonutData} size={130} />
                 <div className="w-full space-y-1.5">
                   {statusDonutData.map(d => (
+                    <div key={d.label} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                        <span className="text-gray-600">{d.label}</span>
+                      </div>
+                      <span className="font-bold text-gray-900">{d.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Release Aging — how long approved items have been waiting */}
+          <Card>
+            <CardContent className="p-6">
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Release Aging</h3>
+              <div className="flex flex-col items-center gap-4">
+                <DonutChart data={releaseAgingData} size={130} />
+                <div className="w-full space-y-1.5">
+                  {releaseAgingData.map(d => (
                     <div key={d.label} className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />

@@ -146,7 +146,7 @@ const LiquidationForm = (props) => {
       };
     }
     return {
-      liquidationNumber:  '',
+      liquidationNumber: initialData?.liquidationNumber || '',
       liquidationDate:    new Date().toISOString().split('T')[0],
       cashAdvanceId:      initialData?.id || '',
       submittedBy:        initialData?.requestedBy || initialData?.requested_by || user?.name || '',
@@ -290,7 +290,7 @@ const LiquidationForm = (props) => {
   useEffect(() => {
     fetchDepartments();
     fetchAdvances();
-    if (!editData && !initialData?.id) generateLiquidationNumber();
+    if (!editData) generateLiquidationNumber();
   }, [fetchDepartments, fetchAdvances, generateLiquidationNumber, editData, initialData?.id]);
 
   // Sync selected cash-advance once list loads (edit mode)

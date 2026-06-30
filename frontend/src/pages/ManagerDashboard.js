@@ -105,9 +105,11 @@ const formatDateTime = (value) => {
 const buildTimelineSteps = (request) => {
   if (!request) return [];
 
+  // BUG FIX: original used `if (request[k])` which skips falsy values like 0 or "".
+  // Using `!= null` so only null/undefined are skipped.
   const pick = (...keys) => {
     for (const k of keys) {
-      if (request[k]) return request[k];
+      if (request[k] != null) return request[k];
     }
     return null;
   };
@@ -162,14 +164,14 @@ const buildTimelineSteps = (request) => {
       timestamp: approvedAt,
       remarks: pick('approval_remarks', 'remarks'),
       icon: CheckCircle,
-      isDone: Boolean(approvedAt) || ['approved', 'released'].includes(status),
+      isDone: Boolean(approvedAt) || ['approved', 'released', 'disbursed', 'liquidated'].includes(status),
       doneColor: 'text-green-600 bg-green-100',
     });
   }
 
   // 4. Released / Processed (only relevant once approved, and only shown if applicable)
   const releasedAt = pick('released_at', 'processed_at', 'disbursed_at');
-  if (status === 'released' || releasedAt) {
+  if (['released', 'disbursed', 'liquidated'].includes(status) || releasedAt) {
     steps.push({
       key: 'released',
       label: 'Funds Released',
@@ -177,7 +179,7 @@ const buildTimelineSteps = (request) => {
       timestamp: releasedAt,
       remarks: pick('release_remarks'),
       icon: Banknote,
-      isDone: Boolean(releasedAt) || status === 'released',
+      isDone: Boolean(releasedAt) || ['released', 'disbursed', 'liquidated'].includes(status),
       doneColor: 'text-blue-600 bg-blue-100',
     });
   }
@@ -754,9 +756,23 @@ const ManagerDashboard = () => {
                           </span>
                         </td>
                         <td className="px-4 py-4 text-center">
-                          <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold ${row.days >= 2 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
-                            {row.days}
-                          </span>
+                          {(() => {
+                            const days = row.days;
+                            const isOverdue = days > 3;
+                            const isWarning = days === 3;
+                            return (
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                                isOverdue
+                                  ? 'bg-red-100 text-red-700 border border-red-200'
+                                  : isWarning
+                                  ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                                  : 'bg-green-100 text-green-700 border border-green-200'
+                              }`}>
+                                {isOverdue && <span>⚠</span>}
+                                {days}d
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-1">

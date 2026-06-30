@@ -115,6 +115,27 @@ const processDisbursement = async (req, res) => {
       [newStatus, userName, remarks || null, id],
     );
 
+    await pool.query(
+      `UPDATE \`${tableName}\`
+       SET status          = ?,
+           released_by     = ?,
+           released_at     = NOW(),
+           \`${remarksColumn}\` = ?
+       WHERE id = ?`,
+      [newStatus, userName, remarks || null, id],
+    );
+
+    // ✅ ADD THIS
+    if (type === 'cash-advance' && action === 'release') {
+      await pool.query(
+        `UPDATE cash_advances
+         SET liquidation_deadline = COALESCE(liquidation_deadline, DATE_ADD(NOW(), INTERVAL 3 DAY))
+         WHERE id = ?`,
+        [id],
+      );
+    }
+    // ✅ END ADD
+
     const successMsg =
       action === 'release' ? 'Funds released successfully' : 'Request rejected successfully';
 

@@ -640,7 +640,19 @@ const MyRequests = () => {
           remarks: item.remarks || '',
           rejectRemarks: item.reject_remarks || '',
           releaseRemarks: item.release_remarks || '',
-          liquidationDeadline: item.liquidation_deadline || null
+          liquidationDeadline: item.liquidation_deadline || null,
+          isOverdue: !!item.is_overdue,
+          urgency: (() => {
+            if (!item.liquidation_deadline) return null;
+            const days = Math.ceil((new Date(item.liquidation_deadline) - new Date()) / (1000 * 60 * 60 * 24));
+            if (days < 0) return 'overdue';
+            if (days <= 3) return 'urgent';
+            if (days <= 7) return 'warning';
+            return 'normal';
+          })(),
+          daysUntilDeadline: item.liquidation_deadline
+            ? Math.ceil((new Date(item.liquidation_deadline) - new Date()) / (1000 * 60 * 60 * 24))
+            : null
         }));
         setCashAdvances(mappedData);
         setRetryCount(prev => ({ ...prev, cashAdvances: 0 }));
@@ -754,12 +766,24 @@ const MyRequests = () => {
       const response = await api.get(`/cash-advances/${request.id}`);
       if (response.data && response.data.success) {
         const data = response.data.data;
+
+        // Auto-generate liquidation number based on CA advance_number
+        // Format: LIQ-YYYYMM-XXXX  (mirrors the CA numbering convention)
+        const now = new Date();
+        const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const seq = String(data.id).padStart(4, '0');
+        const autoLiquidationNumber = `LIQ-${yyyymm}-${seq}`;
+
         const cashAdvance = {
           id: data.id,
           advanceNumber: data.advance_number || data.advanceNumber,
+          liquidationNumber: autoLiquidationNumber,
           requestedBy: data.requested_by || data.requestedBy,
           department: data.department,
+          businessUnit: data.business_unit || data.businessUnit || '',
           totalAdvanceAmount: data.requested_amount || data.requestedAmount || data.amount || 0,
+          dateCoverageFrom: data.start_date || data.date_coverage_from || '',
+          dateCoverageTo: data.end_date || data.date_coverage_to || '',
           items: data.items || [],
           activities: data.activities || [],
           advanceType: data.advance_type || data.advanceType || 'cash'
@@ -1253,7 +1277,9 @@ const MyRequests = () => {
                       <tr
                         key={request.id}
                         className={`hover:bg-gray-50 transition-colors ${
-                          request.isOverdue ? 'bg-red-50/40 border-l-4 border-red-500' : ''
+                          request.urgency === 'overdue' ? 'bg-red-50/40 border-l-4 border-red-500' :
+                          request.urgency === 'urgent'  ? 'bg-orange-50/40 border-l-4 border-orange-400' :
+                          request.urgency === 'warning' ? 'bg-yellow-50/40 border-l-4 border-yellow-400' : ''
                         }`}
                       >
                         <td className="px-4 py-4 text-sm font-semibold font-mono text-gray-900">{request.refNumber}</td>
@@ -1266,11 +1292,21 @@ const MyRequests = () => {
                             <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border ${getStatusColor(request.status)}`}>
                               {request.status}
                             </span>
-                            {request.isOverdue && (
-                              <Tooltip title={`Liquidation overdue since ${request.liquidationDeadline ? new Date(request.liquidationDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}`}>
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full border border-red-200 bg-red-50 text-red-700 animate-pulse">
+                            {request.urgency && request.urgency !== 'normal' && (
+                              <Tooltip title={
+                                request.urgency === 'overdue'
+                                  ? `Liquidation overdue since ${request.liquidationDeadline ? new Date(request.liquidationDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}`
+                                  : `Liquidation due in ${request.daysUntilDeadline} day${request.daysUntilDeadline === 1 ? '' : 's'} — ${request.liquidationDeadline ? new Date(request.liquidationDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}`
+                              }>
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full border animate-pulse ${
+                                  request.urgency === 'overdue' ? 'border-red-200 bg-red-50 text-red-700' :
+                                  request.urgency === 'urgent'  ? 'border-orange-200 bg-orange-50 text-orange-700' :
+                                                                  'border-yellow-200 bg-yellow-50 text-yellow-700'
+                                }`}>
                                   <AlertTriangle className="w-3.5 h-3.5" />
-                                  Needs Liquidation
+                                  {request.urgency === 'overdue' ? 'Overdue Liquidation' :
+                                   request.urgency === 'urgent'  ? 'Liquidation Urgent' :
+                                                                   'Liquidation Due Soon'}
                                 </span>
                               </Tooltip>
                             )}
