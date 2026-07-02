@@ -5,7 +5,8 @@ import api from '../api';
 import {
   LayoutDashboard, FileText, TrendingUp, Settings, Menu, X, LogOut,
   Users, History, Upload, Table, DollarSign, ReceiptText, ClipboardList,
-  CheckSquare, Coins, User as UserIcon, Star, HandCoins
+  CheckSquare, Coins, User as UserIcon, Star, HandCoins,
+  Banknote, ClipboardCheck, Wallet
 } from 'lucide-react';
 
 import FileUpload from '../components/FileUpload';
@@ -18,6 +19,7 @@ import ManagerDashboard from './ManagerDashboard';
 import AccountingDashboard from './AccountingDashboard';
 import MyRequests from './MyRequests';
 import Approvals from './Approvals';
+import UserManagement from './UserManagement';
 import Disbursements from './Disbursements';
 import AuditLogs from './AuditLogs';
 import Profile from './Profile';
@@ -62,6 +64,8 @@ const Dashboard = () => {
       setCurrentView('dashboard');
     } else if (path.includes('accounting-dashboard')) {
       setCurrentView('accounting-dashboard');
+    } else if (path.includes('manager-dashboard')) {
+      setCurrentView('manager-dashboard');
     } else if (path.includes('my-requests')) {
       setCurrentView('my-requests');
     } else if (path.includes('cash-advance')) {
@@ -101,11 +105,12 @@ const Dashboard = () => {
   // Menu Items
   const allMenuItems = [
     { text: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" />, view: 'dashboard', path: '/dashboard', key: 'dashboard' },
-    { text: 'Accounting Dashboard', icon: <TrendingUp className="w-5 h-5" />, view: 'accounting-dashboard', path: '/accounting-dashboard', key: 'accounting-dashboard', adminOnly: true },
+    { text: 'Disbursement Dashboard', icon: <Banknote className="w-5 h-5" />, view: 'accounting-dashboard', path: '/accounting-dashboard', key: 'accounting-dashboard', adminOnly: true },
+    { text: 'Approval Dashboard', icon: <ClipboardCheck className="w-5 h-5" />, view: 'manager-dashboard', path: '/manager-dashboard', key: 'manager-dashboard', adminOnly: true },
     { text: 'My Requests', icon: <ClipboardList className="w-5 h-5" />, view: 'my-requests', path: '/my-requests', key: 'my-requests' },
     { text: 'Cash Advance Form', icon: <HandCoins className="w-5 h-5" />, view: 'cash-advance', path: '/cash-advance', key: 'cash-advance' },
     { text: 'Liquidation Form', icon: <ReceiptText className="w-5 h-5" />, view: 'liquidation', path: '/liquidation', key: 'liquidation' },
-    { text: 'Reimbursement Form', icon: <Coins className="w-5 h-5" />, view: 'reimbursement', path: '/reimbursement', key: 'reimbursement' },
+    { text: 'Reimbursement Form', icon: <Wallet className="w-5 h-5" />, view: 'reimbursement', path: '/reimbursement', key: 'reimbursement' },
     { text: 'Approvals', icon: <CheckSquare className="w-5 h-5" />, view: 'approvals', path: '/approvals', key: 'approvals', approverOnly: true },
     { text: 'Disbursements', icon: <Coins className="w-5 h-5" />, view: 'disbursements', path: '/disbursements', key: 'disbursements', accountingOnly: true },
     { text: 'Profile', icon: <UserIcon className="w-5 h-5" />, view: 'profile', path: '/profile', key: 'profile' },
@@ -115,7 +120,7 @@ const Dashboard = () => {
 
   const menuItems = allMenuItems.filter(item => {
     if (item.adminOnly && user?.role !== 'admin') return false;
-    if (item.approverOnly && (!user?.isApprover || user?.role === 'accounting')) return false;
+    if (item.approverOnly && user?.role !== 'admin' && (!user?.isApprover || user?.role === 'accounting')) return false;
     if (item.accountingOnly && user?.role !== 'accounting' && user?.role !== 'admin') return false;
     return true;
   });
@@ -157,15 +162,7 @@ const Dashboard = () => {
             </InlineAlert>
           );
         }
-        return (
-          <div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-2">User Management</h2>
-            <p className="text-sm text-gray-600 mb-6">Manage users and permissions</p>
-            <InlineAlert severity="info">
-              User management functionality will be implemented here.
-            </InlineAlert>
-          </div>
-        );
+        return <UserManagement />;
 
       case 'auditlogs':
         if (user?.role !== 'admin') {
@@ -181,14 +178,24 @@ const Dashboard = () => {
         if (user?.role !== 'admin') {
           return (
             <InlineAlert severity="warning">
-              You don't have permission to access Accounting Dashboard. Admin access required.
+              You don't have permission to access Disbursement Dashboard. Admin access required.
             </InlineAlert>
           );
         }
         return <AccountingDashboard />;
 
+      case 'manager-dashboard':
+        if (user?.role !== 'admin') {
+          return (
+            <InlineAlert severity="warning">
+              You don't have permission to access Approval Dashboard. Admin access required.
+            </InlineAlert>
+          );
+        }
+        return <ManagerDashboard />;
+
       case 'approvals':
-        if (!user?.isApprover) {
+        if (user?.role !== 'admin' && !user?.isApprover) {
           return (
             <InlineAlert severity="warning">
               You don't have permission to access Approvals.
@@ -220,9 +227,9 @@ const Dashboard = () => {
                 <AccountingDashboard />
               </div>
             ) : (
-              user?.isApprover && (
+              user?.role !== 'admin' && user?.isApprover && (
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 md:p-6">
-                  <h2 className="text-lg font-bold text-gray-900 mb-4">Pending Approvals (Manager)</h2>
+                  <h2 className="text-lg font-bold text-gray-900 mb-4">Approval Dashboard</h2>
                   <ManagerDashboard />
                 </div>
               )
@@ -233,7 +240,8 @@ const Dashboard = () => {
   };
 
   const getTitle = () => {
-    if (currentView === 'accounting-dashboard') return 'Accounting Dashboard';
+    if (currentView === 'accounting-dashboard') return 'Disbursement Dashboard';
+    if (currentView === 'manager-dashboard') return 'Approval Dashboard';
     if (currentView === 'profile') return 'My Profile';
     if (currentView === 'my-requests') return 'My Requests';
     if (currentView === 'cash-advance') return 'Cash Advance Request';

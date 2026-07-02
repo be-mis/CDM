@@ -817,7 +817,7 @@ const ManagerDashboard = () => {
           {/* Pending by Type – donut */}
           <Card>
             <CardContent className="p-6">
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Pending by Type</h3>
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Pending Approval by Type</h3>
               <div className="flex flex-col items-center gap-4">
                 <DonutChart data={typeDonutData} size={130} />
                 <div className="w-full space-y-1.5">

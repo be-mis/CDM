@@ -12,6 +12,7 @@ const reimbursementRoutes = require('./routes/reimbursement');
 const approvalRoutes = require('./routes/approvals');
 const disbursementRoutes = require('./routes/disbursements');
 const auditLogsRoutes = require('./routes/auditLogs');
+const usersRoutes = require('./routes/users');
 const path = require('path');
 // Cleanup utility is loaded only when explicitly enabled via env
 
@@ -47,6 +48,7 @@ app.use('/api/reimbursements', reimbursementRoutes);
 app.use('/api/approvals', approvalRoutes);
 app.use('/api/disbursements', disbursementRoutes);
 app.use('/api/audit-logs', auditLogsRoutes);
+app.use('/api/users', usersRoutes);
 
 // Cleanup features are hidden by default. To enable, set ENABLE_CLEANUP=true
 if (String(process.env.ENABLE_CLEANUP).toLowerCase() === 'true') {
