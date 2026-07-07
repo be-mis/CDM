@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis, Cell, PieChart, Pie, Label } from 'recharts';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '../components/ui/Chart';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
@@ -44,7 +46,7 @@ const TYPE_STYLES = {
 
 // Maps raw DB row → normalised display row
 const normaliseRow = (item, type) => {
-  const refNumber =
+  const reqNumber =
     item.advance_number ||
     item.liquidation_number ||
     item.reimbursement_number ||
@@ -73,48 +75,67 @@ const normaliseRow = (item, type) => {
     ...item,
     type,
     approvalType,
-    refNumber,
-    employee,
+    reqNumber,
+    requestor: employee,
     department: item.department_name || item.department || '—',
     amount,
     date:       item.created_at,
+    approvedAt: item.approved_at || item.approval_date || null,  // ✅ ADD THIS
     releasedBy: item.released_by  || null,
     releasedAt: item.released_at  || null,
   };
 };
-
-// Simple SVG donut chart (no recharts dependency)
+// Donut chart with centered total, built on shadcn/ui's Chart + Recharts Pie
+// (same {label, value, color} shape as before, so every call site is unchanged)
 const DonutChart = ({ data, size = 120 }) => {
-  const total = data.reduce((s, d) => s + d.value, 0);
+  // ✅ Filter out zero values for cleaner rendering
+  const nonZeroData = data.filter(d => d.value > 0);
+  const total = useMemo(() => nonZeroData.reduce((s, d) => s + d.value, 0), [nonZeroData]);
+
+  const config = useMemo(() => {
+    const cfg = {};
+    data.forEach(d => { cfg[d.label] = { label: d.label, color: d.color }; });
+    return cfg;
+  }, [data]);
+
   if (total === 0)
     return <div className="text-center text-sm text-gray-400 py-4">No data</div>;
-  let cumulative = 0;
-  const r = 45, cx = 60, cy = 60, circumference = 2 * Math.PI * r;
+
   return (
-    <svg width={size} height={size} viewBox="0 0 120 120">
-      {data.map((d, i) => {
-        const ratio    = d.value / total;
-        const dashArray = `${ratio * circumference} ${circumference}`;
-        const rotation  = (cumulative / total) * 360 - 90;
-        cumulative += d.value;
-        return (
-          <circle
-            key={i}
-            cx={cx} cy={cy} r={r}
-            fill="none"
-            stroke={d.color}
-            strokeWidth="18"
-            strokeDasharray={dashArray}
-            strokeDashoffset="0"
-            transform={`rotate(${rotation} ${cx} ${cy})`}
+    <ChartContainer config={config} className="mx-auto" style={{ width: size, height: size }}>
+      <PieChart>
+        <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+        <Pie 
+          data={nonZeroData}  // ✅ Use filtered data
+          dataKey="value" 
+          nameKey="label" 
+          innerRadius={size * 0.35} 
+          outerRadius={size * 0.48}
+          strokeWidth={4}
+        >
+          {nonZeroData.map((d, i) => (
+            <Cell key={`slice-${i}`} fill={d.color} style={{ fill: d.color }} />
+          ))}
+          <Label
+            content={({ viewBox }) => {
+              if (viewBox && 'cx' in viewBox && 'cy' in viewBox) {
+                return (
+                  <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
+                    <tspan x={viewBox.cx} y={viewBox.cy} className="fill-gray-900 text-lg font-bold">
+                      {total}
+                    </tspan>
+                    <tspan x={viewBox.cx} y={(viewBox.cy || 0) + 16} className="fill-gray-500 text-[10px]">
+                      items
+                    </tspan>
+                  </text>
+                );
+              }
+              return null;
+            }}
           />
-        );
-      })}
-      <text x={cx} y={cy - 6} textAnchor="middle" fontSize="14" fontWeight="700" fill="#111827">
-        {total}
-      </text>
-      <text x={cx} y={cy + 10} textAnchor="middle" fontSize="9" fill="#6b7280">items</text>
-    </svg>
+        </Pie>
+      </PieChart>
+    </ChartContainer>
   );
 };
 
@@ -369,8 +390,8 @@ const AccountingDashboard = () => {
     if (queueSearch) {
       const q = queueSearch.toLowerCase();
       rows = rows.filter(r =>
-        (r.refNumber  || '').toLowerCase().includes(q) ||
-        (r.employee   || '').toLowerCase().includes(q) ||
+        (r.reqNumber  || '').toLowerCase().includes(q) ||
+        (r.requestor  || '').toLowerCase().includes(q) ||
         (r.department || '').toLowerCase().includes(q),
       );
     }
@@ -381,25 +402,20 @@ const AccountingDashboard = () => {
   const stats = useMemo(() => {
     const now = new Date();
 
-    // Overdue: approved (pending release) requests filed more than 3 days ago
+    // ✅ Use approvedAt for overdue calculation
     const overdueCount = approvedRows.filter(r => {
-      const days = daysPending(r.date);
+      const days = daysPending(r.approvedAt || r.date);
       return days !== null && days > 3;
     }).length;
 
-    // Released this month (count)
     const releasedThisMonth = releasedRows.filter(r => {
-      if (!r.releasedAt) return false;
-      const d = new Date(r.releasedAt);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      const d = new Date(r.releasedAt || r.date);
+      return !isNaN(d.getTime()) && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     }).length;
 
-    // Rejected this month (count)
     const rejectedThisMonth = rejectedRows.filter(r => {
-      const dateField = r.releasedAt || r.date;
-      if (!dateField) return false;
-      const d = new Date(dateField);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      const d = new Date(r.date);
+      return !isNaN(d.getTime()) && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     }).length;
 
     return {
@@ -433,11 +449,36 @@ const AccountingDashboard = () => {
     return buckets.map(b => ({
       ...b,
       value: approvedRows.filter(r => {
-        const d = daysPending(r.date);
+        // ✅ Use approvedAt, fallback to date if not available
+        const d = daysPending(r.approvedAt || r.date);
         return d !== null && d >= b.min && d <= b.max;
       }).length,
     }));
   }, [approvedRows]);
+
+  const departmentData = useMemo(() => {
+    const counts = {};
+    approvedRows.forEach(r => {
+      const dept = r.department || 'Unassigned';
+      counts[dept] = (counts[dept] || 0) + 1;
+    });
+    const palette = [
+      '#6366f1', '#ec4899', '#06b6d4', '#f59e0b', '#22c55e', '#8b5cf6',
+      '#f97316', '#14b8a6', '#ef4444', '#3b82f6', '#a855f7', '#84cc16',
+    ];
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value], i) => ({ label, value, color: palette[i % palette.length] }));
+  }, [approvedRows]);
+
+  const departmentChartConfig = useMemo(() => {
+    const cfg = { value: { label: 'Requests' } };
+    departmentData.forEach(d => {
+      cfg[d.label] = { label: d.label, color: d.color };
+    });
+    return cfg;
+  }, [departmentData]);
+
   const handleView = async (row) => {
     try {
       setViewLoading(true);
@@ -542,7 +583,7 @@ const AccountingDashboard = () => {
 
       {/* ── Header ── */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-1">Accounting Dashboard 💰</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-1">Accounting Dashboard</h1>
         <p className="text-gray-500">
           Welcome back, <span className="font-medium text-gray-700">{displayName}</span> — manage disbursements and financial reconciliation.
         </p>
@@ -556,56 +597,57 @@ const AccountingDashboard = () => {
 
       {/* ── Section 1: Summary Cards ── */}
       <div>
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Financial Summary</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+        <h2 className="text-sm font-semibold text-gray-500 tracking-wider mb-3">Financial Summary</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
 
-          <Card className="bg-gradient-to-br from-orange-400 to-amber-600 text-white shadow-sm hover:shadow-md transition-shadow">
+          <Card className="!bg-blue-50 border border-blue-200 text-white shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white/90 text-sm font-semibold mb-2">For Release</p>
-                  <span className="text-3xl font-extrabold">{loading ? '—' : stats.forRelease}</span>
+                  <p className="text-blue-800 text-sm font-semibold mb-2">For Release</p>
+                  <span className="text-3xl font-extrabold text-blue-800">{loading ? '—' : stats.forRelease}</span>
                 </div>
-                <Clock className="w-12 h-12 opacity-30" />
+                <Clock className="w-12 h-12 text-blue-800 opacity-30" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-rose-400 to-red-600 text-white shadow-sm hover:shadow-md transition-shadow">
+          <Card className={`${stats.overdueCount > 0 ? '!bg-red-50 border-red-200' : '!bg-gray-50 border-gray-200'} border text-white shadow-sm hover:shadow-md transition-shadow`}>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white/90 text-sm font-semibold mb-2">Overdue Requests</p>
-                  <span className="text-3xl font-extrabold">{loading ? '—' : stats.overdueCount}</span>
-                  {/* <p className="text-white/70 text-xs mt-1">Pending &gt; 3 days</p> */}
+                  <p className={`text-sm font-semibold mb-2 ${stats.overdueCount > 0 ? 'text-red-800' : 'text-gray-600'}`}>
+                    Overdue Requests
+                  </p>
+                  <span className={`text-3xl font-extrabold ${stats.overdueCount > 0 ? 'text-red-800' : 'text-gray-500'}`}>
+                    {loading ? '—' : stats.overdueCount}
+                  </span>
                 </div>
-                <Clock className="w-12 h-12 opacity-30" />
+                <Clock className={`w-12 h-12 opacity-30 ${stats.overdueCount > 0 ? 'text-red-800' : 'text-gray-500'}`} />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-sm hover:shadow-md transition-shadow">
+          <Card className="!bg-green-50 border border-green-200 text-white shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white/90 text-sm font-semibold mb-2">Released This Month</p>
-                  <span className="text-3xl font-extrabold">{loading ? '—' : stats.releasedThisMonth}</span>
-                  {/* <p className="text-white/70 text-xs mt-1">transactions</p> */}
+                  <p className="text-green-800 text-sm font-semibold mb-2">Released This Month</p>
+                  <span className="text-3xl font-extrabold text-green-800">{loading ? '—' : stats.releasedThisMonth}</span>
                 </div>
-                <CheckCircle className="w-12 h-12 opacity-30" />
+                <CheckCircle className="w-12 h-12 text-green-800 opacity-30" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-pink-500 to-rose-500 text-white shadow-sm hover:shadow-md transition-shadow">
+          <Card className="!bg-red-50 border border-red-200 text-white shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white/90 text-sm font-semibold mb-2">Rejected This Month</p>
-                  <span className="text-3xl font-extrabold">{loading ? '—' : stats.rejectedThisMonth}</span>
-                  {/* <p className="text-white/70 text-xs mt-1">transactions</p> */}
+                  <p className="text-red-800 text-sm font-semibold mb-2">Rejected This Month</p>
+                  <span className="text-3xl font-extrabold text-red-800">{loading ? '—' : stats.rejectedThisMonth}</span>
                 </div>
-                <XCircle className="w-12 h-12 opacity-30" />
+                <XCircle className="w-12 h-12 text-red-800 opacity-30" />
               </div>
             </CardContent>
           </Card>
@@ -613,7 +655,6 @@ const AccountingDashboard = () => {
         </div>
       </div>
 
-      {/* ── Section 2: Disbursement Queue ── */}
       <Card>
         <CardContent className="p-6">
 
@@ -630,7 +671,7 @@ const AccountingDashboard = () => {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="Search ref, employee, dept…"
+                  placeholder="Search…"
                   value={queueSearch}
                   onChange={e => setQueueSearch(e.target.value)}
                   className="pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none w-56"
@@ -661,15 +702,14 @@ const AccountingDashboard = () => {
               <table className="w-full min-w-[900px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reference No.</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Employee</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Department</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date Filed</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Days Pending</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 tracking-wider">Request No.</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 tracking-wider">Type</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 tracking-wider">Requestor</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 tracking-wider">Department</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 tracking-wider">Request Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 tracking-wider">Amount</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 tracking-wider">Days Pending</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -683,6 +723,11 @@ const AccountingDashboard = () => {
                     filteredQueue.map((row, i) => (
                       <tr key={`${row.approvalType}-${row.id}`} className="hover:bg-gray-50 transition-colors">
 
+                        {/* Request No. */}
+                        <td className="px-4 py-4">
+                          <span className="text-sm font-semibold text-gray-900">{row.reqNumber}</span>
+                        </td>
+
                         {/* Type */}
                         <td className="px-4 py-4">
                           <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${TYPE_STYLES[row.type] || 'bg-gray-100 text-gray-600'}`}>
@@ -691,19 +736,14 @@ const AccountingDashboard = () => {
                           </span>
                         </td>
 
-                        {/* Reference */}
-                        <td className="px-4 py-4">
-                          <span className="text-sm font-mono font-semibold text-gray-900">{row.refNumber}</span>
-                        </td>
-
-                        {/* Employee */}
+                        {/* Requestor */}
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-2">
                             <div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-semibold text-sm flex-shrink-0">
-                              {(row.employee || '?').charAt(0).toUpperCase()}
+                              {(row.requestor || '?').charAt(0).toUpperCase()}
                             </div>
-                            <span className="text-sm text-gray-900 truncate max-w-[130px]" title={row.employee}>
-                              {row.employee}
+                            <span className="text-sm text-gray-900 truncate max-w-[130px]" title={row.requestor}>
+                              {row.requestor}
                             </span>
                           </div>
                         </td>
@@ -713,20 +753,21 @@ const AccountingDashboard = () => {
                           <span className="text-sm text-gray-600">{row.department}</span>
                         </td>
 
-                        {/* Amount */}
-                        <td className="px-4 py-4 text-right">
-                          <span className="text-sm font-semibold text-gray-900">{formatPeso(row.amount)}</span>
-                        </td>
-
                         {/* Date Filed */}
                         <td className="px-4 py-4">
                           <span className="text-sm text-gray-500">{formatLongDate(row.date)}</span>
                         </td>
 
+                        {/* Amount */}
+                        <td className="px-4 py-4 text-left">
+                          <span className="text-sm font-semibold text-gray-900">{formatPeso(row.amount)}</span>
+                        </td>
+
                         {/* Days Pending */}
                         <td className="px-4 py-4 text-center">
                           {(() => {
-                            const days = daysPending(row.date);
+                            // ✅ Use approvedAt for "days pending release"
+                            const days = daysPending(row.approvedAt || row.date);
                             if (days === null) return <span className="text-gray-400 text-sm">—</span>;
                             const isOverdue = days > 3;
                             const isWarning = days === 3;
@@ -743,13 +784,6 @@ const AccountingDashboard = () => {
                               </span>
                             );
                           })()}
-                        </td>
-
-                        {/* Status */}
-                        <td className="px-4 py-4">
-                          <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full capitalize ${getStatusBadgeClass(row.status)}`}>
-                            {row.status}
-                          </span>
                         </td>
 
                         {/* Actions */}
@@ -792,7 +826,7 @@ const AccountingDashboard = () => {
       {/* ── Section 3: Charts ── */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Disbursement Monitoring</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-6">
 
           {/* Pending for Release by Type */}
           <Card>
@@ -816,7 +850,7 @@ const AccountingDashboard = () => {
           </Card>
 
           {/* Overall Status Breakdown */}
-          <Card>
+          {/* <Card>
             <CardContent className="p-6">
               <h3 className="text-sm font-bold text-gray-900 mb-4">Overall Status Breakdown</h3>
               <div className="flex flex-col items-center gap-4">
@@ -834,7 +868,7 @@ const AccountingDashboard = () => {
                 </div>
               </div>
             </CardContent>
-          </Card>
+          </Card> */}
 
           {/* Release Aging — how long approved items have been waiting */}
           <Card>
@@ -857,6 +891,37 @@ const AccountingDashboard = () => {
             </CardContent>
           </Card>
 
+          {/* Requests by Department (from Disbursement Queue) */}
+          <Card>
+            <CardContent className="p-6">
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Pending Requests by Department</h3>
+              {departmentData.length === 0 ? (
+                <p className="text-center text-sm text-gray-400 py-4">No data</p>
+              ) : (
+                <ChartContainer config={departmentChartConfig} className="h-[220px] w-full">
+                  <BarChart accessibilityLayer data={departmentData} layout="vertical" margin={{ left: 8 }}>
+                    <CartesianGrid horizontal={false} />
+                    <XAxis type="number" hide />
+                    <YAxis
+                      dataKey="label"
+                      type="category"
+                      tickLine={false}
+                      axisLine={false}
+                      width={90}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar dataKey="value" radius={4} barSize={24} maxBarSize={28}>
+                      {departmentData.map((d, i) => (
+                        <Cell key={`dept-cell-${i}`} fill={d.color} style={{ fill: d.color }} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+
         </div>
       </div>
 
@@ -870,25 +935,25 @@ const AccountingDashboard = () => {
             ) : releasedRows.length === 0 ? (
               <p className="text-gray-400 text-center py-8 text-sm">No released transactions yet.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto border border-gray-200 rounded-lg">
                 <table className="w-full min-w-[700px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      {['Reference No.', 'Type', 'Employee', 'Amount', 'Date Filed', 'Released By', 'Status'].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">{h}</th>
+                      {['Reference No.', 'Type', 'Requestor', 'Amount', '	Request Date', 'Released By', 'Status'].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 tracking-wider">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {releasedRows.slice(0, 10).map((item, i) => (
-                      <tr key={i} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-3 text-sm font-mono font-semibold text-gray-900">{item.refNumber}</td>
+                    {releasedRows.slice(0, 10).map((item) => (
+                      <tr key={`${item.approvalType}-${item.id}`} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.reqNumber}</td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${TYPE_STYLES[item.type] || 'bg-gray-100 text-gray-600'}`}>
+                          <span className={`inline-flex items-left gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${TYPE_STYLES[item.type] || 'bg-gray-100 text-gray-600'}`}>
                             {getRequestIcon(item.type)}{item.type}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{item.employee}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700">{item.requestor}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-gray-900">{formatPeso(item.amount)}</td>
                         <td className="px-4 py-3 text-sm text-gray-500">{formatLongDate(item.date)}</td>
                         <td className="px-4 py-3 text-sm text-gray-600">{item.releasedBy || '—'}</td>

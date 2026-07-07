@@ -14,6 +14,7 @@
     "@mui/material": "^5.13.4",
     "ajv": "^8.20.0",
     "axios": "^1.4.0",
+    "clsx": "^2.1.1",
     "cross-env": "^10.1.0",
     "lucide-react": "^1.17.0",
     "pdfjs-dist": "^6.0.227",
@@ -21,6 +22,8 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^7.10.1",
     "react-scripts": "^5.0.1",
+    "recharts": "^3.9.2",
+    "tailwind-merge": "^3.6.0",
     "tesseract.js": "^7.0.0",
     "xlsx": "^0.18.5"
   },

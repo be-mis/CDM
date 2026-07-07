@@ -349,7 +349,7 @@ const ItinerarySheet = ({
 
       {itineraryItems.length === 0 && (
         <p className="text-sm text-gray-500 py-6 text-center italic">
-          No itinerary entries. Click "Add Activity" to add travel details.
+          No itinerary entries.
         </p>
       )}
     </div>

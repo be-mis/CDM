@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
+import { Cell, PieChart, Pie, Label } from 'recharts';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '../components/ui/Chart';
 import {
   HandCoins, Receipt, Coins, TrendingUp,
   CheckCircle, XCircle, Eye, CalendarCheck, CalendarX,
@@ -49,35 +51,57 @@ const TYPE_STYLES = {
 const formatPeso = (amount) =>
   `₱${parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-// Simple SVG bar/donut charts (no recharts dependency)
+// Donut chart with centered total and hover tooltips, built on shadcn/ui's
+// Chart + Recharts Pie (same {label, value, color} shape as before, so
+// every call site is unchanged).
 const DonutChart = ({ data, size = 120 }) => {
-  const total = data.reduce((s, d) => s + d.value, 0);
-  if (total === 0) return <div className="text-center text-sm text-gray-400 py-4">No data</div>;
-  let cumulative = 0;
-  const r = 45, cx = 60, cy = 60, circumference = 2 * Math.PI * r;
+  const nonZeroData = data.filter(d => d.value > 0);
+  const total = useMemo(() => nonZeroData.reduce((s, d) => s + d.value, 0), [nonZeroData]);
+
+  const config = useMemo(() => {
+    const cfg = {};
+    data.forEach(d => { cfg[d.label] = { label: d.label, color: d.color }; });
+    return cfg;
+  }, [data]);
+
+  if (total === 0)
+    return <div className="text-center text-sm text-gray-400 py-4">No data</div>;
+
   return (
-    <svg width={size} height={size} viewBox="0 0 120 120">
-      {data.map((d, i) => {
-        const ratio = d.value / total;
-        const dashArray = `${ratio * circumference} ${circumference}`;
-        const rotation = (cumulative / total) * 360 - 90;
-        cumulative += d.value;
-        return (
-          <circle
-            key={i}
-            cx={cx} cy={cy} r={r}
-            fill="none"
-            stroke={d.color}
-            strokeWidth="18"
-            strokeDasharray={dashArray}
-            strokeDashoffset="0"
-            transform={`rotate(${rotation} ${cx} ${cy})`}
+    <ChartContainer config={config} className="mx-auto" style={{ width: size, height: size }}>
+      <PieChart>
+        <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+        <Pie
+          data={nonZeroData}
+          dataKey="value"
+          nameKey="label"
+          innerRadius={size * 0.35}
+          outerRadius={size * 0.48}
+          strokeWidth={4}
+        >
+          {nonZeroData.map((d, i) => (
+            <Cell key={`slice-${i}`} fill={d.color} style={{ fill: d.color }} />
+          ))}
+          <Label
+            content={({ viewBox }) => {
+              if (viewBox && 'cx' in viewBox && 'cy' in viewBox) {
+                return (
+                  <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
+                    <tspan x={viewBox.cx} y={viewBox.cy} className="fill-gray-900 text-lg font-bold">
+                      {total}
+                    </tspan>
+                    <tspan x={viewBox.cx} y={(viewBox.cy || 0) + 16} className="fill-gray-500 text-[10px]">
+                      requests
+                    </tspan>
+                  </text>
+                );
+              }
+              return null;
+            }}
           />
-        );
-      })}
-      <text x={cx} y={cy - 6} textAnchor="middle" className="text-xs font-bold" fontSize="14" fontWeight="700" fill="#111827">{total}</text>
-      <text x={cx} y={cy + 10} textAnchor="middle" fontSize="9" fill="#6b7280">requests</text>
-    </svg>
+        </Pie>
+      </PieChart>
+    </ChartContainer>
   );
 };
 
@@ -607,7 +631,7 @@ const ManagerDashboard = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 
           {/* Pending Your Approval */}
-          <Card className="border !border-blue-200 !bg-blue-100 text-white col-span-1">
+          <Card className="border !border-blue-200 !bg-blue-50 text-white col-span-1">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -620,40 +644,40 @@ const ManagerDashboard = () => {
           </Card>
 
           {/* Overdue */}
-          <Card className={`border text-white col-span-1 ${monthlyStats.overdueCount > 0 ? '!bg-red-100 !border-red-200' : '!bg-blue-100 !border-blue-200'}`}>
+          <Card className={`border text-white col-span-1 ${monthlyStats.overdueCount > 0 ? '!bg-red-50 !border-red-200' : '!bg-gray-50 !border-gray-200'}`}>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className={`text-sm font-semibold mb-2 ${monthlyStats.overdueCount > 0 ? 'text-red-800' : 'text-blue-800'}`}>Overdue Requests</p>
-                  <span className={`text-3xl font-extrabold ${monthlyStats.overdueCount > 0 ? 'text-red-800' : 'text-blue-800'}`}>{loading ? '—' : monthlyStats.overdueCount}</span>
+                  <p className={`text-sm font-semibold mb-2 ${monthlyStats.overdueCount > 0 ? 'text-red-800' : 'text-gray-800'}`}>Overdue Requests</p>
+                  <span className={`text-3xl font-extrabold ${monthlyStats.overdueCount > 0 ? 'text-red-800' : 'text-gray-800'}`}>{loading ? '—' : monthlyStats.overdueCount}</span>
                 </div>
-                <ClockAlert className={`w-12 h-12 ${monthlyStats.overdueCount > 0 ? 'text-red-800' : 'text-blue-800'} opacity-50`} />
+                <ClockAlert className={`w-12 h-12 ${monthlyStats.overdueCount > 0 ? 'text-red-800' : 'text-gray-800'} opacity-50`} />
               </div>
             </CardContent>
           </Card>
 
           {/* Approved This Month */}
-          <Card className="border !border-blue-200 !bg-blue-100 text-white col-span-1">
+          <Card className="border !border-green-200 !bg-green-50 text-white col-span-1">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-blue-800 text-sm font-semibold mb-2">Approved This Month</p>
-                  <span className="text-3xl text-blue-800 font-extrabold">{statsLoading ? '—' : monthlyStats.approvedThisMonth}</span>
+                  <p className="text-green-800 text-sm font-semibold mb-2">Approved This Month</p>
+                  <span className="text-3xl text-green-800 font-extrabold">{statsLoading ? '—' : monthlyStats.approvedThisMonth}</span>
                 </div>
-                <CalendarCheck className="w-12 h-12 text-blue-800 opacity-50" />
+                <CalendarCheck className="w-12 h-12 text-green-800 opacity-50" />
               </div>
             </CardContent>
           </Card>
 
           {/* Returned / Rejected This Month */}
-          <Card className="border !border-blue-200 !bg-blue-100 text-white col-span-1">
+          <Card className="border !border-red-200 !bg-red-50 text-white col-span-1">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className={`text-sm font-semibold mb-2 ${monthlyStats.rejectedThisMonth > 0 ? 'text-pink-800' : 'text-blue-800'}`}>Rejected This Month</p>
-                  <span className={`text-3xl font-extrabold ${monthlyStats.rejectedThisMonth > 0 ? 'text-pink-800' : 'text-blue-800'}`}>{statsLoading ? '—' : monthlyStats.rejectedThisMonth}</span>
+                  <p className="text-sm font-semibold mb-2 text-red-800">Rejected This Month</p>
+                  <span className="text-3xl font-extrabold text-red-800">{statsLoading ? '—' : monthlyStats.rejectedThisMonth}</span>
                 </div>
-                <CalendarX className={`w-12 h-12 ${monthlyStats.rejectedThisMonth > 0 ? 'text-pink-800' : 'text-blue-800'} opacity-50`} />
+                <CalendarX className="w-12 h-12 text-red-800 opacity-50" />
               </div>
             </CardContent>
           </Card>
