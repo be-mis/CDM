@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { logAudit } = require('../utils/auditLogger');
 
 // Get all requests pending approval for the current logged-in approver
 const getPendingApprovals = async (req, res) => {
@@ -182,13 +183,22 @@ const processApproval = async (req, res) => {
         else return res.status(400).json({ success: false, message: 'Invalid request type' });
 
         // Verify if user is authorized to approve this request (department check)
-        const [requestRows] = await pool.query(`SELECT department_id FROM ${tableName} WHERE id = ?`, [id]);
+        // NOTE: also pull the amount columns here so we have something to log —
+        // cash_advances uses requested_amount, liquidations/reimbursements use
+        // total_actual_amount. Selecting both is harmless; missing columns on a
+        // given table would break the query, so we guard with table-specific SQL.
+        const amountColumn = tableName === 'cash_advances' ? 'requested_amount' : 'total_actual_amount';
+        const [requestRows] = await pool.query(
+            `SELECT department_id, ${amountColumn} AS amount FROM ${tableName} WHERE id = ?`,
+            [id]
+        );
 
         if (requestRows.length === 0) {
             return res.status(404).json({ success: false, message: 'Request not found' });
         }
 
         const deptId = requestRows[0].department_id;
+        const requestAmount = requestRows[0].amount;
         const isAdmin = req.user.role === 'admin';
 
         if (!isAdmin) {
@@ -211,12 +221,24 @@ const processApproval = async (req, res) => {
         // Perform update
         // Rejection remarks go to reject_remarks; approval remarks go to remarks
         const remarksColumn = action === 'reject' ? 'reject_remarks' : 'remarks';
-        const [result] = await pool.query(
+        await pool.query(
             `UPDATE ${tableName} 
        SET status = ?, approved_by = ?, approved_at = NOW(), ${remarksColumn} = ?
        WHERE id = ?`,
             [newStatus, userName, remarks || null, id]
         );
+
+        // Log BEFORE responding, and keep it inside the same try block so any
+        // logging failure still surfaces as a 500 rather than a silent gap —
+        // but never after res.json() has already been sent.
+        await logAudit({
+            userId: req.user?.id || null,
+            action: `${type}_${action}d`, // e.g. cash-advance_approved
+            entity: tableName,
+            entityId: id,
+            details: { amount: requestAmount, remarks: remarks || null },
+            ip: req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || null
+        });
 
         res.status(200).json({
             success: true,

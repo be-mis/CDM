@@ -6,6 +6,9 @@ const { sendMail } = require('../utils/mailer');
 const { buildPasswordResetEmail, buildWelcomeEmail } = require('../utils/emailTemplates');
 const { logAudit } = require('../utils/auditLogger');
 
+const getIp = (req) =>
+  req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || null;
+
 const register = async (req, res) => {
   const { name, email, password, role, department, businessUnit } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'email and password required' });
@@ -40,7 +43,7 @@ const login = async (req, res) => {
           entity: 'users',
           entityId: user.id,
           details: { email: user.email, reason: 'incorrect_password' },
-          ip: req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || null
+          ip: getIp(req)
         });
       } catch (logErr) {
         console.warn('Audit log failure for login_failed', logErr.message);
@@ -65,7 +68,7 @@ const login = async (req, res) => {
       entityId: user.id,
       details: { email: user.email, success: true },
       department:    user.department, 
-      ip: req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || null
+      ip: getIp(req)
     });
 
     res.json({
@@ -168,6 +171,15 @@ const resetPassword = async (req, res) => {
       [hash, user.id]
     );
 
+    await logAudit({
+      userId: user.id,
+      action: 'password_reset',
+      entity: 'users',
+      entityId: user.id,
+      details: { method: 'reset_token' },
+      ip: getIp(req)
+    });
+
     res.json({ message: 'Password reset successful' });
   } catch (err) {
     console.error(err);
@@ -198,6 +210,15 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
   const { payroll_account, gcash_number, gcash_name } = req.body;
   try {
+    // Fetch the CURRENT values before overwriting them — this is the only way
+    // to know afterward whether the payout destination actually changed.
+    const [beforeRows] = await pool.query(
+      'SELECT payroll_account, gcash_number, gcash_name FROM users WHERE id = ?',
+      [req.user.id]
+    );
+    if (!beforeRows.length) return res.status(404).json({ error: 'User not found' });
+    const before = beforeRows[0];
+
     await pool.query(
       'UPDATE users SET payroll_account = ?, gcash_number = ?, gcash_name = ? WHERE id = ?',
       [payroll_account || null, gcash_number || null, gcash_name || null, req.user.id]
@@ -215,6 +236,28 @@ const updateProfile = async (req, res) => {
     const user = rows[0];
     const [approverRows] = await pool.query('SELECT id FROM approver WHERE email = ?', [user.email]);
     user.isApprover = approverRows.length > 0;
+
+    // Only log when the payout destination actually changed — this is the
+    // event that matters (money gets redirected), not every profile save.
+    const payoutChanged =
+      (payroll_account || null) !== before.payroll_account ||
+      (gcash_number || null) !== before.gcash_number;
+
+    if (payoutChanged) {
+      await logAudit({
+        userId: req.user.id,
+        action: 'payout_details_updated',
+        entity: 'users',
+        entityId: req.user.id,
+        details: {
+          oldGcash: before.gcash_number,
+          newGcash: gcash_number || null,
+          oldPayroll: before.payroll_account,
+          newPayroll: payroll_account || null
+        },
+        ip: getIp(req)
+      });
+    }
 
     res.json({ success: true, user });
   } catch (err) {

@@ -5,14 +5,9 @@ import api from '../api';
 import { Cell, PieChart, Pie, Label } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '../components/ui/Chart';
 import {
-  HandCoins, Receipt, Coins, TrendingUp,
-  CheckCircle, XCircle, Eye, CalendarCheck, CalendarX,
-  BarChart3, ClockAlert,
-  Download,
-  Search, ChevronDown, Filter, ArrowUpDown,
-  Hourglass, CalendarDays, Banknote, Timer,
-  ThumbsDown, Paperclip,
-  ChevronRight, Clock, Send, FileEdit,
+  HandCoins, Receipt, Coins, TrendingUp, CheckCircle, XCircle, Eye,
+  BarChart3, ClockAlert, Download, Search, ChevronDown, Filter, ArrowUpDown, CalendarDays, Banknote, Timer,
+  ThumbsDown, Paperclip, ChevronRight, Clock, Send, FileEdit,
 } from 'lucide-react';
 import { formatLongDate } from '../utils/formatters';
 import CashAdvanceForm from '../components/CashAdvanceForm';
@@ -631,20 +626,20 @@ const ManagerDashboard = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 
           {/* Pending Your Approval */}
-          <Card className="border !border-blue-200 !bg-blue-50 text-white col-span-1">
+          <Card className="border !border-blue-200 !bg-blue-50 text-white col-span-1 shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-blue-800 text-sm font-semibold mb-2">Pending Approvals</p>
                   <span className="text-3xl text-blue-800 font-extrabold">{loading ? '—' : pendingApprovals.length}</span>
                 </div>
-                <Hourglass className="w-12 h-12 text-blue-800 opacity-50" />
+                <Clock className="w-12 h-12 text-blue-800 opacity-50" />
               </div>
             </CardContent>
           </Card>
 
           {/* Overdue */}
-          <Card className={`border text-white col-span-1 ${monthlyStats.overdueCount > 0 ? '!bg-red-50 !border-red-200' : '!bg-gray-50 !border-gray-200'}`}>
+          <Card className={`border text-white col-span-1 shadow-sm hover:shadow-md transition-shadow ${monthlyStats.overdueCount > 0 ? '!bg-red-50 !border-red-200' : '!bg-gray-50 !border-gray-200'}`}>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -657,27 +652,27 @@ const ManagerDashboard = () => {
           </Card>
 
           {/* Approved This Month */}
-          <Card className="border !border-green-200 !bg-green-50 text-white col-span-1">
+          <Card className="border !border-green-200 !bg-green-50 text-white col-span-1 shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-green-800 text-sm font-semibold mb-2">Approved This Month</p>
                   <span className="text-3xl text-green-800 font-extrabold">{statsLoading ? '—' : monthlyStats.approvedThisMonth}</span>
                 </div>
-                <CalendarCheck className="w-12 h-12 text-green-800 opacity-50" />
+                <CheckCircle className="w-12 h-12 text-green-800 opacity-50" />
               </div>
             </CardContent>
           </Card>
 
           {/* Returned / Rejected This Month */}
-          <Card className="border !border-red-200 !bg-red-50 text-white col-span-1">
+          <Card className="border !border-red-200 !bg-red-50 text-white col-span-1 shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold mb-2 text-red-800">Rejected This Month</p>
                   <span className="text-3xl font-extrabold text-red-800">{statsLoading ? '—' : monthlyStats.rejectedThisMonth}</span>
                 </div>
-                <CalendarX className="w-12 h-12 text-red-800 opacity-50" />
+                <XCircle className="w-12 h-12 text-red-800 opacity-50" />
               </div>
             </CardContent>
           </Card>
@@ -925,11 +920,6 @@ const ManagerDashboard = () => {
                 </table>
               </div>
             )}
-            <div className="mt-4 pt-4 border-t border-gray-100 flex justify-end">
-              <Button variant="secondary" onClick={() => navigate('/approvals')} startIcon={<ChevronRight className="w-4 h-4" />}>
-                View Full Approvals List
-              </Button>
-            </div>
           </CardContent>
         </Card>
       </div>
@@ -944,7 +934,7 @@ const ManagerDashboard = () => {
           <div className="flex items-center gap-3">
             <span>Request Details</span>
             <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full flex items-center gap-1">
-              <Hourglass className="w-3 h-3" />
+              <Clock className="w-3 h-3" />
               PENDING APPROVAL
             </span>
           </div>

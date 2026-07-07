@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
   HandCoins, Landmark, ReceiptText, Coins, Eye, Edit2, Trash2, Search,
-  XCircle, AlertTriangle, Receipt, Loader2, RefreshCw, Hourglass, CheckCircle,
-  ChevronLeft, ChevronRight, Clock, Send, Banknote, FileEdit,
+  XCircle, AlertTriangle, Receipt, Loader2, RefreshCw, Clock, CheckCircle,
+  ChevronLeft, ChevronRight, Send, Banknote, FileEdit,
 } from 'lucide-react';
 import CashAdvanceForm from '../components/CashAdvanceForm';
 import LiquidationForm from '../components/LiquidationForm';
@@ -1122,7 +1122,7 @@ const MyRequests = () => {
                 <p className="text-orange-800 text-sm font-semibold mb-2">Pending</p>
                 <h3 className="text-4xl font-bold text-orange-800">{stats.pending}</h3>
               </div>
-              <Hourglass className="w-12 h-12 text-orange-800 opacity-50" />
+              <Clock className="w-12 h-12 text-orange-800 opacity-50" />
             </div>
           </CardContent>
         </Card>

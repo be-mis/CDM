@@ -312,36 +312,36 @@ const UserManagement = () => {
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
-                <Card className="bg-gradient-to-br from-indigo-400 to-indigo-600 text-white shadow-sm hover:shadow-md transition-shadow">
+                <Card className="!bg-blue-50 border border-blue-200 shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Total Users</p>
-                                <h3 className="text-4xl font-bold">{stats.total}</h3>
+                                <p className="text-blue-800 text-sm font-semibold mb-2">Total Users</p>
+                                <h3 className="text-4xl text-blue-800 font-bold">{stats.total}</h3>
                             </div>
-                            <UsersIcon className="w-12 h-12 opacity-30" />
+                            <UsersIcon className="w-12 h-12 text-blue-800 opacity-30" />
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="bg-gradient-to-br from-purple-400 to-purple-600 text-white shadow-sm hover:shadow-md transition-shadow">
+                <Card className="!bg-purple-50 border border-purple-200 shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Admins</p>
-                                <h3 className="text-4xl font-bold">{stats.admins}</h3>
+                                <p className="text-purple-800 text-sm font-semibold mb-2">Admins</p>
+                                <h3 className="text-4xl text-purple-800 font-bold">{stats.admins}</h3>
                             </div>
-                            <Shield className="w-12 h-12 opacity-30" />
+                            <Shield className="w-12 h-12 text-purple-800 opacity-30" />
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="bg-gradient-to-br from-teal-400 to-teal-600 text-white shadow-sm hover:shadow-md transition-shadow">
+                <Card className="!bg-teal-50 border border-teal-200 shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Approvers</p>
-                                <h3 className="text-4xl font-bold">{stats.approvers}</h3>
+                                <p className="text-teal-800 text-sm font-semibold mb-2">Approvers</p>
+                                <h3 className="text-4xl text-teal-800 font-bold">{stats.approvers}</h3>
                             </div>
-                            <ShieldCheck className="w-12 h-12 opacity-30" />
+                            <ShieldCheck className="w-12 h-12 text-teal-800 opacity-30" />
                         </div>
                     </CardContent>
                 </Card>

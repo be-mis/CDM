@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { logAudit } = require('../utils/auditLogger');
 
 /**
  * Disbursements Controller
@@ -84,10 +85,13 @@ const processDisbursement = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Invalid request type' });
   }
 
+  // cash_advances uses requested_amount; liquidations/reimbursements use total_actual_amount
+  const amountColumn = tableName === 'cash_advances' ? 'requested_amount' : 'total_actual_amount';
+
   try {
-    // Verify record exists and is approved
+    // Verify record exists and is approved — also grab the amount for the audit log
     const [request] = await pool.query(
-      `SELECT id, status FROM \`${tableName}\` WHERE id = ? LIMIT 1`,
+      `SELECT id, status, ${amountColumn} AS amount FROM \`${tableName}\` WHERE id = ? LIMIT 1`,
       [id],
     );
     if (request.length === 0) {
@@ -105,6 +109,7 @@ const processDisbursement = async (req, res) => {
     // Release remarks go to release_remarks; rejection remarks overwrite reject_remarks
     const remarksColumn = action === 'reject' ? 'reject_remarks' : 'release_remarks';
 
+    // NOTE: this UPDATE was previously duplicated (ran twice back to back) — removed the extra copy
     await pool.query(
       `UPDATE \`${tableName}\`
        SET status          = ?,
@@ -115,17 +120,6 @@ const processDisbursement = async (req, res) => {
       [newStatus, userName, remarks || null, id],
     );
 
-    await pool.query(
-      `UPDATE \`${tableName}\`
-       SET status          = ?,
-           released_by     = ?,
-           released_at     = NOW(),
-           \`${remarksColumn}\` = ?
-       WHERE id = ?`,
-      [newStatus, userName, remarks || null, id],
-    );
-
-    // ✅ ADD THIS
     if (type === 'cash-advance' && action === 'release') {
       await pool.query(
         `UPDATE cash_advances
@@ -134,7 +128,15 @@ const processDisbursement = async (req, res) => {
         [id],
       );
     }
-    // ✅ END ADD
+
+    await logAudit({
+      userId: req.user?.id || null,
+      action: `${type}_${newStatus}`, // e.g. cash-advance_released
+      entity: tableName,
+      entityId: id,
+      details: { amount: request[0].amount, remarks: remarks || null },
+      ip: req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || null
+    });
 
     const successMsg =
       action === 'release' ? 'Funds released successfully' : 'Request rejected successfully';

@@ -185,47 +185,47 @@ const AuditLogs = () => {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-        <Card className="bg-gradient-to-br from-primary-500 to-secondary-500 text-white">
+        <Card className="!bg-purple-50 border border-purple-200 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-white/90 text-sm font-semibold mb-2">Total Entries</p>
-                <h3 className="text-4xl font-bold">{pagination.total.toLocaleString()}</h3>
+                <p className="text-purple-800 text-sm font-semibold mb-2">Total Entries</p>
+                <h3 className="text-4xl text-purple-800 font-bold">{pagination.total.toLocaleString()}</h3>
               </div>
-              <History className="w-12 h-12 opacity-30" />
+              <History className="w-12 h-12 text-purple-800 opacity-30" />
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-cyan-400 to-blue-500 text-white">
+        <Card className="!bg-blue-50 border border-blue-200 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-white/90 text-sm font-semibold mb-2">Action Types</p>
-                <h3 className="text-4xl font-bold">{filterOptions.actions.length}</h3>
+                <p className="text-blue-800 text-sm font-semibold mb-2">Action Types</p>
+                <h3 className="text-4xl text-blue-800 font-bold">{filterOptions.actions.length}</h3>
               </div>
-              <Shield className="w-12 h-12 opacity-30" />
+              <Shield className="w-12 h-12 text-blue-800 opacity-30" />
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-pink-400 to-rose-500 text-white">
+        <Card className="!bg-pink-50 border border-pink-200 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-white/90 text-sm font-semibold mb-2">Entities Tracked</p>
-                <h3 className="text-4xl font-bold">{filterOptions.entities.length}</h3>
+                <p className="text-pink-800 text-sm font-semibold mb-2">Entities Tracked</p>
+                <h3 className="text-4xl text-pink-800 font-bold">{filterOptions.entities.length}</h3>
               </div>
-              <Paperclip className="w-12 h-12 opacity-30" />
+              <Paperclip className="w-12 h-12 text-pink-800 opacity-30" />
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-rose-400 to-yellow-400 text-white">
+        <Card className="!bg-teal-50 border border-teal-200 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-white/90 text-sm font-semibold mb-2">Active Users</p>
-                <h3 className="text-4xl font-bold">{filterOptions.users.length}</h3>
+                <p className="text-teal-800 text-sm font-semibold mb-2">Active Users</p>
+                <h3 className="text-4xl text-teal-800 font-bold">{filterOptions.users.length}</h3>
               </div>
-              <User className="w-12 h-12 opacity-30" />
+              <User className="w-12 h-12 text-teal-800 opacity-30" />
             </div>
           </CardContent>
         </Card>

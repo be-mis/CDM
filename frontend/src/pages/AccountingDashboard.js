@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import {
   Receipt, Coins,
-  CreditCard, CheckCircle,
+  CreditCard, CheckCircle, ClockAlert,
   Search, Filter, ChevronDown, ChevronRight,
   Clock, Eye, HandCoins, XCircle, Send, Banknote, FileEdit,
 } from 'lucide-react';
@@ -623,7 +623,7 @@ const AccountingDashboard = () => {
                     {loading ? '—' : stats.overdueCount}
                   </span>
                 </div>
-                <Clock className={`w-12 h-12 opacity-30 ${stats.overdueCount > 0 ? 'text-red-800' : 'text-gray-500'}`} />
+                <ClockAlert className={`w-12 h-12 opacity-30 ${stats.overdueCount > 0 ? 'text-red-800' : 'text-gray-500'}`} />
               </div>
             </CardContent>
           </Card>

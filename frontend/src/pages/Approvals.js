@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
     CheckCircle, XCircle, Eye, X, Hourglass, Banknote,
-    Search, ChevronLeft, ChevronRight, Clock, Send, FileEdit,
+    Search, ChevronLeft, ChevronRight, Clock, Send, FileEdit, ClockAlert,
 } from 'lucide-react';
 import api from '../api';
 import { formatLongDate } from '../utils/formatters';
@@ -29,6 +29,37 @@ const formatDateTime = (value) => {
         hour: 'numeric',
         minute: '2-digit',
     });
+};
+
+// A pending request is considered overdue once it's been sitting for longer
+// than this many days without a decision.
+const OVERDUE_DAYS = 3;
+
+// Pulls whichever "submitted" timestamp field the record happens to have.
+const getSubmittedDate = (item) => {
+    const value = item.created_at || item.submitted_at || item.date_filed || item.requested_at;
+    if (!value) return null;
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+};
+
+// True if the request is still pending and was submitted more than
+// OVERDUE_DAYS days ago.
+const isOverdue = (item) => {
+    if ((item.status || '').toLowerCase() !== 'pending') return false;
+    const submitted = getSubmittedDate(item);
+    if (!submitted) return false;
+    const daysPending = (Date.now() - submitted.getTime()) / (1000 * 60 * 60 * 24);
+    return daysPending > OVERDUE_DAYS;
+};
+
+// Whole number of days a pending request has been sitting since submission.
+// Returns null for non-pending rows or when no submission date is available.
+const getDaysPending = (item) => {
+    if ((item.status || '').toLowerCase() !== 'pending') return null;
+    const submitted = getSubmittedDate(item);
+    if (!submitted) return null;
+    return Math.floor((Date.now() - submitted.getTime()) / (1000 * 60 * 60 * 24));
 };
 
 // Reusable pagination control
@@ -498,13 +529,14 @@ const Approvals = () => {
                         <th className="px-4 py-3 w-1/6 text-left text-sm font-semibold text-gray-700">Amount</th>
                         <th className="px-4 py-3 w-1/6 text-left text-sm font-semibold text-gray-700">Request Date</th>
                         <th className="px-4 py-3 w-1/6 text-left text-sm font-semibold text-gray-700">Status</th>
+                        <th className="px-4 py-3 w-1/6 text-left text-sm font-semibold text-gray-700">Remarks</th>
                         <th className="px-4 py-3 w-1/6 text-center text-sm font-semibold text-gray-700">Actions</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                     {items.length === 0 ? (
                         <tr>
-                            <td colSpan="6" className="py-10 text-center text-gray-400 text-sm">
+                            <td colSpan="7" className="py-10 text-center text-gray-400 text-sm">
                                 {searchTerm
                                     ? 'No results found.'
                                     : statusFilter === 'all'
@@ -548,6 +580,26 @@ const Approvals = () => {
                                     <span className={`inline-flex items-left px-2.5 py-1 rounded-full text-xs font-semibold ${statusClass}`}>
                                         {statusLabel}
                                     </span>
+                                </td>
+                                <td className="px-4 py-4 text-left">
+                                    {(() => {
+                                        const days = getDaysPending(row);
+                                        if (days === null) return <span className="text-gray-400 text-sm">—</span>;
+                                        const rowIsOverdue = days > OVERDUE_DAYS;
+                                        const isWarning = days === OVERDUE_DAYS;
+                                        return (
+                                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                                                rowIsOverdue
+                                                    ? 'bg-red-100 text-red-700 border border-red-200'
+                                                    : isWarning
+                                                    ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                                                    : 'bg-green-100 text-green-700 border border-green-200'
+                                            }`}>
+                                                {rowIsOverdue && <span>⚠</span>}
+                                                {days}d
+                                            </span>
+                                        );
+                                    })()}
                                 </td>
                                 <td className="px-4 py-4">
                                     <div className="flex items-center justify-center gap-2">
@@ -602,7 +654,7 @@ const Approvals = () => {
         pending: activeTabData.filter(item => (item.status || '').toLowerCase() === 'pending').length,
         approved: activeTabData.filter(item => (item.status || '').toLowerCase() === 'approved').length,
         rejected: activeTabData.filter(item => (item.status || '').toLowerCase() === 'rejected').length,
-        released: activeTabData.filter(item => (item.status || '').toLowerCase() === 'released').length,
+        overdue: activeTabData.filter(isOverdue).length,
     }), [activeTabData]);
 
     const tabs = [
@@ -628,47 +680,51 @@ const Approvals = () => {
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-                <Card className="bg-gradient-to-br from-orange-400 to-amber-600 text-white shadow-sm hover:shadow-md transition-shadow">
+                <Card className="!bg-orange-50 border border-orange-200 text-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Pending</p>
-                                <h3 className="text-4xl font-bold">{stats.pending}</h3>
+                                <p className="text-orange-800 text-sm font-semibold mb-2">Pending Request</p>
+                                <h3 className="text-4xl text-orange-800 font-bold">{stats.pending}</h3>
                             </div>
-                            <Hourglass className="w-12 h-12 opacity-30" />
+                            <Clock className="w-12 h-12 text-orange-800 opacity-50" />
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="bg-gradient-to-br from-green-400 to-emerald-600 text-white shadow-sm hover:shadow-md transition-shadow">
+                <Card className={`${stats.overdue > 0 ? '!bg-red-50 border-red-200' : '!bg-gray-50 border-gray-200'} border text-white shadow-sm hover:shadow-md transition-shadow`}>
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Approved</p>
-                                <h3 className="text-4xl font-bold">{stats.approved}</h3>
+                                <p className={`text-sm font-semibold mb-2 ${stats.overdue > 0 ? 'text-red-800' : 'text-gray-600'}`}>
+                                    Overdue Request
+                                </p>
+                                <h3 className={`text-4xl font-bold ${stats.overdue > 0 ? 'text-red-800' : 'text-gray-500'}`}>
+                                    {stats.overdue}
+                                </h3>
                             </div>
-                            <CheckCircle className="w-12 h-12 opacity-30" />
+                            <ClockAlert className={`w-12 h-12 opacity-50 ${stats.overdue > 0 ? 'text-red-800' : 'text-gray-500'}`} />
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="bg-gradient-to-br from-rose-400 to-red-600 text-white shadow-sm hover:shadow-md transition-shadow">
+                <Card className="!bg-green-50 border border-green-200 text-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Rejected</p>
-                                <h3 className="text-4xl font-bold">{stats.rejected}</h3>
+                                <p className="text-green-700 text-sm font-semibold mb-2">Approved</p>
+                                <h3 className="text-4xl text-green-700 font-bold">{stats.approved}</h3>
                             </div>
-                            <XCircle className="w-12 h-12 opacity-30" />
+                            <CheckCircle className="w-12 h-12 text-green-700 opacity-50" />
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="bg-gradient-to-br from-blue-400 to-blue-600 text-white shadow-sm hover:shadow-md transition-shadow">
+                <Card className="!bg-red-50 border border-red-200 text-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Released</p>
-                                <h3 className="text-4xl font-bold">{stats.released}</h3>
+                                <p className="text-red-700 text-sm font-semibold mb-2">Rejected</p>
+                                <h3 className="text-4xl text-red-700 font-bold">{stats.rejected}</h3>
                             </div>
-                            <CheckCircle className="w-12 h-12 opacity-30" />
+                            <XCircle className="w-12 h-12 text-red-700 opacity-50" />
                         </div>
                     </CardContent>
                 </Card>

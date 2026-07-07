@@ -642,36 +642,36 @@ const Disbursements = () => {
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
-                <Card className="bg-gradient-to-br from-orange-400 to-amber-600 text-white shadow-sm hover:shadow-md transition-shadow">
+                <Card className="!bg-orange-50 border border-orange-200 text-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Pending</p>
-                                <h3 className="text-4xl font-bold">{stats.pending}</h3>
+                                <p className="text-orange-800 text-sm font-semibold mb-2">Pending Request</p>
+                                <h3 className="text-4xl text-orange-800 font-bold">{stats.pending}</h3>
                             </div>
-                            <Hourglass className="w-12 h-12 opacity-30" />
+                            <Clock className="w-12 h-12 text-orange-800 opacity-50" />
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="bg-gradient-to-br from-green-400 to-emerald-600 text-white shadow-sm hover:shadow-md transition-shadow">
+                <Card className="!bg-green-50 border border-green-200 text-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Released</p>
-                                <h3 className="text-4xl font-bold">{stats.released}</h3>
+                                <p className="text-green-700 text-sm font-semibold mb-2">Released</p>
+                                <h3 className="text-4xl text-green-700 font-bold">{stats.released}</h3>
                             </div>
-                            <CheckCircle className="w-12 h-12 opacity-30" />
+                            <CheckCircle className="w-12 h-12 text-green-700 opacity-50" />
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="bg-gradient-to-br from-rose-400 to-red-600 text-white shadow-sm hover:shadow-md transition-shadow">
+                <Card className="!bg-red-50 border border-red-200 text-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white/90 text-sm font-semibold mb-2">Rejected</p>
-                                <h3 className="text-4xl font-bold">{stats.rejected}</h3>
+                                <p className="text-red-700 text-sm font-semibold mb-2">Rejected</p>
+                                <h3 className="text-4xl text-red-700 font-bold">{stats.rejected}</h3>
                             </div>
-                            <XCircle className="w-12 h-12 opacity-30" />
+                            <XCircle className="w-12 h-12 text-red-700 opacity-50" />
                         </div>
                     </CardContent>
                 </Card>
