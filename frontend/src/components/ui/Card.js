@@ -6,7 +6,7 @@ import React from 'react';
 export const Card = ({ children, className = '', hover = false, ...props }) => {
   return (
     <div 
-      className={`bg-white border border-gray-200 rounded-lg shadow-sm ${
+      className={`bg-white border border-blue-200 rounded-lg shadow-sm ${
         hover ? 'transition-shadow hover:shadow-md' : ''
       } ${className}`}
       {...props}

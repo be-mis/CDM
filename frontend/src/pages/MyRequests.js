@@ -1109,55 +1109,55 @@ const MyRequests = () => {
 
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">My Requests 📋</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">My Requests</h1>
         <p className="text-gray-600">View and manage all your cash advance, liquidation, and reimbursement requests</p>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
-        <Card className="bg-gradient-to-br from-orange-400 to-amber-600 text-white shadow-sm hover:shadow-md transition-shadow">
+        <Card className="!bg-orange-50 border border-orange-200 text-white shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-white/90 text-sm font-semibold mb-2">Pending</p>
-                <h3 className="text-4xl font-bold">{stats.pending}</h3>
+                <p className="text-orange-800 text-sm font-semibold mb-2">Pending</p>
+                <h3 className="text-4xl font-bold text-orange-800">{stats.pending}</h3>
               </div>
-              <Hourglass className="w-12 h-12 opacity-30" />
+              <Hourglass className="w-12 h-12 text-orange-800 opacity-50" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-green-400 to-emerald-600 text-white shadow-sm hover:shadow-md transition-shadow">
+        <Card className="!bg-green-50 border border-green-200 text-white shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-white/90 text-sm font-semibold mb-2">Approved</p>
-                <h3 className="text-4xl font-bold">{stats.approved}</h3>
+                <p className="text-green-800 text-sm font-semibold mb-2">Approved</p>
+                <h3 className="text-4xl font-bold text-green-800">{stats.approved}</h3>
               </div>
-              <CheckCircle className="w-12 h-12 opacity-30" />
+              <CheckCircle className="w-12 h-12 text-green-800 opacity-50" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-rose-400 to-red-600 text-white shadow-sm hover:shadow-md transition-shadow">
+        <Card className="!bg-rose-50 border border-rose-200 text-white shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-white/90 text-sm font-semibold mb-2">Rejected</p>
-                <h3 className="text-4xl font-bold">{stats.rejected}</h3>
+                <p className="text-rose-800 text-sm font-semibold mb-2">Rejected</p>
+                <h3 className="text-4xl font-bold text-rose-800">{stats.rejected}</h3>
               </div>
-              <XCircle className="w-12 h-12 opacity-30" />
+              <XCircle className="w-12 h-12 text-rose-800 opacity-50" />
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-blue-400 to-blue-600 text-white shadow-sm hover:shadow-md transition-shadow">
+        <Card className="!bg-blue-50 border border-blue-200 text-white shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-white/90 text-sm font-semibold mb-2">Released</p>
-                <h3 className="text-4xl font-bold">{stats.released}</h3>
+                <p className="text-blue-800 text-sm font-semibold mb-2">Released</p>
+                <h3 className="text-4xl font-bold text-blue-800">{stats.released}</h3>
               </div>
-              <CheckCircle className="w-12 h-12 opacity-30" />
+              <CheckCircle className="w-12 h-12 text-blue-800 opacity-50" />
             </div>
           </CardContent>
         </Card>
@@ -1268,8 +1268,8 @@ const MyRequests = () => {
                     </tr>
                   ) : filteredCashAdvances.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-gray-500 text-sm">
-                        No cash advances found
+                      <td colSpan={7} className="py-10 text-center text-gray-400 text-sm">
+                        No results found.
                       </td>
                     </tr>
                   ) : (
@@ -1395,8 +1395,8 @@ const MyRequests = () => {
                     </tr>
                   ) : filteredLiquidations.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-gray-500 text-sm">
-                        No liquidations found
+                      <td colSpan={8} className="py-10 text-center text-gray-400 text-sm">
+                        No results found.
                       </td>
                     </tr>
                   ) : (
@@ -1488,8 +1488,8 @@ const MyRequests = () => {
                     </tr>
                   ) : filteredReimbursements.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-gray-500 text-sm">
-                        No reimbursements found
+                      <td colSpan={6} className="py-10 text-center text-gray-400 text-sm">
+                        No results found.
                       </td>
                     </tr>
                   ) : (

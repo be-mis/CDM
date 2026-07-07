@@ -403,8 +403,8 @@ const UserManagement = () => {
                                 <tbody className="divide-y divide-gray-200">
                                     {paginatedUsers.length === 0 ? (
                                         <tr>
-                                            <td colSpan="6" className="py-8 text-left text-gray-500">
-                                                {searchTerm || roleFilter !== 'all' ? 'No users match your filters' : 'No users found'}
+                                            <td colSpan={6} className="py-10 text-center text-gray-400 text-sm">
+                                                {searchTerm || roleFilter !== 'all' ? 'No results found.' : 'No results found.'}
                                             </td>
                                         </tr>
                                     ) : (

@@ -229,7 +229,6 @@ const Dashboard = () => {
             ) : (
               user?.role !== 'admin' && user?.isApprover && (
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 md:p-6">
-                  <h2 className="text-lg font-bold text-gray-900 mb-4">Approval Dashboard</h2>
                   <ManagerDashboard />
                 </div>
               )

@@ -432,12 +432,12 @@ const RequestTimeline = ({ request }) => {
 };
 
 // Stat card for the summary overview section
-const OverviewStatCard = ({ label, count, loading }) => (
-  <div className="text-center p-4 bg-gray-50 rounded-lg">
-    <h3 className="text-3xl font-bold text-gray-900 mb-2">
+const OverviewStatCard = ({ label, count, loading, className = '' }) => (
+  <div className={`text-center p-4 bg-blue-50 rounded-lg border ${className}`}>
+    <h3 className="text-3xl font-bold mb-2">
       {loading ? <Spinner size="sm" /> : count}
     </h3>
-    <p className="text-sm text-gray-600">{label}</p>
+    <p className="text-sm">{label}</p>
   </div>
 );
 
@@ -489,7 +489,7 @@ const EmployeeDashboard = () => {
   const [reimbursements, setReimbursements] = useState([]);
 
   // ── UI state ───────────────────────────────────────────────────────────────
-  const [selectedOverviewType, setSelectedOverviewType] = useState(null);
+  const [selectedOverviewType, setSelectedOverviewType] = useState(OVERVIEW_TYPES.CASH_ADVANCES);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [viewData, setViewData] = useState(null);
   const [viewLoading, setViewLoading] = useState(false);
@@ -847,53 +847,84 @@ const EmployeeDashboard = () => {
         </div>
       )}
 
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
-  {[
-    {
-      type: OVERVIEW_TYPES.CASH_ADVANCES,
-      label: 'Cash Advances',
-      count: cashAdvances.length,
-      gradient: 'from-primary-500 to-secondary-500',
-      Icon: HandCoins,
-    },
-    {
-      type: OVERVIEW_TYPES.LIQUIDATIONS,
-      label: 'Liquidations',
-      count: liquidations.length,
-      gradient: 'from-pink-400 to-rose-500',
-      Icon: ReceiptText,
-    },
-    {
-      type: OVERVIEW_TYPES.REIMBURSEMENTS,
-      label: 'Reimbursements',
-      count: reimbursements.length,
-      gradient: 'from-cyan-400 to-blue-500',
-      Icon: Coins,
-    },
-  ].map(({ type, label, count, gradient, Icon }) => (
-    <Card
-      key={type}
-      hover
-      className={`h-full bg-gradient-to-br ${gradient} text-white cursor-pointer transition-transform ${
-        selectedOverviewType === type ? 'scale-105 shadow-xl' : ''
-      }`}
-      onClick={() => setSelectedOverviewType(type)}
-    >
-      <CardContent className="p-6 h-full">
-        <div className="flex items-center justify-between h-full">
-          <div className="min-w-0">
-            <p className="text-white/90 text-sm mb-2 whitespace-nowrap">{label}</p>
-            <h3 className="text-4xl font-bold min-h-[2.5rem] flex items-center">
-              {loading ? <Spinner size="md" className="text-white" /> : count}
-            </h3>
-          </div>
-          <Icon className="w-12 h-12 opacity-30 shrink-0" />
+      {/* Statistics Cards & Request Status Overview */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-1 lg:grid-cols-1 xl:grid-cols-1 gap-4">
+          {[
+            {
+              type: OVERVIEW_TYPES.CASH_ADVANCES,
+              label: 'Cash Advances',
+              count: cashAdvances.length,
+              Icon: HandCoins,
+            },
+            {
+              type: OVERVIEW_TYPES.LIQUIDATIONS,
+              label: 'Liquidations',
+              count: liquidations.length,
+              Icon: ReceiptText,
+            },
+            {
+              type: OVERVIEW_TYPES.REIMBURSEMENTS,
+              label: 'Reimbursements',
+              count: reimbursements.length,
+              Icon: Coins,
+            },
+          ].map(({ type, label, count, gradient, Icon }) => (
+            <Card
+              key={type}
+              hover
+              className={`h-full border !border-blue-200 !bg-blue-50 text-white cursor-pointer transition-transform ${
+                selectedOverviewType === type ? 'shadow-xl3 !bg-blue-700' : ''
+              }`}
+              onClick={() => setSelectedOverviewType(type)}
+            >
+              <CardContent className="p-6 h-full">
+                <div className="flex items-center justify-between h-full">
+                  <div className="min-w-0">
+                    <p className={`text-sm mb-2 whitespace-nowrap ${selectedOverviewType === type ? 'text-white' : 'text-blue-800'}`}>{label}</p>
+                    <h3 className={`text-4xl font-bold min-h-[2.5rem] flex items-center ${selectedOverviewType === type ? 'text-white' : 'text-blue-800'}`}>
+                      {loading ? <Spinner size="md" className="text-white" /> : count}
+                    </h3>
+                  </div>
+                  <Icon className={`w-12 h-12 ${selectedOverviewType === type ? 'text-white' : 'text-blue-800'} opacity-50 shrink-0`} />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
-      </CardContent>
-    </Card>
-  ))}
-</div>
+
+        {/* Request Status Overview */}
+        <Card className="lg:col-span-3 border !border-blue-200">
+          <CardContent className="p-6 rounded-lg">
+            <h2 className="text-xl font-semibold my-4">
+              Request Status Overview
+            </h2>
+            <div className="grid grid-cols-2 gap-4">
+            {overviewStats.stats.map((item) => {
+              const borderStyles = {
+                'Pending Approval': 'border-orange-200 bg-orange-50 text-orange-800',
+                'Approved': 'border-green-300 bg-green-50 text-green-800',
+                'Disbursed': 'border-blue-300 bg-blue-50 text-blue-800',
+                'Released': 'border-blue-300 bg-blue-50 text-blue-800',
+                'Liquidated': 'border-blue-300 bg-blue-50 text-blue-800',
+                'Draft': 'border-gray-300 bg-gray-50 text-gray-800',
+              };
+
+              return (
+                <OverviewStatCard
+                  key={item.label}
+                  label={item.label}
+                  count={item.count}
+                  loading={loading}
+                  className={borderStyles[item.label] || 'border-gray-200'}
+                />
+              );
+            })}
+          </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* View Request Modal */}
       <Modal
@@ -924,32 +955,13 @@ const EmployeeDashboard = () => {
         )}
       </Modal>
 
-      {/* Status Overview & Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Status Overview */}
-        <Card className="lg:col-span-2">
-          <CardContent className="p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">
-              Request Status Overview
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {overviewStats.stats.map((item) => (
-                <OverviewStatCard
-                  key={item.label}
-                  label={item.label}
-                  count={item.count}
-                  loading={loading}
-                />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
+      {/* Quick Actions & Recent Requests */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
         {/* Quick Actions */}
-        <Card>
+        <Card className="col-span-1 border !border-blue-200 ">
           <CardContent className="p-6">
             <h2 className="text-xl font-semibold text-gray-900 mb-6">Quick Actions</h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               {[
                 { label: 'New Cash Advance', icon: HandCoins, path: '/cash-advance', color: 'border-primary-500 text-primary-600 hover:bg-primary-50' },
                 { label: 'Liquidate', icon: ReceiptText, path: '/liquidation', color: 'border-pink-500 text-pink-600 hover:bg-pink-50' },
@@ -973,7 +985,7 @@ const EmployeeDashboard = () => {
         </Card>
 
         {/* Recent Requests */}
-        <Card>
+        <Card className="col-span-3 border !border-blue-200 ">
           <CardContent className="p-6">
             <h2 className="text-xl font-semibold text-gray-900 mb-6">Recent Requests</h2>
             {loading ? (

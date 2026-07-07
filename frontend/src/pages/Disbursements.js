@@ -543,12 +543,12 @@ const Disbursements = () => {
                 <tbody className="divide-y divide-gray-200">
                     {items.length === 0 ? (
                         <tr>
-                            <td colSpan="8" className="py-8 text-center text-gray-500">
+                            <td colSpan="8" className="py-10 text-center text-gray-400 text-sm">
                                 {searchTerm
-                                    ? 'No results match your search'
+                                    ? 'No results found.'
                                     : statusFilter === 'all'
-                                        ? 'No disbursements found'
-                                        : `No ${statusFilter} disbursements`}
+                                        ? 'No results found.'
+                                        : 'No results found.'}
                             </td>
                         </tr>
                     ) : (

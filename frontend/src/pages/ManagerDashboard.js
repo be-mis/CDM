@@ -591,7 +591,7 @@ const ManagerDashboard = () => {
 
       {/* ── Header ── */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-1">Approver Dashboard 👔</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-1">Approval Dashboard</h1>
         <p className="text-gray-500">Welcome back, <span className="font-medium text-gray-700">{displayName}</span> — here's what needs your attention today.</p>
       </div>
 
@@ -604,56 +604,56 @@ const ManagerDashboard = () => {
       {/* ── Section 1: Summary Cards ── */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Approval Summary</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 
           {/* Pending Your Approval */}
-          <Card className="bg-gradient-to-br from-orange-400 to-amber-600 text-white shadow-sm hover:shadow-md transition-shadow">
+          <Card className="border !border-blue-200 !bg-blue-100 text-white col-span-1">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white/90 text-sm font-semibold mb-2">Pending</p>
-                  <span className="text-3xl font-extrabold">{loading ? '—' : pendingApprovals.length}</span>
+                  <p className="text-blue-800 text-sm font-semibold mb-2">Pending Approvals</p>
+                  <span className="text-3xl text-blue-800 font-extrabold">{loading ? '—' : pendingApprovals.length}</span>
                 </div>
-                <Hourglass className="w-12 h-12 opacity-30" />
+                <Hourglass className="w-12 h-12 text-blue-800 opacity-50" />
               </div>
             </CardContent>
           </Card>
 
           {/* Overdue */}
-          <Card className={`text-white col-span-2 md:col-span-1 ${monthlyStats.overdueCount > 0 ? 'bg-gradient-to-br from-rose-400 to-red-600' : 'bg-gradient-to-br from-gray-400 to-gray-500'}`}>
+          <Card className={`border text-white col-span-1 ${monthlyStats.overdueCount > 0 ? '!bg-red-100 !border-red-200' : '!bg-blue-100 !border-blue-200'}`}>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white/90 text-sm font-semibold mb-2">Overdue Requests</p>
-                  <span className="text-3xl font-extrabold">{loading ? '—' : monthlyStats.overdueCount}</span>
+                  <p className={`text-sm font-semibold mb-2 ${monthlyStats.overdueCount > 0 ? 'text-red-800' : 'text-blue-800'}`}>Overdue Requests</p>
+                  <span className={`text-3xl font-extrabold ${monthlyStats.overdueCount > 0 ? 'text-red-800' : 'text-blue-800'}`}>{loading ? '—' : monthlyStats.overdueCount}</span>
                 </div>
-                <ClockAlert className="w-12 h-12 opacity-30" />
+                <ClockAlert className={`w-12 h-12 ${monthlyStats.overdueCount > 0 ? 'text-red-800' : 'text-blue-800'} opacity-50`} />
               </div>
             </CardContent>
           </Card>
 
           {/* Approved This Month */}
-          <Card className="bg-gradient-to-br from-emerald-500 to-green-600 text-white col-span-2 md:col-span-1">
+          <Card className="border !border-blue-200 !bg-blue-100 text-white col-span-1">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white/90 text-sm font-semibold mb-2">Approved This Month</p>
-                  <span className="text-3xl font-extrabold">{statsLoading ? '—' : monthlyStats.approvedThisMonth}</span>
+                  <p className="text-blue-800 text-sm font-semibold mb-2">Approved This Month</p>
+                  <span className="text-3xl text-blue-800 font-extrabold">{statsLoading ? '—' : monthlyStats.approvedThisMonth}</span>
                 </div>
-                <CalendarCheck className="w-12 h-12 opacity-30" />
+                <CalendarCheck className="w-12 h-12 text-blue-800 opacity-50" />
               </div>
             </CardContent>
           </Card>
 
           {/* Returned / Rejected This Month */}
-          <Card className="bg-gradient-to-br from-pink-500 to-rose-500 text-white col-span-2 md:col-span-1">
+          <Card className="border !border-blue-200 !bg-blue-100 text-white col-span-1">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white/90 text-sm font-semibold mb-2">Returned / Rejected This Month</p>
-                  <span className="text-3xl font-extrabold">{statsLoading ? '—' : monthlyStats.rejectedThisMonth}</span>
+                  <p className={`text-sm font-semibold mb-2 ${monthlyStats.rejectedThisMonth > 0 ? 'text-pink-800' : 'text-blue-800'}`}>Rejected This Month</p>
+                  <span className={`text-3xl font-extrabold ${monthlyStats.rejectedThisMonth > 0 ? 'text-pink-800' : 'text-blue-800'}`}>{statsLoading ? '—' : monthlyStats.rejectedThisMonth}</span>
                 </div>
-                <CalendarX className="w-12 h-12 opacity-30" />
+                <CalendarX className={`w-12 h-12 ${monthlyStats.rejectedThisMonth > 0 ? 'text-pink-800' : 'text-blue-800'} opacity-50`} />
               </div>
             </CardContent>
           </Card>
@@ -677,7 +677,7 @@ const ManagerDashboard = () => {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="Search ref, employee, purpose…"
+                  placeholder="Search…"
                   value={queueSearch}
                   onChange={e => setQueueSearch(e.target.value)}
                   className="pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none w-56"
@@ -712,7 +712,7 @@ const ManagerDashboard = () => {
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Type</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Requestor</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Request Date</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Amount</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Amount</th>
                     <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Days Pending</th>
                     <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
                   </tr>
@@ -720,8 +720,8 @@ const ManagerDashboard = () => {
                 <tbody className="divide-y divide-gray-200">
                   {filteredQueue.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-gray-500 text-sm">
-                        No pending requests found
+                      <td colSpan={7} className="py-10 text-center text-gray-400 text-sm">
+                        No results found.
                       </td>
                     </tr>
                   ) : (
@@ -731,7 +731,7 @@ const ManagerDashboard = () => {
                         className={`hover:bg-gray-50 transition-colors ${row.priority === 'Overdue' ? 'bg-red-50/40' : ''}`}
                       >
                         <td className="px-4 py-4">
-                          <span className="text-sm font-semibold font-mono text-gray-900">{row.refNumber}</span>
+                          <span className="text-sm font-semibold text-gray-900">{row.refNumber}</span>
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-2">
@@ -750,7 +750,7 @@ const ManagerDashboard = () => {
                         <td className="px-4 py-4">
                           <span className="text-sm text-gray-600">{formatLongDate(row.date)}</span>
                         </td>
-                        <td className="px-4 py-4 text-right">
+                        <td className="px-4 py-4 text-left">
                           <span className="text-sm font-semibold text-gray-900">
                             {formatPeso(row.amount)}
                           </span>
@@ -868,19 +868,20 @@ const ManagerDashboard = () => {
             ) : recentActions.length === 0 ? (
               <p className="text-gray-500 text-center py-8 text-sm">No recent approval actions.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto border border-gray-200 rounded-lg">
                 <table className="w-full min-w-[700px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      {['Reference No.', 'Type', 'Requestor', 'Amount', 'Date', 'Status'].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">{h}</th>
+                      {['Reference No.', 'Type', 'Requestor', 'Amount', 'Date'].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-sm font-semibold text-gray-700">{h}</th>
                       ))}
+                      <th key="status" className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {recentActions.map((item, i) => (
                       <tr key={i} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-3 text-sm font-mono font-semibold text-gray-900">{item.refNumber}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.refNumber}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${TYPE_STYLES[item.type] || 'bg-gray-100 text-gray-600'}`}>
                             {getRequestIcon(item.type)}{item.type}
@@ -889,7 +890,7 @@ const ManagerDashboard = () => {
                         <td className="px-4 py-3 text-sm text-gray-700">{item.requested_by || item.submitted_by || '—'}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-gray-900">{formatPeso(item.amount)}</td>
                         <td className="px-4 py-3 text-sm text-gray-500">{formatLongDate(item.date)}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 text-center">
                           <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full ${getStatusBadgeClass(item.status)}`}>
                             {item.status}
                           </span>

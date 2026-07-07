@@ -504,12 +504,12 @@ const Approvals = () => {
                 <tbody className="divide-y divide-gray-200">
                     {items.length === 0 ? (
                         <tr>
-                            <td colSpan="6" className="py-8 text-left text-gray-500">
+                            <td colSpan="6" className="py-10 text-center text-gray-400 text-sm">
                                 {searchTerm
-                                    ? 'No results match your search'
+                                    ? 'No results found.'
                                     : statusFilter === 'all'
-                                        ? 'No requests found'
-                                        : `No ${statusFilter} requests`}
+                                        ? 'No results found.'
+                                        : 'No results found.'}
                             </td>
                         </tr>
                     ) : (
