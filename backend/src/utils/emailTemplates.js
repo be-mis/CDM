@@ -253,7 +253,56 @@ function buildApprovalNotificationEmail({ recipientName, requestType, requestNum
   return { html, text };
 }
 
+/**
+ * OTP Verification Email Template (used for both signup verification
+ * and forgot-password codes — distinguished by `purpose`)
+ */
+function buildOtpEmail({ recipientName, otp, purpose, expiryMinutes }) {
+  const intro = purpose === 'signup'
+    ? 'Use the code below to finish creating your account.'
+    : 'Use the code below to reset your password.';
+  const greeting = recipientName ? recipientName : 'there';
+
+  const content = `
+    <p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;">
+      Hi <strong>${greeting}</strong>,
+    </p>
+    <p style="margin:0 0 24px;color:#374151;font-size:15px;line-height:1.6;">
+      ${intro}
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td align="center" style="padding:8px 0 24px;">
+          <div style="display:inline-block;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 32px;font-size:32px;font-weight:700;letter-spacing:8px;color:#111827;">
+            ${otp}
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0 0 16px;color:#9ca3af;font-size:13px;">
+      This code will expire in <strong>${expiryMinutes} minutes</strong>.
+    </p>
+    <p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.5;">
+      If you didn't request this, please ignore this email — no changes will be made to your account.
+    </p>
+  `;
+
+  const html = buildEmailTemplate({
+    title: purpose === 'signup' ? '🔐 Verify Your Email' : '🔐 Password Reset Code',
+    subtitle: 'Cash Disbursement Module',
+    content
+  });
+
+  const text = `Hi ${greeting},\n\n${intro}\n\nYour verification code: ${otp}\n\nThis code will expire in ${expiryMinutes} minutes. If you didn't request this, please ignore this email.\n\nThank you.`;
+
+  return { html, text };
+}
+
+
 module.exports = {
+  buildOtpEmail,
   buildEmailTemplate,
   buildPasswordResetEmail,
   buildLiquidationReminderEmail,

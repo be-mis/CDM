@@ -333,15 +333,25 @@ const updateReimbursement = async (req, res) => {
 const getReimbursements = async (req, res) => {
   try {
     const submittedBy = req.user?.name || req.user?.email;
+    const { scope } = req.query;
+
+    // scope=all returns every user's reimbursements — only admins may use it.
+    const wantsAllScope = String(scope).toLowerCase() === 'all';
+    if (wantsAllScope && req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admin accounts may request scope=all'
+      });
+    }
 
     const [rows] = await pool.query(
       `SELECT r.*, d.name AS department_name,
               r.approved_by AS approver_name
        FROM reimbursements r
        LEFT JOIN departments d ON r.department_id = d.id
-       WHERE r.submitted_by = ?
+       ${wantsAllScope ? '' : 'WHERE r.submitted_by = ?'}
        ORDER BY r.created_at DESC`,
-      [submittedBy],
+      wantsAllScope ? [] : [submittedBy],
     );
 
     return res.status(200).json({ success: true, data: rows });

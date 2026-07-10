@@ -631,7 +631,7 @@ const ManagerDashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-blue-800 text-sm font-semibold mb-2">Pending Approvals</p>
-                  <span className="text-3xl text-blue-800 font-extrabold">{loading ? '—' : pendingApprovals.length}</span>
+                  <span className="text-4xl font-bold text-blue-800">{loading ? '—' : pendingApprovals.length}</span>
                 </div>
                 <Clock className="w-12 h-12 text-blue-800 opacity-50" />
               </div>
@@ -644,7 +644,7 @@ const ManagerDashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className={`text-sm font-semibold mb-2 ${monthlyStats.overdueCount > 0 ? 'text-red-800' : 'text-gray-800'}`}>Overdue Requests</p>
-                  <span className={`text-3xl font-extrabold ${monthlyStats.overdueCount > 0 ? 'text-red-800' : 'text-gray-800'}`}>{loading ? '—' : monthlyStats.overdueCount}</span>
+                  <span className={`text-4xl font-bold ${monthlyStats.overdueCount > 0 ? 'text-red-800' : 'text-gray-800'}`}>{loading ? '—' : monthlyStats.overdueCount}</span>
                 </div>
                 <ClockAlert className={`w-12 h-12 ${monthlyStats.overdueCount > 0 ? 'text-red-800' : 'text-gray-800'} opacity-50`} />
               </div>
@@ -657,7 +657,7 @@ const ManagerDashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-green-800 text-sm font-semibold mb-2">Approved This Month</p>
-                  <span className="text-3xl text-green-800 font-extrabold">{statsLoading ? '—' : monthlyStats.approvedThisMonth}</span>
+                  <span className="text-4xl font-bold text-green-800">{statsLoading ? '—' : monthlyStats.approvedThisMonth}</span>
                 </div>
                 <CheckCircle className="w-12 h-12 text-green-800 opacity-50" />
               </div>
@@ -670,7 +670,7 @@ const ManagerDashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold mb-2 text-red-800">Rejected This Month</p>
-                  <span className="text-3xl font-extrabold text-red-800">{statsLoading ? '—' : monthlyStats.rejectedThisMonth}</span>
+                  <span className="text-4xl font-bold text-red-800">{statsLoading ? '—' : monthlyStats.rejectedThisMonth}</span>
                 </div>
                 <XCircle className="w-12 h-12 text-red-800 opacity-50" />
               </div>

@@ -19,6 +19,7 @@ function AppRoutes({ user, logout }) {
       <Route path="/manager-dashboard" element={user ? <Dashboard onLogout={logout} /> : <Navigate to="/login" replace />} />
       <Route path="/accounting-dashboard" element={user ? <Dashboard onLogout={logout} /> : <Navigate to="/login" replace />} />
       <Route path="/my-requests" element={user ? <Dashboard onLogout={logout} /> : <Navigate to="/login" replace />} />
+      <Route path="/all-transactions" element={user ? <Dashboard onLogout={logout} /> : <Navigate to="/login" replace />} />
 
       <Route path="/cash-advance" element={user ? <Dashboard onLogout={logout} /> : <Navigate to="/login" replace />} />
       <Route path="/liquidation" element={user ? <Dashboard onLogout={logout} /> : <Navigate to="/login" replace />} />
@@ -42,7 +43,7 @@ export default function App() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const isAuthPage = location.pathname === '/login' || location.pathname === '/signup' || location.pathname === '/forgot-password' || location.pathname === '/reset-password';
-  const isDashboardPage = location.pathname === '/dashboard' || location.pathname.startsWith('/manager-dashboard') || location.pathname.startsWith('/accounting-dashboard') || location.pathname.startsWith('/my-requests') || location.pathname.startsWith('/cash-advance') || location.pathname.startsWith('/liquidation') || location.pathname.startsWith('/reimbursement') || location.pathname.startsWith('/approvals') || location.pathname.startsWith('/disbursements') || location.pathname.startsWith('/profile') || location.pathname.startsWith('/user-management') || location.pathname.startsWith('/audit-logs');
+  const isDashboardPage = location.pathname === '/dashboard' || location.pathname.startsWith('/manager-dashboard') || location.pathname.startsWith('/accounting-dashboard') || location.pathname.startsWith('/my-requests') || location.pathname.startsWith('/all-transactions') || location.pathname.startsWith('/cash-advance') || location.pathname.startsWith('/liquidation') || location.pathname.startsWith('/reimbursement') || location.pathname.startsWith('/approvals') || location.pathname.startsWith('/disbursements') || location.pathname.startsWith('/profile') || location.pathname.startsWith('/user-management') || location.pathname.startsWith('/audit-logs');
 
   return (
     <div className="min-h-screen bg-gray-50">

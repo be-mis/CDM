@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-    Plus, Search, Edit2, Trash2, Shield, ShieldCheck,
-    ChevronLeft, ChevronRight, Users as UsersIcon,
+    Plus, Search, Edit2, Shield, ShieldCheck, UserX, UserCheck,
+    ChevronLeft, ChevronRight, Users as UsersIcon, Filter, RotateCw, X,
 } from 'lucide-react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -9,7 +9,7 @@ import { Card, CardContent } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Input from '../components/ui/Input';
-import { Alert } from '../components/ui/Alert';
+import { Alert, InlineAlert } from '../components/ui/Alert';
 import { Loading } from '../components/ui/Loading';
 
 const ROLES = ['employee', 'manager', 'accounting', 'admin'];
@@ -110,6 +110,13 @@ const roleBadgeStyles = {
     employee: 'bg-gray-100 text-gray-700',
 };
 
+const roleSelectedStyles = {
+    admin: 'bg-purple-600 text-white',
+    accounting: 'bg-blue-600 text-white',
+    manager: 'bg-amber-600 text-white',
+    employee: 'bg-gray-600 text-white',
+};
+
 const UserManagement = () => {
     const { user: currentUser } = useAuth();
 
@@ -119,7 +126,9 @@ const UserManagement = () => {
     const [notification, setNotification] = useState(null);
 
     const [searchTerm, setSearchTerm] = useState('');
-    const [roleFilter, setRoleFilter] = useState('all');
+    const [roleFilter, setRoleFilter] = useState(''); // '' = all roles
+    const [statusFilter, setStatusFilter] = useState(''); // '' = all statuses (default: show everything)
+    const [showFilters, setShowFilters] = useState(false);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
 
@@ -129,8 +138,9 @@ const UserManagement = () => {
     const [formError, setFormError] = useState('');
     const [saving, setSaving] = useState(false);
 
-    const [deleteTarget, setDeleteTarget] = useState(null);
-    const [deleting, setDeleting] = useState(false);
+    const [deactivateTarget, setDeactivateTarget] = useState(null);
+    const [deactivating, setDeactivating] = useState(false);
+    const [reactivatingId, setReactivatingId] = useState(null);
 
     const fetchUsers = useCallback(async () => {
         try {
@@ -175,10 +185,24 @@ const UserManagement = () => {
                 (u.name || '').toLowerCase().includes(q) ||
                 (u.email || '').toLowerCase().includes(q) ||
                 (u.department || '').toLowerCase().includes(q);
-            const matchesRole = roleFilter === 'all' || u.role === roleFilter;
-            return matchesSearch && matchesRole;
+            const matchesRole = !roleFilter || u.role === roleFilter;
+            const isActive = u.isActive !== false;
+            const matchesStatus =
+                !statusFilter ||
+                (statusFilter === 'active' && isActive) ||
+                (statusFilter === 'inactive' && !isActive);
+            return matchesSearch && matchesRole && matchesStatus;
         });
-    }, [users, searchTerm, roleFilter]);
+    }, [users, searchTerm, roleFilter, statusFilter]);
+
+    const hasActiveFilters = !!(searchTerm || roleFilter || statusFilter);
+
+    const clearFilters = () => {
+        setSearchTerm('');
+        setRoleFilter('');
+        setStatusFilter('');
+        setPage(1);
+    };
 
     const paginatedUsers = useMemo(() => {
         const start = (page - 1) * pageSize;
@@ -194,6 +218,7 @@ const UserManagement = () => {
         total: users.length,
         admins: users.filter(u => u.role === 'admin').length,
         approvers: users.filter(u => u.isApprover).length,
+        inactive: users.filter(u => u.isActive === false).length,
     }), [users]);
 
     const handlePageSizeChange = (size) => {
@@ -273,20 +298,34 @@ const UserManagement = () => {
         }
     };
 
-    const handleDelete = async () => {
-        if (!deleteTarget) return;
+    const handleDeactivate = async () => {
+        if (!deactivateTarget) return;
         try {
-            setDeleting(true);
-            await api.delete(`/users/${deleteTarget.id}`);
-            setNotification({ message: 'User deleted successfully', severity: 'success' });
-            setDeleteTarget(null);
+            setDeactivating(true);
+            await api.delete(`/users/${deactivateTarget.id}`);
+            setNotification({ message: 'User deactivated successfully', severity: 'success' });
+            setDeactivateTarget(null);
             fetchUsers();
         } catch (error) {
-            console.error('Error deleting user:', error);
-            setNotification({ message: error.response?.data?.message || 'Failed to delete user', severity: 'error' });
-            setDeleteTarget(null);
+            console.error('Error deactivating user:', error);
+            setNotification({ message: error.response?.data?.message || 'Failed to deactivate user', severity: 'error' });
+            setDeactivateTarget(null);
         } finally {
-            setDeleting(false);
+            setDeactivating(false);
+        }
+    };
+
+    const handleReactivate = async (u) => {
+        try {
+            setReactivatingId(u.id);
+            await api.patch(`/users/${u.id}/reactivate`);
+            setNotification({ message: 'User reactivated successfully', severity: 'success' });
+            fetchUsers();
+        } catch (error) {
+            console.error('Error reactivating user:', error);
+            setNotification({ message: error.response?.data?.message || 'Failed to reactivate user', severity: 'error' });
+        } finally {
+            setReactivatingId(null);
         }
     };
 
@@ -303,15 +342,16 @@ const UserManagement = () => {
             </div>
 
             {notification && (
-                <div className="mb-6">
-                    <Alert severity={notification.severity} onClose={() => setNotification(null)}>
-                        {notification.message}
-                    </Alert>
-                </div>
+                <Alert
+                    open={!!notification}
+                    onClose={() => setNotification(null)}
+                    message={notification.message}
+                    severity={notification.severity}
+                />
             )}
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <Card className="!bg-blue-50 border border-blue-200 shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
@@ -345,6 +385,17 @@ const UserManagement = () => {
                         </div>
                     </CardContent>
                 </Card>
+                <Card className="!bg-gray-50 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+                    <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-gray-700 text-sm font-semibold mb-2">Inactive</p>
+                                <h3 className="text-4xl text-gray-700 font-bold">{stats.inactive}</h3>
+                            </div>
+                            <UserX className="w-12 h-12 text-gray-700 opacity-30" />
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
             <Card>
@@ -352,40 +403,104 @@ const UserManagement = () => {
                     <Loading message="Loading users..." />
                 ) : (
                     <div className="p-6 space-y-4">
-                        {/* Search */}
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                            <input
-                                type="text"
-                                placeholder="Search by name, email, or department..."
-                                value={searchTerm}
-                                onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
-                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm outline-none transition-colors"
-                            />
+                        {/* Search & Filter Bar */}
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <div className="flex-1 min-w-[200px] relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                <input
+                                    type="text"
+                                    placeholder="Search by name, email, or department..."
+                                    value={searchTerm}
+                                    onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
+                                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm outline-none transition-colors"
+                                />
+                                {searchTerm && (
+                                    <button
+                                        onClick={() => setSearchTerm('')}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+                            <Button
+                                variant={showFilters ? 'primary' : 'secondary'}
+                                size="md"
+                                startIcon={<Filter className="w-4 h-4" />}
+                                onClick={() => setShowFilters(!showFilters)}
+                                className={hasActiveFilters && !showFilters ? 'border-blue-600 text-blue-600' : ''}
+                            >
+                                Filters {hasActiveFilters ? `(${[searchTerm, roleFilter, statusFilter].filter(Boolean).length})` : ''}
+                            </Button>
+                            <button
+                                onClick={fetchUsers}
+                                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                title="Refresh"
+                            >
+                                <RotateCw className="w-5 h-5" />
+                            </button>
+                            {hasActiveFilters && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    startIcon={<X className="w-4 h-4" />}
+                                    onClick={clearFilters}
+                                    className="text-red-600 hover:bg-red-50"
+                                >
+                                    Clear All
+                                </Button>
+                            )}
                         </div>
 
-                        {/* Role filter pills */}
-                        <div className="flex flex-wrap gap-2">
-                            <button
-                                onClick={() => { setRoleFilter('all'); setPage(1); }}
-                                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
-                                    roleFilter === 'all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                }`}
-                            >
-                                All Roles
-                            </button>
-                            {ROLES.map((role) => (
-                                <button
-                                    key={role}
-                                    onClick={() => { setRoleFilter(role); setPage(1); }}
-                                    className={`px-3 py-1.5 rounded-full text-sm font-medium capitalize transition-colors whitespace-nowrap ${
-                                        roleFilter === role ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                    }`}
-                                >
-                                    {role}
-                                </button>
-                            ))}
-                        </div>
+                        {/* Expandable Filters Panel */}
+                        {showFilters && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-200">
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Role</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        <button
+                                            onClick={() => { setRoleFilter(''); setPage(1); }}
+                                            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
+                                                !roleFilter ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            }`}
+                                        >
+                                            All Roles
+                                        </button>
+                                        {ROLES.map((role) => (
+                                            <button
+                                                key={role}
+                                                onClick={() => { setRoleFilter(role); setPage(1); }}
+                                                className={`px-3 py-1.5 rounded-full text-sm font-medium capitalize transition-colors whitespace-nowrap ${
+                                                    roleFilter === role ? roleSelectedStyles[role] : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                }`}
+                                            >
+                                                {role}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Status</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {[
+                                            { value: '', label: 'All Statuses', color: 'bg-gray-800 text-white' },
+                                            { value: 'active', label: 'Active', color: 'bg-green-600 text-white' },
+                                            { value: 'inactive', label: 'Inactive', color: 'bg-slate-500 text-white' },
+                                        ].map((opt) => (
+                                            <button
+                                                key={opt.value || 'all'}
+                                                onClick={() => { setStatusFilter(opt.value); setPage(1); }}
+                                                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
+                                                    statusFilter === opt.value ? opt.color : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                }`}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Table */}
                         <div className="overflow-x-auto border border-gray-200 rounded-lg">
@@ -397,19 +512,20 @@ const UserManagement = () => {
                                         <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Department</th>
                                         <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Role</th>
                                         <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Approver</th>
+                                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
                                         <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200">
                                     {paginatedUsers.length === 0 ? (
                                         <tr>
-                                            <td colSpan={6} className="py-10 text-center text-gray-400 text-sm">
-                                                {searchTerm || roleFilter !== 'all' ? 'No results found.' : 'No results found.'}
+                                            <td colSpan={7} className="py-10 text-center text-gray-400 text-sm">
+                                                {hasActiveFilters ? 'No results found. Try adjusting your filters.' : 'No users found.'}
                                             </td>
                                         </tr>
                                     ) : (
                                         paginatedUsers.map((u) => (
-                                            <tr key={u.id} className="hover:bg-gray-50">
+                                            <tr key={u.id} className={`hover:bg-gray-50 ${u.isActive === false ? 'opacity-60' : ''}`}>
                                                 <td className="px-4 py-4">
                                                     <div className="flex items-center gap-2 max-w-[200px]">
                                                         <div className="w-7 h-7 bg-indigo-100 rounded-full flex items-center justify-center text-xs font-semibold text-indigo-600 shrink-0">
@@ -440,6 +556,17 @@ const UserManagement = () => {
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-4">
+                                                    {u.isActive === false ? (
+                                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">
+                                                            Inactive
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                                                            Active
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-4">
                                                     <div className="flex items-center justify-center gap-2">
                                                         <button
                                                             onClick={() => openEditForm(u)}
@@ -448,14 +575,25 @@ const UserManagement = () => {
                                                         >
                                                             <Edit2 className="w-4 h-4" />
                                                         </button>
-                                                        <button
-                                                            onClick={() => setDeleteTarget(u)}
-                                                            disabled={String(currentUser?.id) === String(u.id)}
-                                                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                                            title={String(currentUser?.id) === String(u.id) ? "You can't delete your own account" : 'Delete'}
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
+                                                        {u.isActive === false ? (
+                                                            <button
+                                                                onClick={() => handleReactivate(u)}
+                                                                disabled={reactivatingId === u.id}
+                                                                className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                title="Reactivate"
+                                                            >
+                                                                <UserCheck className="w-4 h-4" />
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => setDeactivateTarget(u)}
+                                                                disabled={String(currentUser?.id) === String(u.id)}
+                                                                className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                title={String(currentUser?.id) === String(u.id) ? "You can't deactivate your own account" : 'Deactivate'}
+                                                            >
+                                                                <UserX className="w-4 h-4" />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -492,7 +630,7 @@ const UserManagement = () => {
                 }
             >
                 <div className="space-y-4">
-                    {formError && <Alert severity="error">{formError}</Alert>}
+                    {formError && <InlineAlert severity="error">{formError}</InlineAlert>}
 
                     <Input
                         label="Full Name"
@@ -570,25 +708,25 @@ const UserManagement = () => {
                 </div>
             </Modal>
 
-            {/* Delete Confirmation Modal */}
+            {/* Deactivate Confirmation Modal */}
             <Modal
-                open={!!deleteTarget}
-                onClose={() => setDeleteTarget(null)}
-                title="Delete User"
+                open={!!deactivateTarget}
+                onClose={() => setDeactivateTarget(null)}
+                title="Deactivate User"
                 maxWidth="sm"
                 className="text-center"
                 actions={
                     <>
-                        <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-                        <Button variant="danger" onClick={handleDelete} disabled={deleting}>
-                            {deleting ? 'Deleting...' : 'Delete User'}
+                        <Button variant="secondary" onClick={() => setDeactivateTarget(null)}>Cancel</Button>
+                        <Button variant="danger" onClick={handleDeactivate} disabled={deactivating}>
+                            {deactivating ? 'Deactivating...' : 'Deactivate User'}
                         </Button>
                     </>
                 }
             >
                 <p className="text-gray-700">
-                    Are you sure you want to delete <span className="font-semibold">{deleteTarget?.name}</span>{' '}
-                    ({deleteTarget?.email})? This action cannot be undone.
+                    Are you sure you want to deactivate <span className="font-semibold">{deactivateTarget?.name}</span>{' '}
+                    ({deactivateTarget?.email})? They will no longer be able to log in, but their records and history will be preserved. You can reactivate this account at any time.
                 </p>
             </Modal>
         </div>

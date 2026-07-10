@@ -18,6 +18,7 @@ import EmployeeDashboard from './EmployeeDashboard';
 import ManagerDashboard from './ManagerDashboard';
 import AccountingDashboard from './AccountingDashboard';
 import MyRequests from './MyRequests';
+import AdminAllTransactions from './AdminAllTransactions';
 import Approvals from './Approvals';
 import UserManagement from './UserManagement';
 import Disbursements from './Disbursements';
@@ -68,6 +69,8 @@ const Dashboard = () => {
       setCurrentView('manager-dashboard');
     } else if (path.includes('my-requests')) {
       setCurrentView('my-requests');
+    } else if (path.includes('all-transactions')) {
+      setCurrentView('all-transactions');
     } else if (path.includes('cash-advance')) {
       setCurrentView('cash-advance');
     } else if (path.includes('liquidation')) {
@@ -105,17 +108,18 @@ const Dashboard = () => {
   // Menu Items
   const allMenuItems = [
     { text: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" />, view: 'dashboard', path: '/dashboard', key: 'dashboard' },
-    { text: 'Disbursement Dashboard', icon: <Banknote className="w-5 h-5" />, view: 'accounting-dashboard', path: '/accounting-dashboard', key: 'accounting-dashboard', adminOnly: true },
     { text: 'Approval Dashboard', icon: <ClipboardCheck className="w-5 h-5" />, view: 'manager-dashboard', path: '/manager-dashboard', key: 'manager-dashboard', adminOnly: true },
+    { text: 'Disbursement Dashboard', icon: <Banknote className="w-5 h-5" />, view: 'accounting-dashboard', path: '/accounting-dashboard', key: 'accounting-dashboard', adminOnly: true },
     { text: 'My Requests', icon: <ClipboardList className="w-5 h-5" />, view: 'my-requests', path: '/my-requests', key: 'my-requests' },
+    { text: 'All Transactions', icon: <Table className="w-5 h-5" />, view: 'all-transactions', path: '/all-transactions', key: 'all-transactions', adminOnly: true },
     { text: 'Cash Advance Form', icon: <HandCoins className="w-5 h-5" />, view: 'cash-advance', path: '/cash-advance', key: 'cash-advance' },
     { text: 'Liquidation Form', icon: <ReceiptText className="w-5 h-5" />, view: 'liquidation', path: '/liquidation', key: 'liquidation' },
     { text: 'Reimbursement Form', icon: <Wallet className="w-5 h-5" />, view: 'reimbursement', path: '/reimbursement', key: 'reimbursement' },
     { text: 'Approvals', icon: <CheckSquare className="w-5 h-5" />, view: 'approvals', path: '/approvals', key: 'approvals', approverOnly: true },
     { text: 'Disbursements', icon: <Coins className="w-5 h-5" />, view: 'disbursements', path: '/disbursements', key: 'disbursements', accountingOnly: true },
-    { text: 'Profile', icon: <UserIcon className="w-5 h-5" />, view: 'profile', path: '/profile', key: 'profile' },
     { text: 'User Management', icon: <Users className="w-5 h-5" />, view: 'usermanagement', adminOnly: true, path: '/user-management', key: 'usermanagement' },
     { text: 'Audit Logs', icon: <History className="w-5 h-5" />, view: 'auditlogs', adminOnly: true, path: '/audit-logs', key: 'auditlogs' },
+    { text: 'Profile', icon: <UserIcon className="w-5 h-5" />, view: 'profile', path: '/profile', key: 'profile' },
   ];
 
   const menuItems = allMenuItems.filter(item => {
@@ -129,6 +133,16 @@ const Dashboard = () => {
     switch (currentView) {
       case 'my-requests':
         return <MyRequests />;
+
+      case 'all-transactions':
+        if (user?.role !== 'admin') {
+          return (
+            <InlineAlert severity="warning">
+              You don't have permission to access All Transactions. Admin access required.
+            </InlineAlert>
+          );
+        }
+        return <AdminAllTransactions />;
 
       case 'profile':
         return <Profile />;
@@ -243,6 +257,7 @@ const Dashboard = () => {
     if (currentView === 'manager-dashboard') return 'Approval Dashboard';
     if (currentView === 'profile') return 'My Profile';
     if (currentView === 'my-requests') return 'My Requests';
+    if (currentView === 'all-transactions') return 'All Transactions';
     if (currentView === 'cash-advance') return 'Cash Advance Request';
     if (currentView === 'liquidation') return 'Cash Advance Liquidation';
     if (currentView === 'reimbursement') return 'Reimbursement Request';

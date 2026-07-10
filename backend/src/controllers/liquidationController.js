@@ -575,6 +575,16 @@ const getLiquidations = async (req, res) => {
   try {
     const userEmail = req.user?.email;
     const userId    = req.user?.id;
+    const { scope } = req.query;
+
+    // scope=all returns every user's liquidations — only admins may use it.
+    const wantsAllScope = String(scope).toLowerCase() === 'all';
+    if (wantsAllScope && req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admin accounts may request scope=all'
+      });
+    }
 
     // ✅ FIXED
     const [liquidations] = await db.query(
@@ -610,9 +620,9 @@ const getLiquidations = async (req, res) => {
       FROM liquidations l
       LEFT JOIN departments d    ON l.department_id   = d.id
       LEFT JOIN cash_advances ca ON l.cash_advance_id = ca.id
-      WHERE (l.created_by = ? OR l.created_by = ?)
+      ${wantsAllScope ? '' : 'WHERE (l.created_by = ? OR l.created_by = ?)'}
       ORDER BY l.created_at DESC`,
-      [userEmail, String(userId)],
+      wantsAllScope ? [] : [userEmail, String(userId)],
     );
 
     return res.status(200).json({ success: true, data: liquidations });

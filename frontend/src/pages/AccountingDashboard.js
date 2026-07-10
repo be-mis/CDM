@@ -83,6 +83,14 @@ const normaliseRow = (item, type) => {
     approvedAt: item.approved_at || item.approval_date || null,  // ✅ ADD THIS
     releasedBy: item.released_by  || null,
     releasedAt: item.released_at  || null,
+    // ⚠️ Liquidation-tracking fields (Cash Advance only). Adjust the source
+    // field names below to match whatever your API actually returns.
+    liquidationSubmitted: Boolean(
+      item.liquidation_id ||
+      item.liquidation_submitted ||
+      ['submitted', 'approved', 'released'].includes((item.liquidation_status || '').toLowerCase()),
+    ),
+    liquidatedAt: item.liquidation_submitted_at || item.liquidation_date || null,
   };
 };
 // Donut chart with centered total, built on shadcn/ui's Chart + Recharts Pie
@@ -384,6 +392,29 @@ const AccountingDashboard = () => {
   const releasedRows  = useMemo(() => allRows.filter(r => r.status === 'released'),  [allRows]);
   const rejectedRows  = useMemo(() => allRows.filter(r => r.status === 'rejected'),  [allRows]);
 
+  // ⚠️ Adjust to match your org's liquidation policy.
+  const LIQUIDATION_DUE_DAYS = 3;
+
+  // Cash Advances whose funds were released but no Liquidation has been
+  // filed against them yet.
+  const cashAdvancesPendingLiquidation = useMemo(
+    () => cashAdvances.filter(r => r.status === 'released' && !r.liquidationSubmitted),
+    [cashAdvances],
+  );
+
+  const overdueLiquidationCount = useMemo(
+    () => cashAdvancesPendingLiquidation.filter(r => {
+      const days = daysPending(r.releasedAt || r.date);
+      return days !== null && days > LIQUIDATION_DUE_DAYS;
+    }).length,
+    [cashAdvancesPendingLiquidation],
+  );
+
+  const totalPendingLiquidationAmount = useMemo(
+    () => cashAdvancesPendingLiquidation.reduce((sum, r) => sum + (r.amount || 0), 0),
+    [cashAdvancesPendingLiquidation],
+  );
+
   const filteredQueue = useMemo(() => {
     let rows = approvedRows;
     if (queueTypeFilter !== 'all') rows = rows.filter(r => r.type === queueTypeFilter);
@@ -598,14 +629,14 @@ const AccountingDashboard = () => {
       {/* ── Section 1: Summary Cards ── */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 tracking-wider mb-3">Financial Summary</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
 
           <Card className="!bg-blue-50 border border-blue-200 text-white shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-blue-800 text-sm font-semibold mb-2">For Release</p>
-                  <span className="text-3xl font-extrabold text-blue-800">{loading ? '—' : stats.forRelease}</span>
+                  <span className="text-4xl font-bold text-blue-800">{loading ? '—' : stats.forRelease}</span>
                 </div>
                 <Clock className="w-12 h-12 text-blue-800 opacity-30" />
               </div>
@@ -619,7 +650,7 @@ const AccountingDashboard = () => {
                   <p className={`text-sm font-semibold mb-2 ${stats.overdueCount > 0 ? 'text-red-800' : 'text-gray-600'}`}>
                     Overdue Requests
                   </p>
-                  <span className={`text-3xl font-extrabold ${stats.overdueCount > 0 ? 'text-red-800' : 'text-gray-500'}`}>
+                  <span className={`text-4xl font-bold ${stats.overdueCount > 0 ? 'text-red-800' : 'text-gray-500'}`}>
                     {loading ? '—' : stats.overdueCount}
                   </span>
                 </div>
@@ -633,7 +664,7 @@ const AccountingDashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-green-800 text-sm font-semibold mb-2">Released This Month</p>
-                  <span className="text-3xl font-extrabold text-green-800">{loading ? '—' : stats.releasedThisMonth}</span>
+                  <span className="text-4xl font-bold text-green-800">{loading ? '—' : stats.releasedThisMonth}</span>
                 </div>
                 <CheckCircle className="w-12 h-12 text-green-800 opacity-30" />
               </div>
@@ -645,9 +676,30 @@ const AccountingDashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-red-800 text-sm font-semibold mb-2">Rejected This Month</p>
-                  <span className="text-3xl font-extrabold text-red-800">{loading ? '—' : stats.rejectedThisMonth}</span>
+                  <span className="text-4xl font-bold text-red-800">{loading ? '—' : stats.rejectedThisMonth}</span>
                 </div>
                 <XCircle className="w-12 h-12 text-red-800 opacity-30" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className={`${overdueLiquidationCount > 0 ? '!bg-orange-50 border-orange-200' : '!bg-purple-50 border-purple-200'} border text-white shadow-sm hover:shadow-md transition-shadow`}>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className={`text-sm font-semibold mb-2 ${overdueLiquidationCount > 0 ? 'text-orange-800' : 'text-purple-800'}`}>
+                    CA Pending Liquidation
+                  </p>
+                  <span className={`text-4xl font-bold ${overdueLiquidationCount > 0 ? 'text-orange-800' : 'text-purple-800'}`}>
+                    {loading ? '—' : cashAdvancesPendingLiquidation.length}
+                  </span>
+                  {!loading && overdueLiquidationCount > 0 && (
+                    <p className="text-xs font-semibold text-orange-700 mt-1">
+                      {overdueLiquidationCount} overdue ({'>'}{LIQUIDATION_DUE_DAYS}d)
+                    </p>
+                  )}
+                </div>
+                <Receipt className={`w-12 h-12 opacity-30 ${overdueLiquidationCount > 0 ? 'text-orange-800' : 'text-purple-800'}`} />
               </div>
             </CardContent>
           </Card>
@@ -923,6 +975,128 @@ const AccountingDashboard = () => {
           </Card>
 
         </div>
+      </div>
+
+      {/* ── Section 3b: Cash Advance Pending Liquidation ── */}
+      <div>
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+          Cash Advance Pending Liquidation
+        </h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <Card className="!bg-purple-50 border border-purple-200 text-white shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-purple-800 text-sm font-semibold mb-2">Total Pending</p>
+                  <span className="text-4xl font-bold text-purple-800">
+                    {loading ? '—' : cashAdvancesPendingLiquidation.length}
+                  </span>
+                </div>
+                <Receipt className="w-12 h-12 text-purple-800 opacity-30" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className={`${overdueLiquidationCount > 0 ? '!bg-red-50 border-red-200' : '!bg-gray-50 border-gray-200'} border text-white shadow-sm hover:shadow-md transition-shadow`}>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className={`text-sm font-semibold mb-2 ${overdueLiquidationCount > 0 ? 'text-red-800' : 'text-gray-600'}`}>
+                    Overdue ({'>'}{LIQUIDATION_DUE_DAYS}d)
+                  </p>
+                  <span className={`text-4xl font-bold ${overdueLiquidationCount > 0 ? 'text-red-800' : 'text-gray-500'}`}>
+                    {loading ? '—' : overdueLiquidationCount}
+                  </span>
+                </div>
+                <ClockAlert className={`w-12 h-12 opacity-30 ${overdueLiquidationCount > 0 ? 'text-red-800' : 'text-gray-500'}`} />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="!bg-orange-50 border border-orange-200 text-white shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-orange-800 text-sm font-semibold mb-2">Total Amount at Risk</p>
+                  <span className="text-2xl font-bold text-orange-800">
+                    {loading ? '—' : formatPeso(totalPendingLiquidationAmount)}
+                  </span>
+                </div>
+                <HandCoins className="w-12 h-12 text-orange-800 opacity-30" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardContent className="p-6">
+            {loading ? (
+              <Loading message="Loading cash advances…" />
+            ) : cashAdvancesPendingLiquidation.length === 0 ? (
+              <p className="text-gray-400 text-center py-8 text-sm">
+                No released cash advances awaiting liquidation. 🎉
+              </p>
+            ) : (
+              <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                <table className="w-full min-w-[700px]">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      {['Reference No.', 'Requestor', 'Department', 'Amount', 'Released Date', 'Days Since Release', 'Status'].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 tracking-wider">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {[...cashAdvancesPendingLiquidation]
+                      .sort((a, b) => (daysPending(b.releasedAt || b.date) ?? 0) - (daysPending(a.releasedAt || a.date) ?? 0))
+                      .map((item) => {
+                        const days = daysPending(item.releasedAt || item.date);
+                        const isOverdue = days !== null && days > LIQUIDATION_DUE_DAYS;
+                        return (
+                          <tr key={`ca-liq-${item.id}`} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.reqNumber}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                                  {(item.requestor || '?').charAt(0).toUpperCase()}
+                                </div>
+                                <span className="text-sm text-gray-900 truncate max-w-[130px]" title={item.requestor}>
+                                  {item.requestor}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{item.department}</td>
+                            <td className="px-4 py-3 text-sm font-semibold text-gray-900">{formatPeso(item.amount)}</td>
+                            <td className="px-4 py-3 text-sm text-gray-500">{formatLongDate(item.releasedAt || item.date)}</td>
+                            <td className="px-4 py-3 text-center">
+                              {days === null ? (
+                                <span className="text-gray-400 text-sm">—</span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
+                                  {isOverdue && <span>⚠</span>}
+                                  {days}d
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full ${
+                                isOverdue
+                                  ? 'bg-red-50 text-red-700 border border-red-200'
+                                  : 'bg-purple-50 text-purple-700 border border-purple-200'
+                              }`}>
+                                {isOverdue ? 'Overdue' : 'Pending'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* ── Section 4: Recent Releases ── */}

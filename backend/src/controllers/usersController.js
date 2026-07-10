@@ -40,7 +40,7 @@ const getUsers = async (req, res) => {
     const whereSQL = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
 
     const [rows] = await pool.query(
-      `SELECT u.id, u.name, u.email, u.role, u.department, u.business_unit,
+      `SELECT u.id, u.name, u.email, u.role, u.department, u.business_unit, u.is_active,
               EXISTS(SELECT 1 FROM approver a WHERE a.email = u.email COLLATE utf8mb4_general_ci) AS isApprover
        FROM users u
        ${whereSQL}
@@ -50,7 +50,7 @@ const getUsers = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: rows.map(r => ({ ...r, isApprover: !!r.isApprover }))
+      data: rows.map(r => ({ ...r, isApprover: !!r.isApprover, isActive: !!r.is_active }))
     });
   } catch (error) {
     console.error('Error fetching users:', error);
@@ -63,14 +63,14 @@ const getUserById = async (req, res) => {
   try {
     const { id } = req.params;
     const [rows] = await pool.query(
-      `SELECT u.id, u.name, u.email, u.role, u.department, u.business_unit,
+      `SELECT u.id, u.name, u.email, u.role, u.department, u.business_unit, u.is_active,
               EXISTS(SELECT 1 FROM approver a WHERE a.email = u.email COLLATE utf8mb4_general_ci) AS isApprover
        FROM users u WHERE u.id = ?`,
       [id]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'User not found' });
 
-    res.status(200).json({ success: true, data: { ...rows[0], isApprover: !!rows[0].isApprover } });
+    res.status(200).json({ success: true, data: { ...rows[0], isApprover: !!rows[0].isApprover, isActive: !!rows[0].is_active } });
   } catch (error) {
     console.error('Error fetching user:', error);
     res.status(500).json({ success: false, message: 'Error fetching user', error: error.message });
@@ -225,43 +225,95 @@ const updateUser = async (req, res) => {
 };
 
 // DELETE /api/users/:id
+// NOTE: this no longer hard-deletes the account. It deactivates it instead,
+// preserving history (audit logs, approvals, requests) that reference this
+// user. Approver rights are suspended (not removed) while inactive — the row
+// is left in the `approver` table so it comes back automatically on
+// reactivation, but `authController.login` blocks sign-in while is_active = 0.
 const deleteUser = async (req, res) => {
   const { id } = req.params;
 
   if (req.user?.id && String(req.user.id) === String(id)) {
-    return res.status(400).json({ success: false, message: 'You cannot delete your own account' });
+    return res.status(400).json({ success: false, message: 'You cannot deactivate your own account' });
   }
 
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
-    const [rows] = await conn.query('SELECT id, name, email FROM users WHERE id = ?', [id]);
+    const [rows] = await conn.query('SELECT id, name, email, is_active FROM users WHERE id = ?', [id]);
     if (!rows.length) {
       await conn.rollback();
       return res.status(404).json({ success: false, message: 'User not found' });
     }
     const user = rows[0];
 
-    await conn.query('DELETE FROM approver WHERE email = ?', [user.email]);
-    await conn.query('DELETE FROM users WHERE id = ?', [id]);
+    if (!user.is_active) {
+      await conn.rollback();
+      return res.status(400).json({ success: false, message: 'User is already deactivated' });
+    }
+
+    await conn.query('UPDATE users SET is_active = 0 WHERE id = ?', [id]);
 
     await conn.commit();
 
     await logAudit({
       userId: req.user?.id,
-      action: 'user_deleted',
+      action: 'user_deactivated',
       entity: 'users',
       entityId: id,
       details: { name: user.name, email: user.email },
       ip: getIp(req)
     });
 
-    res.status(200).json({ success: true, message: 'User deleted successfully' });
+    res.status(200).json({ success: true, message: 'User deactivated successfully' });
   } catch (error) {
     await conn.rollback();
-    console.error('Error deleting user:', error);
-    res.status(500).json({ success: false, message: 'Error deleting user', error: error.message });
+    console.error('Error deactivating user:', error);
+    res.status(500).json({ success: false, message: 'Error deactivating user', error: error.message });
+  } finally {
+    conn.release();
+  }
+};
+
+// PATCH /api/users/:id/reactivate
+const reactivateUser = async (req, res) => {
+  const { id } = req.params;
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [rows] = await conn.query('SELECT id, name, email, is_active FROM users WHERE id = ?', [id]);
+    if (!rows.length) {
+      await conn.rollback();
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    const user = rows[0];
+
+    if (user.is_active) {
+      await conn.rollback();
+      return res.status(400).json({ success: false, message: 'User is already active' });
+    }
+
+    await conn.query('UPDATE users SET is_active = 1 WHERE id = ?', [id]);
+
+    await conn.commit();
+
+    await logAudit({
+      userId: req.user?.id,
+      action: 'user_reactivated',
+      entity: 'users',
+      entityId: id,
+      details: { name: user.name, email: user.email },
+      ip: getIp(req)
+    });
+
+    res.status(200).json({ success: true, message: 'User reactivated successfully' });
+  } catch (error) {
+    await conn.rollback();
+    console.error('Error reactivating user:', error);
+    res.status(500).json({ success: false, message: 'Error reactivating user', error: error.message });
   } finally {
     conn.release();
   }
@@ -272,5 +324,6 @@ module.exports = {
   getUserById,
   createUser,
   updateUser,
-  deleteUser
+  deleteUser,
+  reactivateUser
 };

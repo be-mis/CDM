@@ -6,7 +6,8 @@ const {
   getUserById,
   createUser,
   updateUser,
-  deleteUser
+  deleteUser,
+  reactivateUser
 } = require('../controllers/usersController');
 
 // Admin-only middleware (same pattern as auditLogs.js)
@@ -29,7 +30,10 @@ router.post('/', authenticateToken, requireAdmin, createUser);
 // PUT /api/users/:id — update a user
 router.put('/:id', authenticateToken, requireAdmin, updateUser);
 
-// DELETE /api/users/:id — delete a user
+// DELETE /api/users/:id — deactivate a user
 router.delete('/:id', authenticateToken, requireAdmin, deleteUser);
+
+// PATCH /api/users/:id/reactivate — reactivate a deactivated user
+router.patch('/:id/reactivate', authenticateToken, requireAdmin, reactivateUser);
 
 module.exports = router;

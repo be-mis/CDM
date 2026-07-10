@@ -464,7 +464,19 @@ const getCashAdvances = async (req, res) => {
   try {
     const userEmail = req.user?.email;
     const userId = req.user?.id;
-    const { status, eligible } = req.query;
+    const { status, eligible, scope } = req.query;
+
+    // scope=all returns every user's cash advances — only admins may use it.
+    // Anyone else asking for it gets rejected rather than silently scoped
+    // down to their own requests, so a frontend bug never masquerades as a
+    // narrower (but wrong) result set.
+    const wantsAllScope = String(scope).toLowerCase() === 'all';
+    if (wantsAllScope && req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admin accounts may request scope=all'
+      });
+    }
 
     let query = `
       SELECT 
@@ -489,26 +501,37 @@ const getCashAdvances = async (req, res) => {
         END as is_overdue
       FROM cash_advances ca
       LEFT JOIN departments d ON ca.department_id = d.id
-      WHERE (ca.created_by = ? OR ca.created_by = ?)
     `;
 
-    const params = [userEmail, String(userId)];
+    const whereClauses = [];
+    const params = [];
+
+    // Admins requesting scope=all skip the owner restriction entirely;
+    // everyone else only ever sees their own cash advances.
+    if (!wantsAllScope) {
+      whereClauses.push('(ca.created_by = ? OR ca.created_by = ?)');
+      params.push(userEmail, String(userId));
+    }
 
     // If requesting only cash advances eligible for liquidation,
     // only include advances that have been released/disbursed and
     // exclude any CA that already has a liquidation in a blocking status.
     // Blocking liquidation statuses: draft, pending, approved, rejected, disbursed, liquidated, completed
     if (String(eligible).toLowerCase() === 'true') {
-      query += ` AND ca.status IN ('released','disbursed') AND NOT EXISTS (
+      whereClauses.push(`ca.status IN ('released','disbursed') AND NOT EXISTS (
         SELECT 1 FROM liquidations l
         WHERE l.cash_advance_id = ca.id
           AND l.status IN ('draft','pending','approved','rejected','disbursed','liquidated','completed','released')
-      )`;
+      )`);
     }
 
     if (status) {
-      query += ' AND ca.status = ?';
+      whereClauses.push('ca.status = ?');
       params.push(status);
+    }
+
+    if (whereClauses.length > 0) {
+      query += ' WHERE ' + whereClauses.join(' AND ');
     }
 
     query += ' ORDER BY ca.created_at DESC';

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Search, Filter, RotateCw, History, User, Shield, Paperclip, X,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import api from '../api';
 import { Card, CardContent } from '../components/ui/Card';
@@ -79,6 +79,84 @@ const formatDateTime = (d) => {
   }
 };
 
+// Reusable pagination control (mirrors Approvals.js / UserManagement.js)
+const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSizeChange }) => {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  if (totalItems === 0) return null;
+
+  const start = (currentPage - 1) * pageSize + 1;
+  const end = Math.min(currentPage * pageSize, totalItems);
+
+  const pageNumbers = [];
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || Math.abs(i - currentPage) <= 1) {
+      pageNumbers.push(i);
+    } else if (pageNumbers[pageNumbers.length - 1] !== '...') {
+      pageNumbers.push('...');
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between flex-wrap gap-3 px-2 py-3">
+      <div className="flex items-center gap-3 flex-wrap">
+        <p className="text-sm text-gray-600">
+          Showing <span className="font-medium text-gray-900">{start}</span>–
+          <span className="font-medium text-gray-900">{end}</span> of{' '}
+          <span className="font-medium text-gray-900">{totalItems}</span>
+        </p>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-600 whitespace-nowrap">Rows per page</label>
+          <select
+            value={pageSize}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            className="border border-gray-300 rounded-lg px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
+          >
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+          disabled={currentPage === 1}
+          className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          aria-label="Previous page"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        {pageNumbers.map((p, idx) =>
+          p === '...' ? (
+            <span key={`ellipsis-${idx}`} className="px-2 text-sm text-gray-400">…</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onPageChange(p)}
+              className={`min-w-[2rem] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                p === currentPage
+                  ? 'bg-primary-600 text-white'
+                  : 'text-gray-600 hover:bg-gray-50 border border-gray-300'
+              }`}
+            >
+              {p}
+            </button>
+          )
+        )}
+        <button
+          onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+          disabled={currentPage === totalPages}
+          className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          aria-label="Next page"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const AuditLogs = () => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -133,7 +211,7 @@ const AuditLogs = () => {
   }, [filters]);
 
   const handlePageChange = (newPage) => {
-    fetchLogs(newPage + 1, pagination.limit);
+    fetchLogs(newPage, pagination.limit);
   };
 
   const handleRowsPerPageChange = (newLimit) => {
@@ -285,16 +363,19 @@ const AuditLogs = () => {
           {/* Expandable Filters Panel */}
           {showFilters && (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-4 pt-4 border-t border-gray-200">
-              <Select
-                label="Action"
-                value={filters.action}
-                onChange={(e) => handleFilterChange('action', e.target.value)}
-              >
-                <option value="">All Actions</option>
-                {filterOptions.actions.map(a => (
-                  <option key={a} value={a}>{actionLabels[a] || a}</option>
-                ))}
-              </Select>
+              <div>
+                <Select
+                  label="Action"
+                  value={filters.action}
+                  onChange={(e) => handleFilterChange('action', e.target.value)}
+                >
+                  <option value="">All Actions</option>
+                  {filterOptions.actions.map(a => (
+                    <option key={a} value={a}>{actionLabels[a] || a}</option>
+                  ))}
+                </Select>
+              </div>
+              <div>
               <Select
                 label="Entity"
                 value={filters.entity}
@@ -305,6 +386,8 @@ const AuditLogs = () => {
                   <option key={e} value={e}>{entityLabels[e] || e}</option>
                 ))}
               </Select>
+              </div>
+              <div>
               <Select
                 label="User"
                 value={filters.userId}
@@ -315,6 +398,8 @@ const AuditLogs = () => {
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
               </Select>
+              </div>
+              <div>
               <Input
                 label="From"
                 type="date"
@@ -327,6 +412,7 @@ const AuditLogs = () => {
                 value={filters.endDate}
                 onChange={(e) => handleFilterChange('endDate', e.target.value)}
               />
+            </div>
             </div>
           )}
         </CardContent>
@@ -425,44 +511,13 @@ const AuditLogs = () => {
             </div>
 
             {/* Pagination */}
-            {logs.length > 0 && (
-              <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
-                <div className="text-sm text-gray-700">
-                  Showing {((pagination.page || 1) - 1) * pagination.limit + 1} to{' '}
-                  {Math.min((pagination.page || 1) * pagination.limit, pagination.total)} of {pagination.total} entries
-                </div>
-                <div className="flex items-center gap-4">
-                  <select
-                    value={pagination.limit}
-                    onChange={(e) => handleRowsPerPageChange(parseInt(e.target.value, 10))}
-                    className="px-3 py-1 border border-gray-300 rounded text-sm"
-                  >
-                    <option value={10}>10 per page</option>
-                    <option value={25}>25 per page</option>
-                    <option value={50}>50 per page</option>
-                    <option value={100}>100 per page</option>
-                  </select>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      disabled={(pagination.page || 1) <= 1}
-                      onClick={() => handlePageChange((pagination.page || 1) - 2)}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      disabled={(pagination.page || 1) >= pagination.totalPages}
-                      onClick={() => handlePageChange(pagination.page || 1)}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
+            <Pagination
+              currentPage={pagination.page || 1}
+              totalItems={pagination.total}
+              pageSize={pagination.limit}
+              onPageChange={handlePageChange}
+              onPageSizeChange={handleRowsPerPageChange}
+            />
           </>
         )}
       </Card>
