@@ -232,23 +232,98 @@ const AuditLogs = () => {
     if (!details) return <span className="text-gray-500">—</span>;
     let parsed = details;
     if (typeof details === 'string') {
-      try { 
-        parsed = JSON.parse(details); 
-      } catch { 
-        return <span className="text-gray-600">{details}</span>; 
+      try {
+        parsed = JSON.parse(details);
+      } catch {
+        return <span className="text-gray-600">{details}</span>;
       }
     }
 
+    // Pull out the special-cased keys we render with custom UI; everything
+    // else falls back to simple key: value chips.
+    const { editedBy, changes, reason, ...rest } = parsed;
+
+    const scalarEntries = Object.entries(rest).filter(
+      ([, value]) => value === null || typeof value !== 'object'
+    );
+    const otherObjectEntries = Object.entries(rest).filter(
+      ([, value]) => value !== null && typeof value === 'object'
+    );
+
     return (
-      <div className="flex flex-wrap gap-2">
-        {Object.entries(parsed).map(([key, value]) => (
-          <span
-            key={key}
-            className="px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-700"
-          >
-            {key}: {value ?? '—'}
-          </span>
-        ))}
+      <div className="space-y-3">
+        {/* Simple scalar fields */}
+        {scalarEntries.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {scalarEntries.map(([key, value]) => (
+              <span
+                key={key}
+                className="px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-700"
+              >
+                {key}: {value ?? '—'}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Who made the change */}
+        {editedBy && (
+          <div className="text-xs text-gray-700">
+            <span className="font-semibold">Edited by:</span>{' '}
+            {editedBy.email || editedBy.name || (editedBy.id != null ? `User #${editedBy.id}` : 'Unknown')}
+            {editedBy.role ? ` (${editedBy.role})` : ''}
+          </div>
+        )}
+
+        {/* Reason for the edit */}
+        {reason && (
+          <div className="text-xs text-gray-700">
+            <span className="font-semibold">Reason:</span> {reason}
+          </div>
+        )}
+
+        {/* Before/after diff table */}
+        {changes && Object.keys(changes).length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-gray-700 mb-1">Changes:</p>
+            <table className="text-xs border border-gray-200 rounded overflow-hidden">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="px-2 py-1 text-left font-semibold text-gray-600">Field</th>
+                  <th className="px-2 py-1 text-left font-semibold text-gray-600">From</th>
+                  <th className="px-2 py-1 text-left font-semibold text-gray-600">To</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(changes).map(([field, diff]) => (
+                  <tr key={field} className="border-t border-gray-200">
+                    <td className="px-2 py-1 font-mono text-gray-700">{field}</td>
+                    <td className="px-2 py-1 text-red-600">{diff?.from ?? '—'}</td>
+                    <td className="px-2 py-1 text-green-700">{diff?.to ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Fallback for any other nested objects we didn't special-case */}
+        {otherObjectEntries.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {otherObjectEntries.map(([key, value]) => (
+              <span
+                key={key}
+                className="px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-700 font-mono"
+              >
+                {key}: {JSON.stringify(value)}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {scalarEntries.length === 0 && !editedBy && !reason && !changes && otherObjectEntries.length === 0 && (
+          <span className="text-gray-500">—</span>
+        )}
       </div>
     );
   };

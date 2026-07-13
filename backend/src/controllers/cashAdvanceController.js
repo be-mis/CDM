@@ -255,12 +255,21 @@ const updateCashAdvance = async (req, res) => {
       requestedAmount,
       advanceNumber,
       approver,
-      approvedDate
+      approvedDate,
+      editReason,
+      edit_reason,
+      reason,
+      remarks
     } = req.body;
 
     // Check if cash advance exists
     const [existing] = await connection.query(
-      'SELECT id, status, advance_number, advance_type, created_by, employee_id FROM cash_advances WHERE id = ?',
+      `SELECT id, advance_number, advance_date, requested_by, department_id, employee_id,
+              business_unit, purpose, project_name, destination, start_date, end_date,
+              requested_amount, payment_method, gcash_name, account_number, date_needed,
+              date_coverage, liquidation_deadline, status, advance_type, created_by,
+              approved_by, approved_at
+       FROM cash_advances WHERE id = ?`,
       [id]
     );
 
@@ -273,11 +282,13 @@ const updateCashAdvance = async (req, res) => {
     }
 
     // Security: Ensure user has permission to update
+    // Owners can edit their own requests; admin and accounting can edit/process any request.
     const isOwner = (existing[0].created_by === req.user?.email) ||
       (String(existing[0].employee_id) === String(req.user?.id));
     const isAdmin = req.user?.role === 'admin';
+    const isAccounting = req.user?.role === 'accounting';
 
-    if (!isOwner && !isAdmin) {
+    if (!isOwner && !isAdmin && !isAccounting) {
       await connection.rollback();
       return res.status(403).json({
         success: false,
@@ -285,12 +296,23 @@ const updateCashAdvance = async (req, res) => {
       });
     }
 
-    // Allow updates on draft, rejected, or cancelled status
-    if (existing[0].status !== 'draft' && existing[0].status !== 'rejected' && existing[0].status !== 'cancelled') {
+    // Allow updates on draft, rejected, or cancelled status for regular owners.
+    // Admin can update/process a request in any status.
+    // Accounting may only edit a request that is "approved" (i.e. pending
+    // release) — once a request has been released or rejected, it is no
+    // longer editable, even by accounting.
+    const editableStatuses = ['draft', 'rejected', 'cancelled'];
+    const currentStatus = existing[0].status;
+    const isAccountingEditable = isAccounting && currentStatus === 'approved';
+
+    if (!editableStatuses.includes(currentStatus) && !isAdmin && !isAccountingEditable) {
       await connection.rollback();
+      const message = isAccounting
+        ? 'Only transactions pending release (approved) can be edited by accounting.'
+        : 'Cannot update cash advance in current status';
       return res.status(400).json({
         success: false,
-        message: 'Cannot update cash advance in current status'
+        message
       });
     }
 
@@ -310,26 +332,32 @@ const updateCashAdvance = async (req, res) => {
 
     const departmentId = departments[0].id;
 
+    // When accounting processes/updates a request, it should automatically
+    // move to "released" — accounting's role here is to release funds, not
+    // to re-approve or edit request details. They can still explicitly
+    // reject or cancel a request; those statuses are left untouched.
+    let effectiveStatus = status;
+    if (isAccounting) {
+      const requestedStatusLower = String(status || '').toLowerCase();
+      if (!['rejected', 'cancelled'].includes(requestedStatusLower)) {
+        effectiveStatus = 'released';
+      }
+    }
+
     // Same fix as createCashAdvance: only set approved_by/approved_at when
     // this update is actually an (re-)approval, using the real approver
     // (the logged-in user submitting), not every approver in the department.
-    const isApproved = String(status || '').toLowerCase() === 'approved';
+    const isApproved = String(effectiveStatus || '').toLowerCase() === 'approved';
     const approvedBy = isApproved ? (approver || requestedBy || null) : null;
     const approvedAt = isApproved ? (approvedDate || advanceDate || null) : null;
 
-    // Fetch advance number for folder naming
-    let existingAdvanceNumber = null;
-    try {
-      const [r] = await connection.query('SELECT advance_number FROM cash_advances WHERE id = ?', [id]);
-      if (r && r.length) existingAdvanceNumber = r[0].advance_number;
-    } catch (e) {
-      // ignore
-    }
+    // Advance number for folder naming (already fetched above)
+    let existingAdvanceNumber = existing[0].advance_number;
 
     // Compute liquidation deadline for updates similar to create path.
     let computedLiquidationDeadline = liquidationDeadline || null;
     try {
-      const statusLower = String(status || '').toLowerCase();
+      const statusLower = String(effectiveStatus || '').toLowerCase();
       if ((advanceType === 'travel' || advanceType === 'Travel') && endDate && !computedLiquidationDeadline) {
         const dt = new Date(endDate);
         if (!isNaN(dt.getTime())) {
@@ -346,6 +374,48 @@ const updateCashAdvance = async (req, res) => {
     } catch (e) {
       // ignore
     }
+
+    // Build a before/after diff of changed fields for the audit log.
+    // Compares the previously stored values against the incoming update payload.
+    const newValues = {
+      advance_number: advanceNumber || existing[0].advance_number,
+      advance_date: advanceDate,
+      requested_by: requestedBy,
+      department_id: departmentId,
+      employee_id: employeeId,
+      business_unit: businessUnit || null,
+      purpose: purpose,
+      project_name: projectName || null,
+      destination: destination || null,
+      start_date: startDate || null,
+      end_date: endDate || null,
+      requested_amount: requestedAmount,
+      payment_method: paymentMethod,
+      gcash_name: String(paymentMethod).toLowerCase() === 'payroll' ? null : (gcashName || null),
+      account_number: accountNumber || null,
+      date_needed: dateNeeded || null,
+      date_coverage: dateCoverage || null,
+      liquidation_deadline: computedLiquidationDeadline || null,
+      status: effectiveStatus || 'draft',
+      advance_type: advanceType || existing[0].advance_type,
+      approved_by: approvedBy,
+      approved_at: approvedAt
+    };
+
+    const changedFields = {};
+    for (const key of Object.keys(newValues)) {
+      // Normalize for comparison: treat null/undefined/'' as equivalent, and
+      // compare dates/numbers as strings to avoid type-only false positives.
+      const oldVal = existing[0][key] ?? null;
+      const newVal = newValues[key] ?? null;
+      const oldStr = oldVal instanceof Date ? oldVal.toISOString().split('T')[0] : String(oldVal);
+      const newStr = newVal instanceof Date ? newVal.toISOString().split('T')[0] : String(newVal);
+      if (oldStr !== newStr) {
+        changedFields[key] = { from: oldVal, to: newVal };
+      }
+    }
+
+    const editReasonValue = editReason || edit_reason || reason || remarks || null;
 
     // Update cash advance
     await connection.query(
@@ -364,7 +434,7 @@ const updateCashAdvance = async (req, res) => {
           requestedAmount, paymentMethod,
           String(paymentMethod).toLowerCase() === 'payroll' ? null : (gcashName || null),
           accountNumber || null, dateNeeded || null, dateCoverage || null,
-          computedLiquidationDeadline || null, status || 'draft',
+          computedLiquidationDeadline || null, effectiveStatus || 'draft',
           advanceType || existing[0].advance_type,
           approvedBy,
           approvedAt,
@@ -401,7 +471,7 @@ const updateCashAdvance = async (req, res) => {
 
     // If saving as draft, ensure upload folder exists immediately
     try {
-      if (status === 'draft') {
+      if (effectiveStatus === 'draft') {
         const { ensureRequestFolder } = require('../utils/ensureUploadDir');
         const folderNameDraft = existingAdvanceNumber || String(id);
         ensureRequestFolder('cash-advances', folderNameDraft, id);
@@ -420,8 +490,16 @@ const updateCashAdvance = async (req, res) => {
       entityId: id,
       details: {
         advanceNumber: existingAdvanceNumber || id,
-        status: status || existing[0].status,
-        department
+        status: effectiveStatus || existing[0].status,
+        department,
+        editedBy: {
+          id: req.user?.id || null,
+          email: req.user?.email || null,
+          role: req.user?.role || null
+        },
+        reason: editReasonValue,
+        autoReleased: isAccounting && effectiveStatus === 'released' && String(status || '').toLowerCase() !== 'released',
+        changes: changedFields
       },
       ip: req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || null
     });
@@ -442,7 +520,7 @@ const updateCashAdvance = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: status === 'draft' ? 'Draft updated successfully' : 'Cash advance updated successfully',
+      message: effectiveStatus === 'draft' ? 'Draft updated successfully' : 'Cash advance updated successfully',
       data: resp
     });
 

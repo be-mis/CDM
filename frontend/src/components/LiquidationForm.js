@@ -116,7 +116,7 @@ const TruncatedViewField = ({ value, label }) => (
 // LiquidationForm
 // ─────────────────────────────────────────────────────────────────────────────
 const LiquidationForm = (props) => {
-  const { initialData, editData, onClose, viewOnly = false } = props || {};
+  const { initialData, editData, onClose, viewOnly = false, accountingEdit = false, editReason = '', onSaved } = props || {};
   const isEditMode = !!editData;
   const { user }   = useAuth();
   const navigate   = useNavigate();
@@ -677,20 +677,31 @@ const LiquidationForm = (props) => {
 
   // ── Persist (save draft or submit) ─────────────────────────────────────────
   const persistForm = useCallback(async (requestedStatus) => {
+    if (accountingEdit && !editReason?.trim()) {
+      showSnackbar('Please provide a reason for this edit before saving.', 'error');
+      return;
+    }
     if (!validateForm()) return;
     setSubmitting(true);
     try {
-      // Auto-approve when the requestor is also an approver. Draft saves
-      // are left untouched — auto-approval only applies on actual submit.
-      const autoApprove = requestedStatus === 'pending' && isApprover;
-      const status = autoApprove ? 'approved' : requestedStatus;
-      const approverFields = autoApprove
-        ? { approver: user.name, approvedDate: new Date().toISOString().split('T')[0] }
-        : { approver: '', approvedDate: '' };
+      // Accounting is correcting an existing, already-processed liquidation —
+      // never touch status/approval fields here, only the editable content.
+      // `edit_reason` ties the change to the Audit Logs.
+      const autoApprove = !accountingEdit && requestedStatus === 'pending' && isApprover;
+      const status = accountingEdit ? editData.status : (autoApprove ? 'approved' : requestedStatus);
+      const approverFields = accountingEdit
+        ? {}
+        : autoApprove
+          ? { approver: user.name, approvedDate: new Date().toISOString().split('T')[0] }
+          : { approver: '', approvedDate: '' };
 
       // ── Phase 1: Save liquidation with existing/no attachments first ──────
       // Pass expenses/itinerary as-is (existing receipts stay, new ones pending)
-      const phase1Payload = { ...buildPayload(status, expenses, itineraryItems), ...approverFields };
+      const phase1Payload = {
+        ...buildPayload(status, expenses, itineraryItems),
+        ...approverFields,
+        ...(accountingEdit ? { edit_reason: editReason.trim() } : {}),
+      };
 
       const response = isEditMode && editData?.id
         ? await api.put(`/liquidations/${editData.id}`, phase1Payload)
@@ -717,7 +728,11 @@ const LiquidationForm = (props) => {
           : itineraryItems;
 
         // ── Phase 3: Update liquidation with resolved file paths ─────────────
-        const phase3Payload = { ...buildPayload(status, finalExpenses, finalItinerary), ...approverFields };
+        const phase3Payload = {
+          ...buildPayload(status, finalExpenses, finalItinerary),
+          ...approverFields,
+          ...(accountingEdit ? { edit_reason: editReason.trim() } : {}),
+        };
         await api.put(`/liquidations/${liquidationId}`, phase3Payload);
       }
 
@@ -737,10 +752,13 @@ const LiquidationForm = (props) => {
       }
 
       showSnackbar(
-        status === 'draft' ? 'Draft saved successfully!' : 'Liquidation submitted successfully!',
+        accountingEdit
+          ? 'Transaction updated successfully. The change has been recorded in the Audit Logs.'
+          : (status === 'draft' ? 'Draft saved successfully!' : 'Liquidation submitted successfully!'),
         'success',
       );
-      if (onClose) onClose();
+      if (accountingEdit && onSaved) onSaved();
+      else if (onClose) onClose();
       else navigate('/my-requests', { state: { tab: 1 } });
 
     } catch (error) {
@@ -758,6 +776,7 @@ const LiquidationForm = (props) => {
     uploadExpenseAttachments, uploadItineraryReceipts,
     attachments, uploadSupportingDocuments,
     pendingDeletes, showSnackbar, onClose, navigate,
+    accountingEdit, editReason, onSaved, editData?.status,
   ]);
 
   const handleSaveDraft = useCallback(() => persistForm('draft'),   [persistForm]);
@@ -1082,9 +1101,14 @@ const LiquidationForm = (props) => {
       </Card>
 
       {/* Action Buttons */}
-      <div className="flex gap-4 justify-end">
+      <div className="flex gap-4 justify-end items-center">
         {!viewOnly && (
           <>
+            {accountingEdit && !editReason?.trim() && (
+              <p className="text-xs text-amber-600 mr-auto">
+                Enter a reason for this edit above before saving.
+              </p>
+            )}
             {!isEditMode && (
               <Button variant="secondary" onClick={resetForm} disabled={submitting}>
                 Reset
@@ -1095,21 +1119,27 @@ const LiquidationForm = (props) => {
                 Cancel
               </Button>
             )}
-            <Button
-              variant="secondary"
-              startIcon={<Save className="w-4 h-4" />}
-              onClick={handleSaveDraft}
-              disabled={submitting}
-            >
-              {submitting ? 'Saving…' : 'Save Draft'}
-            </Button>
+            {!accountingEdit && (
+              <Button
+                variant="secondary"
+                startIcon={<Save className="w-4 h-4" />}
+                onClick={handleSaveDraft}
+                disabled={submitting}
+              >
+                {submitting ? 'Saving…' : 'Save Draft'}
+              </Button>
+            )}
             <Button
               variant="primary"
               startIcon={<Send className="w-4 h-4" />}
               onClick={handleSubmit}
-              disabled={submitting}
+              disabled={submitting || (accountingEdit && !editReason?.trim())}
             >
-              {submitting ? 'Submitting…' : 'Submit'}
+              {submitting
+                ? (accountingEdit ? 'Updating…' : 'Submitting…')
+                : accountingEdit
+                  ? 'Update Transaction'
+                  : 'Submit'}
             </Button>
             {/* {onClose && (
               <Button variant="ghost" onClick={onClose} disabled={submitting}>

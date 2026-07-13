@@ -295,7 +295,7 @@ const Disbursements = () => {
     const [editOpen, setEditOpen] = useState(false);
     const [editRequest, setEditRequest] = useState(null);
     const [editReason, setEditReason] = useState('');
-    const [editSaving, setEditSaving] = useState(false);
+    const [editLoading, setEditLoading] = useState(false);
 
     const tabKeyMap = { 0: 'cashAdvances', 1: 'liquidations', 2: 'reimbursements' };
 
@@ -393,73 +393,65 @@ const Disbursements = () => {
     // expected to be recorded in the Audit Logs by the backend (before/after
     // values, editor, timestamp). We collect a mandatory "reason for edit" so
     // there's always context if the change needs to be reviewed later.
-    const handleOpenEdit = (row) => {
-        setEditRequest(row);
-        setEditReason('');
-        setEditOpen(true);
+    const handleOpenEdit = async (row) => {
+        if (row.status !== 'approved') {
+            setNotification({ message: 'Only transactions pending release can be edited.', severity: 'error' });
+            return;
+        }
+        try {
+            setEditLoading(true);
+            setEditReason('');
+            setEditOpen(true);
+            const typeMap = { 0: 'cash-advances', 1: 'liquidations', 2: 'reimbursements' };
+            const endpoint = typeMap[activeTab];
+            // Fetch the full record — the row we have here comes from the
+            // summary list (/disbursements/pending) and may be missing fields
+            // the form needs (line items, breakdowns, receipts, etc).
+            const res = await api.get(`/${endpoint}/${row.id}`);
+            if (res.data.success) {
+                setEditRequest(res.data.data);
+            } else {
+                setNotification({ message: 'Failed to load transaction for editing.', severity: 'error' });
+                setEditOpen(false);
+            }
+        } catch (error) {
+            console.error('Error fetching transaction for edit:', error);
+            setNotification({ message: 'Failed to load transaction for editing.', severity: 'error' });
+            setEditOpen(false);
+        } finally {
+            setEditLoading(false);
+        }
     };
 
     const handleCloseEdit = () => {
-        if (editSaving) return; // don't let them close mid-save
+        if (editLoading) return; // don't let them close mid-fetch
         setEditOpen(false);
         setEditRequest(null);
         setEditReason('');
     };
 
-    const handleSaveEdit = async (formData) => {
-        if (!editRequest) return;
-        if (!editReason.trim()) {
-            setNotification({
-                message: 'Please provide a reason for this edit — it will be recorded in the Audit Logs.',
-                severity: 'error',
-            });
-            return;
-        }
-        try {
-            setEditSaving(true);
-            const typeMap = { 0: 'cash-advances', 1: 'liquidations', 2: 'reimbursements' };
-            const endpoint = typeMap[activeTab];
-            const res = await api.put(`/${endpoint}/${editRequest.id}`, {
-                ...formData,
-                edit_reason: editReason.trim(),
-            });
-            if (res.data.success) {
-                setNotification({
-                    message: 'Transaction updated successfully. The change has been recorded in the Audit Logs.',
-                    severity: 'success',
-                });
-                handleCloseEdit();
-                fetchPendingDisbursements();
-                setTimeout(() => setNotification(null), 4000);
-            } else {
-                console.error('Edit failed:', res.data);
-                setNotification({
-                    message: res.data?.message || 'Error updating transaction.',
-                    severity: 'error',
-                });
-            }
-        } catch (error) {
-            console.error('Error updating transaction:', error?.response?.data || error);
-            setNotification({
-                message: error?.response?.data?.message || 'Error updating transaction.',
-                severity: 'error',
-            });
-        } finally {
-            setEditSaving(false);
-        }
+    // The forms submit to the API themselves (they always have — there's no
+    // onSave callback). When `accountingEdit` is true, each form preserves
+    // the record's current status/approval fields (no auto-approve/release),
+    // hides "Save Draft", labels the submit button "Update Transaction", and
+    // attaches `edit_reason` to the payload for the Audit Logs. This just
+    // reacts once the form reports it's done.
+    const handleEditSaved = () => {
+        handleCloseEdit();
+        fetchPendingDisbursements();
     };
 
-    // ⚠️ ASSUMPTION: CashAdvanceForm / LiquidationForm / ReimbursementForm
-    // accept an `onSave` callback fired with the final edited form data when
-    // the user submits (mirroring how `editData` + `viewOnly` already toggle
-    // read/write mode). If your forms use a different prop (onSubmit,
-    // onFinish, etc.) or call the API internally instead of via callback,
-    // just rename/adjust this one spot.
     const renderEditForm = () => {
         if (!editRequest) return null;
-        if (activeTab === 0) return <CashAdvanceForm editData={editRequest} onSave={handleSaveEdit} saving={editSaving} />;
-        if (activeTab === 1) return <LiquidationForm editData={editRequest} onSave={handleSaveEdit} saving={editSaving} />;
-        if (activeTab === 2) return <ReimbursementForm editData={editRequest} onSave={handleSaveEdit} saving={editSaving} />;
+        const commonProps = {
+            editData: editRequest,
+            accountingEdit: true,
+            editReason,
+            onSaved: handleEditSaved,
+        };
+        if (activeTab === 0) return <CashAdvanceForm {...commonProps} />;
+        if (activeTab === 1) return <LiquidationForm {...commonProps} />;
+        if (activeTab === 2) return <ReimbursementForm {...commonProps} />;
         return null;
     };
 
@@ -669,13 +661,15 @@ const Disbursements = () => {
                                         >
                                             <Eye className="w-4 h-4" />
                                         </button>
-                                        <button
-                                            onClick={() => handleOpenEdit(row)}
-                                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors"
-                                            title="Edit Transaction (recorded in Audit Logs)"
-                                        >
-                                            <FileEdit className="w-4 h-4" />
-                                        </button>
+                                        {row.status === 'approved' && (
+                                            <button
+                                                onClick={() => handleOpenEdit(row)}
+                                                className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                                title="Edit Transaction (recorded in Audit Logs)"
+                                            >
+                                                <FileEdit className="w-4 h-4" />
+                                            </button>
+                                        )}
                                         {row.status === 'approved' && (
                                             <>
                                                 <button
@@ -962,28 +956,34 @@ const Disbursements = () => {
                 }
                 maxWidth="xl"
                 actions={
-                    <Button variant="secondary" onClick={handleCloseEdit} disabled={editSaving}>
+                    <Button variant="secondary" onClick={handleCloseEdit} disabled={editLoading}>
                         Cancel
                     </Button>
                 }
             >
-                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-                    Changes here are recorded in the Audit Logs — what changed, who made the change, and when — so please provide a reason before saving.
-                </div>
-                <Input
-                    label="Reason for Edit"
-                    placeholder="e.g. Corrected amount per updated receipt"
-                    multiline
-                    fullWidth
-                    rows={2}
-                    value={editReason}
-                    onChange={(e) => setEditReason(e.target.value)}
-                    required
-                    autoFocus
-                />
-                <div className="mt-4">
-                    {renderEditForm()}
-                </div>
+                {editLoading ? (
+                    <Loading message="Loading transaction…" />
+                ) : (
+                    <>
+                        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                            Changes here are recorded in the Audit Logs — what changed, who made the change, and when — so please provide a reason before saving.
+                        </div>
+                        <Input
+                            label="Reason for Edit"
+                            placeholder="e.g. Corrected amount per updated receipt"
+                            multiline
+                            fullWidth
+                            rows={2}
+                            value={editReason}
+                            onChange={(e) => setEditReason(e.target.value)}
+                            required
+                            autoFocus
+                        />
+                        <div className="mt-4">
+                            {renderEditForm()}
+                        </div>
+                    </>
+                )}
             </Modal>
         </div>
     );

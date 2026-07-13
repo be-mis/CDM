@@ -53,7 +53,7 @@ const CashAdvanceForm = (props) => {
         return `${year}-${month}-${day}`;
     };
 
-    const { editData, onClose, viewOnly = false, hideCloseButton = false } = props || {};
+    const { editData, onClose, viewOnly = false, hideCloseButton = false, accountingEdit = false, editReason = '', onSaved } = props || {};
 
     const [formData, setFormData] = useState(() => {
 
@@ -398,6 +398,9 @@ const CashAdvanceForm = (props) => {
 
     const handleSubmit = async () => {
         if (isSubmitting) return;
+        if (accountingEdit && !editReason?.trim()) {
+            return showNotification('Please provide a reason for this edit before saving.', 'error');
+        }
         const { isValid } = validateForm();
         if (!isValid) {
             return showNotification('Please fill in all required fields', 'error');
@@ -406,6 +409,32 @@ const CashAdvanceForm = (props) => {
         try {
             // FIX 3: Same date preservation logic as handleSaveDraft.
             const advanceDate = editData?.id ? formData.advanceDate : getTodayString();
+
+            // Accounting is correcting an existing, already-processed
+            // transaction — never touch status/approval fields here, only
+            // the editable content. `edit_reason` ties the change to the
+            // Audit Logs.
+            if (accountingEdit) {
+                const payload = {
+                    ...formData,
+                    advanceDate,
+                    items,
+                    requestedAmount: calculateTotal(),
+                    status: editData.status,
+                    approver: editData.approver || editData.approved_by || '',
+                    approvedDate: editData.approvedDate || editData.approved_at || '',
+                    editReason: editReason.trim(),
+                };
+                const res = await api.put(`/cash-advances/${editData.id}`, payload);
+                if (res.data.success) {
+                    if (attachments.length > 0 || pendingDeletes.length > 0) await uploadAttachments(res.data.data.id);
+                    showNotification('Transaction updated successfully. The change has been recorded in the Audit Logs.');
+                    if (onSaved) onSaved();
+                    else if (onClose) onClose();
+                    else navigate('/my-requests', { state: { tab: 0 } });
+                }
+                return;
+            }
 
             // If the requestor is an approver, auto-approve and route directly
             // to Accounting — no manager sign-off needed.
@@ -752,7 +781,7 @@ const CashAdvanceForm = (props) => {
                 </CardContent>
             </Card>
 
-            <div className="flex gap-4 justify-end">
+            <div className="flex gap-4 justify-end items-center">
                 {!viewOnly && (
                     <>
                         <Button
@@ -763,25 +792,29 @@ const CashAdvanceForm = (props) => {
                         >
                             {editData ? "Cancel" : "Reset"}
                         </Button>
-                        <Button
-                            variant="secondary"
-                            startIcon={<Save className="w-4 h-4" />}
-                            onClick={handleSaveDraft}
-                            disabled={isSubmitting}
-                        >
-                            {isSubmitting ? 'Saving…' : 'Save Draft'}
-                        </Button>
+                        {!accountingEdit && (
+                            <Button
+                                variant="secondary"
+                                startIcon={<Save className="w-4 h-4" />}
+                                onClick={handleSaveDraft}
+                                disabled={isSubmitting}
+                            >
+                                {isSubmitting ? 'Saving…' : 'Save Draft'}
+                            </Button>
+                        )}
                         <Button
                             variant="primary"
                             startIcon={<Send className="w-4 h-4" />}
                             onClick={handleSubmit}
-                            disabled={isSubmitting}
+                            disabled={isSubmitting || (accountingEdit && !editReason?.trim())}
                         >
                             {isSubmitting
-                                ? 'Submitting…'
-                                : isApprover
-                                    ? 'Submit for Disbursement'
-                                    : 'Submit Request'}
+                                ? (accountingEdit ? 'Updating…' : 'Submitting…')
+                                : accountingEdit
+                                    ? 'Update Transaction'
+                                    : isApprover
+                                        ? 'Submit for Disbursement'
+                                        : 'Submit Request'}
                         </Button>
                     </>
                 )}
