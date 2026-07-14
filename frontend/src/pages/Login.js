@@ -64,7 +64,7 @@ export default function Login() {
                 className="w-full h-full object-cover"
               />
             </div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Cash Disbursement Module</h1>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">PRESTO: Cash Disbursement Module</h1>
             <p className="text-gray-600 text-sm">Sign in to your account</p>
           </div>
 
