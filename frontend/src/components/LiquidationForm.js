@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Save, Paperclip, Send } from 'lucide-react';
+import { Save, Paperclip, Send, CheckCircle } from 'lucide-react';
 import api from '../api';
 import AttachmentViewer from './AttachmentViewer';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +9,7 @@ import Input from './ui/Input';
 import Autocomplete from './ui/Autocomplete';
 import { Card, CardContent } from './ui/Card';
 import { Alert } from './ui/Alert';
+import Modal from './ui/Modal';
 import { normalizeDate, formatLongDate } from '../utils/formatters';
 import PaymentDetailsSection from './forms/PaymentDetailsSection';
 import ExpensesBreakdown, { blankExpense } from './forms/Expensesbreakdown';
@@ -211,6 +212,10 @@ const LiquidationForm = (props) => {
   const [snackbar,       setSnackbar]       = useState({ open: false, message: '', severity: 'success' });
   const [errors,         setErrors]         = useState({});
   const [submitting,     setSubmitting]     = useState(false);
+  // Gate accounting's "Update Transaction" behind an explicit confirmation
+  // since saving now also releases the transaction.
+  const [confirmReleaseOpen, setConfirmReleaseOpen] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState(null);
 
   const handleExpensesChange = useCallback((updated) => {
     if (typeof updated === 'function') {
@@ -681,14 +686,30 @@ const LiquidationForm = (props) => {
       showSnackbar('Please provide a reason for this edit before saving.', 'error');
       return;
     }
+    // Updating an already-approved liquidation now also releases it, so
+    // guard against accidental clicks with an explicit confirmation.
+    if (accountingEdit) {
+      setPendingStatus(requestedStatus);
+      setConfirmReleaseOpen(true);
+      return;
+    }
+    await commitPersist(requestedStatus);
+  }, [accountingEdit, editReason, showSnackbar]);
+
+  const handleConfirmRelease = useCallback(async () => {
+    setConfirmReleaseOpen(false);
+    await commitPersist(pendingStatus);
+  }, [pendingStatus]);
+
+  const commitPersist = useCallback(async (requestedStatus) => {
     if (!validateForm()) return;
     setSubmitting(true);
     try {
-      // Accounting is correcting an existing, already-processed liquidation —
-      // never touch status/approval fields here, only the editable content.
-      // `edit_reason` ties the change to the Audit Logs.
+      // Accounting is correcting an already-approved liquidation. Saving the
+      // correction also releases it — the previous status is no longer
+      // preserved. `edit_reason` ties the change to the Audit Logs.
       const autoApprove = !accountingEdit && requestedStatus === 'pending' && isApprover;
-      const status = accountingEdit ? editData.status : (autoApprove ? 'approved' : requestedStatus);
+      const status = accountingEdit ? 'released' : (autoApprove ? 'approved' : requestedStatus);
       const approverFields = accountingEdit
         ? {}
         : autoApprove
@@ -753,7 +774,7 @@ const LiquidationForm = (props) => {
 
       showSnackbar(
         accountingEdit
-          ? 'Transaction updated successfully. The change has been recorded in the Audit Logs.'
+          ? 'Transaction updated and released successfully. The change has been recorded in the Audit Logs.'
           : (status === 'draft' ? 'Draft saved successfully!' : 'Liquidation submitted successfully!'),
         'success',
       );
@@ -782,33 +803,6 @@ const LiquidationForm = (props) => {
   const handleSaveDraft = useCallback(() => persistForm('draft'),   [persistForm]);
   const handleSubmit    = useCallback(() => persistForm('pending'), [persistForm]);
 
-  // ── Reset / cancel ─────────────────────────────────────────────────────────
-  const resetForm = useCallback(() => {
-    setFormData({
-      liquidationNumber: '', liquidationDate: new Date().toISOString().split('T')[0],
-      cashAdvanceId: '', submittedBy: user?.name || '', department: user?.department || '',
-      businessUnit: '',
-      dateCoverageFrom: '',
-      dateCoverageTo:   '',
-      totalAdvanceAmount: 0, refundAmount: 0, additionalPayment: 0,
-      paymentMethod: 'payroll', gcashName: '', accountNumber: '', remarks: '', status: 'draft',
-    });
-    setExpenses([blankExpense(1)]);
-    setItineraryItems([]);
-    setAttachments([]);
-    setErrors({});
-    setPendingDeletes([]);
-    setSelectedCashAdvance(null);
-    generateLiquidationNumber();
-  }, [user, generateLiquidationNumber]);
-
-  const handleCancel = useCallback(() => {
-    resetForm();
-    if (onClose) onClose();
-    else navigate('/my-requests', { state: { tab: 1 } });
-  }, [resetForm, onClose, navigate]);
-
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -1104,21 +1098,6 @@ const LiquidationForm = (props) => {
       <div className="flex gap-4 justify-end items-center">
         {!viewOnly && (
           <>
-            {accountingEdit && !editReason?.trim() && (
-              <p className="text-xs text-amber-600 mr-auto">
-                Enter a reason for this edit above before saving.
-              </p>
-            )}
-            {!isEditMode && (
-              <Button variant="secondary" onClick={resetForm} disabled={submitting}>
-                Reset
-              </Button>
-            )}
-            {isEditMode && (
-              <Button variant="secondary" onClick={handleCancel} disabled={submitting}>
-                Cancel
-              </Button>
-            )}
             {!accountingEdit && (
               <Button
                 variant="secondary"
@@ -1158,6 +1137,32 @@ const LiquidationForm = (props) => {
         duration={4000}
         position="bottom-right"
       />
+
+      <Modal
+        open={confirmReleaseOpen}
+        onClose={() => setConfirmReleaseOpen(false)}
+        title="Release Transaction"
+        maxWidth="sm"
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmReleaseOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button
+              variant="success"
+              startIcon={<CheckCircle className="w-4 h-4" />}
+              onClick={handleConfirmRelease}
+              disabled={submitting}
+            >
+              {submitting ? 'Releasing…' : 'Confirm Release'}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-gray-700">
+          Updating this transaction will mark it as <span className="font-semibold text-green-700">Released</span>. Continue?
+        </p>
+      </Modal>
     </div>
   );
 };

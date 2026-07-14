@@ -169,8 +169,8 @@ const createReimbursement = async (req, res) => {
           submitted_by, department_id, business_unit, date_needed,
           purpose,
           total_actual_amount, payment_method, gcash_name, account_number,
-          remarks, status, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          remarks, status, created_by, funding_code)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
         reimbursementNumber || generateReimbursementNumber(),
         reimbursementDate   || new Date().toISOString().split('T')[0],
@@ -188,6 +188,7 @@ const createReimbursement = async (req, res) => {
         remarks             || null,
         status,
         createdBy,
+        'RD',
       ],
     );
 

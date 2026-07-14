@@ -59,6 +59,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
       </div>
       <div className="flex items-center gap-1">
         <button
+          type="button"
           onClick={() => onPageChange(Math.max(1, currentPage - 1))}
           disabled={currentPage === 1}
           className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -71,6 +72,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
             <span key={`ellipsis-${idx}`} className="px-2 text-sm text-gray-400">…</span>
           ) : (
             <button
+              type="button"
               key={p}
               onClick={() => onPageChange(p)}
               className={`min-w-[2rem] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -84,6 +86,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
           )
         )}
         <button
+          type="button"
           onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
           disabled={currentPage === totalPages}
           className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -1233,6 +1236,7 @@ const AdminAllTransactions = () => {
           <div className="flex px-4 gap-2">
             {tabs.map((tab, index) => (
               <button
+                type="button"
                 key={index}
                 onClick={() => handleTabChange(null, index)}
                 className={`flex items-center gap-2 px-6 py-4 text-sm font-semibold border-b-2 transition-colors ${
@@ -1295,6 +1299,7 @@ const AdminAllTransactions = () => {
           {/* Status Filter Bar */}
           <div className="flex flex-wrap gap-2">
             <button
+              type="button"
               onClick={() => handleStatusFilterChange('all')}
               className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
                 statusFilter === 'all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -1319,6 +1324,7 @@ const AdminAllTransactions = () => {
               const colorClass = colorMap[status] || (isActive ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200');
               return (
                 <button
+                  type="button"
                   key={status}
                   onClick={() => handleStatusFilterChange(status)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${colorClass}`}
@@ -1413,34 +1419,34 @@ const AdminAllTransactions = () => {
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-1.5">
                             <Tooltip title="View Details">
-                              <button onClick={() => handleView(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors">
+                              <button type="button" onClick={() => handleView(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors">
                                 <Eye className="w-4 h-4" />
                               </button>
                             </Tooltip>
                             {['draft', 'cancelled', 'rejected'].includes((request.status || '').toLowerCase()) && (
                               <Tooltip title="Edit">
-                                <button onClick={() => handleEdit(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleEdit(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors">
                                   <Edit2 className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status === 'Draft' && (
                               <Tooltip title="Delete">
-                                <button onClick={() => handleDeleteCashAdvance(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleDeleteCashAdvance(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status === 'Pending Approval' && (
                               <Tooltip title="Cancel Request">
-                                <button onClick={() => handleDeleteCashAdvance(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleDeleteCashAdvance(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
                                   <XCircle className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status.toLowerCase().includes('released') && !liquidations.some(l => l.cashAdvanceRef === request.refNumber) && (
                               <Tooltip title="Create Liquidation">
-                                <button onClick={() => handleCreateLiquidation(request)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleCreateLiquidation(request)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded transition-colors">
                                   <Receipt className="w-4 h-4" />
                                 </button>
                               </Tooltip>
@@ -1518,27 +1524,27 @@ const AdminAllTransactions = () => {
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-1.5">
                             <Tooltip title="View Details">
-                              <button onClick={() => handleViewLiquidation(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors">
+                              <button type="button" onClick={() => handleViewLiquidation(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors">
                                 <Eye className="w-4 h-4" />
                               </button>
                             </Tooltip>
                             {['draft', 'cancelled', 'rejected'].includes((request.status || '').toLowerCase()) && (
                               <Tooltip title="Edit">
-                                <button onClick={() => handleEditLiquidation(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleEditLiquidation(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors">
                                   <Edit2 className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status === 'Draft' && (
                               <Tooltip title="Delete">
-                                <button onClick={() => handleDeleteLiquidation(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleDeleteLiquidation(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status === 'Pending Approval' && (
                               <Tooltip title="Cancel Request">
-                                <button onClick={() => handleDeleteLiquidation(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleDeleteLiquidation(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
                                   <XCircle className="w-4 h-4" />
                                 </button>
                               </Tooltip>
@@ -1614,27 +1620,27 @@ const AdminAllTransactions = () => {
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-1.5">
                             <Tooltip title="View Details">
-                              <button onClick={() => handleViewReimbursement(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors">
+                              <button type="button" onClick={() => handleViewReimbursement(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors">
                                 <Eye className="w-4 h-4" />
                               </button>
                             </Tooltip>
                             {['draft', 'cancelled', 'rejected'].includes((request.status || '').toLowerCase()) && (
                               <Tooltip title="Edit">
-                                <button onClick={() => handleEditReimbursement(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleEditReimbursement(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors">
                                   <Edit2 className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status === 'Draft' && (
                               <Tooltip title="Delete">
-                                <button onClick={() => handleDeleteReimbursement(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleDeleteReimbursement(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status === 'Pending Approval' && (
                               <Tooltip title="Cancel Request">
-                                <button onClick={() => handleDeleteReimbursement(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleDeleteReimbursement(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
                                   <XCircle className="w-4 h-4" />
                                 </button>
                               </Tooltip>

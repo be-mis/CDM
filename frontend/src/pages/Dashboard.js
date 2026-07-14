@@ -25,6 +25,7 @@ import Disbursements from './Disbursements';
 import AuditLogs from './AuditLogs';
 import Profile from './Profile';
 import PaymentRequirementModal from '../components/PaymentRequirementModal';
+import RevolvingFunds from './RevolvingFunds';
 import Alert from '../components/ui/Alert';
 import { InlineAlert } from '../components/ui/Alert';
 import Tooltip from '../components/ui/Tooltip';
@@ -91,6 +92,8 @@ const Dashboard = () => {
       setCurrentView('approvals');
     } else if (path.includes('disbursements')) {
       setCurrentView('disbursements');
+    } else if (path.includes('revolving-funds')) {
+      setCurrentView('revolving-funds');
     } else if (path.includes('profile')) {
       setCurrentView('profile');
     } else if (path.includes('reports')) {
@@ -115,6 +118,7 @@ const Dashboard = () => {
     { text: 'Cash Advance Form', icon: <HandCoins className="w-5 h-5" />, view: 'cash-advance', path: '/cash-advance', key: 'cash-advance' },
     { text: 'Liquidation Form', icon: <ReceiptText className="w-5 h-5" />, view: 'liquidation', path: '/liquidation', key: 'liquidation' },
     { text: 'Reimbursement Form', icon: <Wallet className="w-5 h-5" />, view: 'reimbursement', path: '/reimbursement', key: 'reimbursement' },
+    { text: 'Revolving Funds', icon: <Wallet className="w-5 h-5" />, view: 'revolving-funds', path: '/revolving-funds', key: 'revolving-funds', accountingOnly: true },
     { text: 'Approvals', icon: <CheckSquare className="w-5 h-5" />, view: 'approvals', path: '/approvals', key: 'approvals', approverOnly: true },
     { text: 'Disbursements', icon: <Coins className="w-5 h-5" />, view: 'disbursements', path: '/disbursements', key: 'disbursements', accountingOnly: true },
     { text: 'User Management', icon: <Users className="w-5 h-5" />, view: 'usermanagement', adminOnly: true, path: '/user-management', key: 'usermanagement' },
@@ -227,6 +231,16 @@ const Dashboard = () => {
           );
         }
         return <Disbursements />;
+        
+        case 'revolving-funds':
+        if (user?.role !== 'accounting' && user?.role !== 'admin') {
+          return (
+            <InlineAlert severity="warning">
+              You don't have permission to access Revolving Funds. Accounting access required.
+            </InlineAlert>
+          );
+        }
+        return <RevolvingFunds />;
 
       case 'dashboard':
       default:
@@ -262,6 +276,7 @@ const Dashboard = () => {
     if (currentView === 'liquidation') return 'Cash Advance Liquidation';
     if (currentView === 'reimbursement') return 'Reimbursement Request';
     if (currentView === 'usermanagement') return 'User Management';
+    if (currentView === 'revolving-funds') return 'Revolving Funds Dashboard';
     if (currentView === 'auditlogs') return 'Audit Logs';
     return 'Dashboard';
   };
@@ -283,7 +298,7 @@ const Dashboard = () => {
           {menuItems.map((item) => (
             <li key={item.key}>
               <button
-                
+                type="button"
                 onClick={() => { navigate(item.path, { replace: true, state: null }); }}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 ${
                   currentView === item.view
@@ -321,6 +336,7 @@ const Dashboard = () => {
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-4">
             <button
+              type="button"
               onClick={handleDrawerToggle}
               className="md:hidden text-gray-600 hover:text-gray-900"
             >
@@ -338,6 +354,7 @@ const Dashboard = () => {
             </div>
             <Tooltip title="Logout">
               <button
+                type="button"
                 onClick={() => {
                   logout();
                   navigate('/login');
@@ -367,6 +384,7 @@ const Dashboard = () => {
       >
         {/* Mobile Close Button */}
         <button
+          type="button"
           onClick={handleDrawerToggle}
           className="absolute top-4 right-4 md:hidden text-gray-600 hover:text-gray-900"
         >

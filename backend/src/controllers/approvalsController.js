@@ -163,9 +163,51 @@ const getAllApprovals = async (req, res) => {
     }
 };
 
+// Get revolving fund info (balance, code, description) for a department,
+// used by the frontend to decide whether to show the "Use Revolving Fund?"
+// option on the approval modal and what the current balance is.
+// GET /approvals/revolving-fund?department_id=8
+const getRevolvingFund = async (req, res) => {
+    try {
+        const departmentId = parseInt(req.query.department_id, 10);
+        if (!departmentId) {
+            return res.status(400).json({ success: false, message: 'department_id is required' });
+        }
+
+        const [rows] = await pool.query(
+            `SELECT id, department, funding_code, funding_description, Amount
+       FROM revolving_funds
+       WHERE department = ?`,
+            [departmentId]
+        );
+
+        res.status(200).json({
+            success: true,
+            data: rows.length > 0 ? rows[0] : null
+        });
+    } catch (error) {
+        console.error('Error fetching revolving fund:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching revolving fund',
+            error: error.message
+        });
+    }
+};
+
+// Which request types are allowed to draw from a revolving fund, and which
+// column on each table holds that request's own reference number — matches
+// revolving_funds_history.transaction_number ("advance_number or
+// reimbursement_number"). Liquidations are intentionally excluded: they
+// aren't part of the revolving_funds_history.transaction_type enum.
+const REVOLVING_FUND_ELIGIBLE_TYPES = {
+    'cash-advance': { table: 'cash_advances', transactionType: 'cash_advance', numberColumn: 'advance_number' },
+    'reimbursement': { table: 'reimbursements', transactionType: 'reimbursement', numberColumn: 'reimbursement_number' },
+};
+
 // Approve or Reject a request
 const processApproval = async (req, res) => {
-    const { type, id, action, remarks } = req.body;
+    const { type, id, action, remarks, useRevolvingFund } = req.body;
     const userEmail = req.user.email;
     const userName = req.user.name;
 
@@ -188,8 +230,10 @@ const processApproval = async (req, res) => {
         // total_actual_amount. Selecting both is harmless; missing columns on a
         // given table would break the query, so we guard with table-specific SQL.
         const amountColumn = tableName === 'cash_advances' ? 'requested_amount' : 'total_actual_amount';
+        const eligibility = REVOLVING_FUND_ELIGIBLE_TYPES[type];
+        const numberColumn = eligibility ? eligibility.numberColumn : null;
         const [requestRows] = await pool.query(
-            `SELECT department_id, ${amountColumn} AS amount FROM ${tableName} WHERE id = ?`,
+            `SELECT department_id, ${amountColumn} AS amount${numberColumn ? `, ${numberColumn} AS transaction_number` : ''} FROM ${tableName} WHERE id = ?`,
             [id]
         );
 
@@ -199,6 +243,7 @@ const processApproval = async (req, res) => {
 
         const deptId = requestRows[0].department_id;
         const requestAmount = requestRows[0].amount;
+        const transactionNumber = requestRows[0].transaction_number || null;
         const isAdmin = req.user.role === 'admin';
 
         if (!isAdmin) {
@@ -218,15 +263,96 @@ const processApproval = async (req, res) => {
             }
         }
 
-        // Perform update
         // Rejection remarks go to reject_remarks; approval remarks go to remarks
         const remarksColumn = action === 'reject' ? 'reject_remarks' : 'remarks';
-        await pool.query(
-            `UPDATE ${tableName} 
-       SET status = ?, approved_by = ?, approved_at = NOW(), ${remarksColumn} = ?
-       WHERE id = ?`,
-            [newStatus, userName, remarks || null, id]
-        );
+
+        // Revolving fund path: only reachable on approval, and only for
+        // cash-advance / reimbursement (liquidations aren't eligible).
+        const wantsRevolvingFund = action === 'approve' && (useRevolvingFund === true || useRevolvingFund === 'true');
+
+        if (wantsRevolvingFund) {
+            if (!eligibility) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'This request type cannot be funded from a revolving fund'
+                });
+            }
+
+            const [fundRows] = await pool.query(
+                `SELECT id, Amount, funding_code, funding_description FROM revolving_funds WHERE department = ? FOR UPDATE`,
+                [deptId]
+            );
+
+            if (fundRows.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'No revolving fund is configured for this department'
+                });
+            }
+
+            const fund = fundRows[0];
+            const fundBalance = parseFloat(fund.Amount);
+            const amountNeeded = parseFloat(requestAmount);
+
+            if (fundBalance < amountNeeded) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Fund is not enough to cover the total amount requested',
+                    remainingFund: fundBalance
+                });
+            }
+
+            const balanceAfter = fundBalance - amountNeeded;
+            const connection = await pool.getConnection();
+            try {
+                await connection.beginTransaction();
+
+                await connection.query(
+                    `UPDATE ${tableName}
+           SET status = ?, approved_by = ?, approved_at = NOW(), ${remarksColumn} = ?, funding_code = ?
+           WHERE id = ?`,
+                    [newStatus, userName, remarks || null, fund.funding_code, id]
+                );
+
+                await connection.query(
+                    `UPDATE revolving_funds SET Amount = ? WHERE id = ?`,
+                    [balanceAfter, fund.id]
+                );
+
+                await connection.query(
+                    `INSERT INTO revolving_funds_history
+             (transaction_type, transaction_id, transaction_number, revolving_fund_id, funding_code, total_amount, deducted_amount, balance_before, balance_after, approver_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+                    [
+                        eligibility.transactionType,
+                        id,
+                        transactionNumber,
+                        fund.id,
+                        fund.funding_code,
+                        amountNeeded,
+                        amountNeeded,
+                        fundBalance,
+                        balanceAfter,
+                        req.user.id,
+                    ]
+                );
+
+                await connection.commit();
+            } catch (txError) {
+                await connection.rollback();
+                throw txError;
+            } finally {
+                connection.release();
+            }
+        } else {
+            // Perform update (no revolving fund involved)
+            await pool.query(
+                `UPDATE ${tableName} 
+         SET status = ?, approved_by = ?, approved_at = NOW(), ${remarksColumn} = ?
+         WHERE id = ?`,
+                [newStatus, userName, remarks || null, id]
+            );
+        }
 
         // Log BEFORE responding, and keep it inside the same try block so any
         // logging failure still surfaces as a 500 rather than a silent gap —
@@ -236,7 +362,7 @@ const processApproval = async (req, res) => {
             action: `${type}_${action}d`, // e.g. cash-advance_approved
             entity: tableName,
             entityId: id,
-            details: { amount: requestAmount, remarks: remarks || null },
+            details: { amount: requestAmount, remarks: remarks || null, usedRevolvingFund: wantsRevolvingFund },
             ip: req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || null
         });
 
@@ -258,5 +384,6 @@ const processApproval = async (req, res) => {
 module.exports = {
     getPendingApprovals,
     getAllApprovals,
-    processApproval
+    processApproval,
+    getRevolvingFund
 };

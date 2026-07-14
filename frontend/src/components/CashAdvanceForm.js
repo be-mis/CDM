@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Save, Send, RotateCcw, X } from 'lucide-react';
+import { Save, Send, CheckCircle } from 'lucide-react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import BudgetBreakdown from './forms/BudgetBreakdown';
@@ -11,6 +10,7 @@ import Button from './ui/Button';
 import Input from './ui/Input';
 import { Card, CardContent } from './ui/Card';
 import { Alert, InlineAlert } from './ui/Alert';
+import Modal from './ui/Modal';
 
 const TruncatedViewField = ({ value, label }) => (
     <div className="relative w-full">
@@ -27,7 +27,6 @@ const TruncatedViewField = ({ value, label }) => (
 
 const CashAdvanceForm = (props) => {
     const { user } = useAuth();
-    const navigate = useNavigate();
 
     const getTodayString = () => {
         const d = new Date();
@@ -129,6 +128,9 @@ const CashAdvanceForm = (props) => {
     const [userProfile, setUserProfile] = useState(null);
     // FIX 3: Loading state to prevent duplicate submissions on rapid double-click.
     const [isSubmitting, setIsSubmitting] = useState(false);
+    // Gate accounting's "Update Transaction" behind an explicit confirmation
+    // since saving now also releases the transaction.
+    const [confirmReleaseOpen, setConfirmReleaseOpen] = useState(false);
 
     // Track object URLs for cleanup to prevent memory leaks (FIX 6)
     const objectUrlsRef = useRef([]);
@@ -377,7 +379,7 @@ const CashAdvanceForm = (props) => {
             if (res.data.success) {
                 if (attachments.length > 0 || pendingDeletes.length > 0) await uploadAttachments(res.data.data.id);
                 showNotification('Draft saved successfully!');
-                onClose ? onClose() : navigate('/my-requests', { state: { tab: 0 } });
+                if (onClose) onClose();
             }
         } catch (e) {
             showNotification('Error saving draft', 'error');
@@ -401,6 +403,21 @@ const CashAdvanceForm = (props) => {
         if (accountingEdit && !editReason?.trim()) {
             return showNotification('Please provide a reason for this edit before saving.', 'error');
         }
+        // Updating an already-approved transaction now also releases it, so
+        // guard against accidental clicks with an explicit confirmation.
+        if (accountingEdit) {
+            setConfirmReleaseOpen(true);
+            return;
+        }
+        await performSubmit();
+    };
+
+    const handleConfirmRelease = async () => {
+        setConfirmReleaseOpen(false);
+        await performSubmit();
+    };
+
+    const performSubmit = async () => {
         const { isValid } = validateForm();
         if (!isValid) {
             return showNotification('Please fill in all required fields', 'error');
@@ -410,17 +427,16 @@ const CashAdvanceForm = (props) => {
             // FIX 3: Same date preservation logic as handleSaveDraft.
             const advanceDate = editData?.id ? formData.advanceDate : getTodayString();
 
-            // Accounting is correcting an existing, already-processed
-            // transaction — never touch status/approval fields here, only
-            // the editable content. `edit_reason` ties the change to the
-            // Audit Logs.
+            // Accounting is correcting an already-approved transaction. Saving
+            // the correction also releases it — the previous status is no
+            // longer preserved. `edit_reason` ties the change to the Audit Logs.
             if (accountingEdit) {
                 const payload = {
                     ...formData,
                     advanceDate,
                     items,
                     requestedAmount: calculateTotal(),
-                    status: editData.status,
+                    status: 'released',
                     approver: editData.approver || editData.approved_by || '',
                     approvedDate: editData.approvedDate || editData.approved_at || '',
                     editReason: editReason.trim(),
@@ -428,10 +444,9 @@ const CashAdvanceForm = (props) => {
                 const res = await api.put(`/cash-advances/${editData.id}`, payload);
                 if (res.data.success) {
                     if (attachments.length > 0 || pendingDeletes.length > 0) await uploadAttachments(res.data.data.id);
-                    showNotification('Transaction updated successfully. The change has been recorded in the Audit Logs.');
+                    showNotification('Transaction updated and released successfully. The change has been recorded in the Audit Logs.');
                     if (onSaved) onSaved();
                     else if (onClose) onClose();
-                    else navigate('/my-requests', { state: { tab: 0 } });
                 }
                 return;
             }
@@ -475,7 +490,7 @@ const CashAdvanceForm = (props) => {
                         ? 'Request submitted and forwarded to Accounting for disbursement.'
                         : 'Request submitted successfully!'
                 );
-                onClose ? onClose() : navigate('/my-requests', { state: { tab: 0 } });
+                if (onClose) onClose();
             }
         } catch (e) {
             showNotification('Error submitting request', 'error');
@@ -508,31 +523,6 @@ const CashAdvanceForm = (props) => {
                 }
             } catch (e) { console.error('Upload failed', e); }
         }
-    };
-
-    const resetForm = () => {
-        setFormData(prev => ({
-            ...prev,
-            purpose: '',
-            projectName: '',
-            startDate: '',
-            endDate: '',
-            dateNeeded: getMinDateNeeded(),
-            gcashName: '',
-            accountNumber: '',
-            status: 'draft',
-            dateCoverage: ''
-        }));
-        setItems([{ id: 1, description: '', estimatedAmount: 0, noOfDays: 1, totalAmount: 0 }]);
-        setAttachments([]);
-        setErrors({});
-        generateAdvanceNumber();
-        showNotification('Form reset successfully', 'info');
-    };
-
-    const handleCancel = () => {
-        if (onClose) onClose();
-        else navigate('/my-requests', { state: { tab: 0 } });
     };
 
     const showNotification = (message, severity = 'success') => {
@@ -578,6 +568,32 @@ const CashAdvanceForm = (props) => {
                     <div>{editData.reject_remarks}</div>
                 </InlineAlert>
             )}
+
+            <Modal
+                open={confirmReleaseOpen}
+                onClose={() => setConfirmReleaseOpen(false)}
+                title="Release Transaction"
+                maxWidth="sm"
+                actions={
+                    <>
+                        <Button variant="secondary" onClick={() => setConfirmReleaseOpen(false)} disabled={isSubmitting}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="success"
+                            startIcon={<CheckCircle className="w-4 h-4" />}
+                            onClick={handleConfirmRelease}
+                            disabled={isSubmitting}
+                        >
+                            {isSubmitting ? 'Releasing…' : 'Confirm Release'}
+                        </Button>
+                    </>
+                }
+            >
+                <p className="text-gray-700">
+                    Updating this transaction will mark it as <span className="font-semibold text-green-700">Released</span>. Continue?
+                </p>
+            </Modal>
 
             {notification && (
                 <Alert severity={notification.severity} onClose={() => setNotification(null)}>
@@ -784,14 +800,6 @@ const CashAdvanceForm = (props) => {
             <div className="flex gap-4 justify-end items-center">
                 {!viewOnly && (
                     <>
-                        <Button
-                            variant="secondary"
-                            startIcon={editData ? <X className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}
-                            onClick={editData ? handleCancel : resetForm}
-                            disabled={isSubmitting}
-                        >
-                            {editData ? "Cancel" : "Reset"}
-                        </Button>
                         {!accountingEdit && (
                             <Button
                                 variant="secondary"

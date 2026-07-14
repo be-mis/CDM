@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-    CheckCircle, XCircle, Eye, X, Hourglass, DollarSign, Receipt, Coins,
+    CheckCircle, XCircle, Eye, X, Hourglass, DollarSign, Receipt, Coins, CreditCard,
     Search, ChevronLeft, ChevronRight, Clock, Send, Banknote, FileEdit,
 } from 'lucide-react';
 import api from '../api';
@@ -14,6 +14,9 @@ import Modal from '../components/ui/Modal';
 import Input from '../components/ui/Input';
 import { Alert } from '../components/ui/Alert';
 import { Loading } from '../components/ui/Loading';
+
+const formatPeso = (amount) =>
+    `₱${parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Formats a timestamp for the timeline (date + time). Falls back gracefully
 // if the value is missing or unparsable.
@@ -71,6 +74,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
             </div>
             <div className="flex items-center gap-1">
                 <button
+                    type="button"
                     onClick={() => onPageChange(Math.max(1, currentPage - 1))}
                     disabled={currentPage === 1}
                     className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -83,6 +87,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
                         <span key={`ellipsis-${idx}`} className="px-2 text-sm text-gray-400">…</span>
                     ) : (
                         <button
+                            type="button"
                             key={p}
                             onClick={() => onPageChange(p)}
                             className={`min-w-[2rem] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -96,6 +101,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
                     )
                 )}
                 <button
+                    type="button"
                     onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
                     disabled={currentPage === totalPages}
                     className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -285,6 +291,14 @@ const Disbursements = () => {
     const [actionOpen, setActionOpen] = useState(false);
     const [actionType, setActionType] = useState('release'); // 'release' or 'reject'
     const [remarks, setRemarks] = useState('');
+
+    // revolving fund (only relevant for release + cash-advance/reimbursement,
+    // and only when the request wasn't already funded at approval time)
+    const [fundInfo, setFundInfo] = useState(null); // { id, funding_code, funding_description, Amount } | null
+    const [fundLoading, setFundLoading] = useState(false);
+    const [fundChoice, setFundChoice] = useState('no'); // 'yes'|'no' — defaults to No
+    const REVOLVING_FUND_TABS = { 0: 'cash-advance', 2: 'reimbursement' }; // tab index -> type; tab 1 (liquidations) excluded
+    const FUND_LABELS = { ORF: 'Operations Revolving Fund (ORF)', ARF: 'Accounting Revolving Fund (ARF)' };
     const [notification, setNotification] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('approved');
@@ -337,12 +351,45 @@ const Disbursements = () => {
         }
     };
 
+    const openAction = async (type, row = null) => {
+        const request = row || selectedRequest;
+        if (row) setSelectedRequest(row);
+        setViewOpen(false);
+        setActionType(type);
+        setFundChoice('no');
+        setFundInfo(null);
+        setActionOpen(true);
+
+        // Only offer ARF when releasing, for cash-advance/reimbursement, and only
+        // if the request wasn't already funded by a revolving fund at approval time.
+        const approvalType = REVOLVING_FUND_TABS[activeTab];
+        if (type === 'release' && approvalType && !request?.funding_code) {
+            try {
+                setFundLoading(true);
+                const res = await api.get('/disbursements/revolving-fund');
+                if (res.data.success) setFundInfo(res.data.data);
+            } catch (error) {
+                console.error('Error fetching revolving fund info:', error);
+            } finally {
+                setFundLoading(false);
+            }
+        }
+    };
+
+    const requestAmount = selectedRequest
+        ? parseFloat(selectedRequest.requested_amount ?? selectedRequest.total_actual_amount ?? selectedRequest.total_amount ?? 0)
+        : 0;
+    const useRevolvingFund = actionType === 'release' && fundChoice === 'yes' && !!fundInfo;
+    const fundRemaining = fundInfo ? parseFloat(fundInfo.Amount) - requestAmount : null;
+    const fundInsufficient = useRevolvingFund && fundRemaining !== null && fundRemaining < 0;
+
     const handleAction = async () => {
         if (!selectedRequest) {
             console.error('handleAction called with no selectedRequest');
             setNotification({ message: 'No request selected. Please try again.', severity: 'error' });
             return;
         }
+        if (fundInsufficient) return;
 
         try {
             const typeMap = { 0: 'cash-advance', 1: 'liquidation', 2: 'reimbursement' };
@@ -350,7 +397,8 @@ const Disbursements = () => {
                 type: typeMap[activeTab],
                 id: selectedRequest.id,
                 action: actionType,
-                remarks: remarks
+                remarks: remarks,
+                useRevolvingFund,
             });
 
             if (res.data.success) {
@@ -361,6 +409,8 @@ const Disbursements = () => {
                 setActionOpen(false);
                 setRemarks('');
                 setSelectedRequest(null);
+                setFundInfo(null);
+                setFundChoice('no');
                 fetchPendingDisbursements();
                 setTimeout(() => setNotification(null), 3000);
             } else {
@@ -655,6 +705,7 @@ const Disbursements = () => {
                                 <td className="px-4 py-4">
                                     <div className="flex items-center justify-center gap-2">
                                         <button
+                                            type="button"
                                             onClick={() => handleView(row)}
                                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                             title="View Details"
@@ -663,6 +714,7 @@ const Disbursements = () => {
                                         </button>
                                         {row.status === 'approved' && (
                                             <button
+                                                type="button"
                                                 onClick={() => handleOpenEdit(row)}
                                                 className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors"
                                                 title="Edit Transaction (recorded in Audit Logs)"
@@ -673,14 +725,16 @@ const Disbursements = () => {
                                         {row.status === 'approved' && (
                                             <>
                                                 <button
-                                                    onClick={() => { setSelectedRequest(row); setActionType('release'); setActionOpen(true); }}
+                                                    type="button"
+                                                    onClick={() => openAction('release', row)}
                                                     className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
                                                     title="Release Funds"
                                                 >
                                                     <CheckCircle className="w-4 h-4" />
                                                 </button>
                                                 <button
-                                                    onClick={() => { setSelectedRequest(row); setActionType('reject'); setActionOpen(true); }}
+                                                    type="button"
+                                                    onClick={() => openAction('reject', row)}
                                                     className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
                                                     title="Reject"
                                                 >
@@ -710,7 +764,7 @@ const Disbursements = () => {
     return (
         <div>
             <div className="mb-8">
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">Disbursements 💸</h1>
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">Disbursements</h1>
                 <p className="text-gray-600">Release and manage approved disbursement requests</p>
             </div>
 
@@ -766,6 +820,7 @@ const Disbursements = () => {
                     <div className="flex px-4">
                         {tabs.map((tab, index) => (
                             <button
+                                type="button"
                                 key={index}
                                 onClick={() => handleTabChange(index)}
                                 className={`px-6 py-4 text-sm font-semibold border-b-2 transition-colors ${
@@ -804,6 +859,7 @@ const Disbursements = () => {
                         <div className="flex flex-wrap gap-2">
                             {/* All Requests pill */}
                             <button
+                                type="button"
                                 onClick={() => handleStatusFilterChange('all')}
                                 className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
                                     statusFilter === 'all'
@@ -834,6 +890,7 @@ const Disbursements = () => {
 
                                 return (
                                     <button
+                                        type="button"
                                         key={status}
                                         onClick={() => handleStatusFilterChange(status)}
                                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${colorClass}`}
@@ -882,14 +939,14 @@ const Disbursements = () => {
                                 <Button
                                     variant="danger"
                                     startIcon={<XCircle className="w-4 h-4" />}
-                                    onClick={() => { setViewOpen(false); setActionType('reject'); setActionOpen(true); }}
+                                    onClick={() => openAction('reject')}
                                 >
                                     Reject
                                 </Button>
                                 <Button
                                     variant="success"
                                     startIcon={<CheckCircle className="w-4 h-4" />}
-                                    onClick={() => { setViewOpen(false); setActionType('release'); setActionOpen(true); }}
+                                    onClick={() => openAction('release')}
                                 >
                                     Release Funds
                                 </Button>
@@ -898,6 +955,12 @@ const Disbursements = () => {
                     </>
                 }
             >
+                {selectedRequest?.funding_code && (
+                    <div className="mb-4 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 shrink-0" />
+                        Funded via {FUND_LABELS[selectedRequest.funding_code] || selectedRequest.funding_code}
+                    </div>
+                )}
                 {selectedRequest && <RequestTimeline request={selectedRequest} />}
                 {renderViewForm()}
             </Modal>
@@ -915,7 +978,7 @@ const Disbursements = () => {
                             variant={actionType === 'release' ? 'success' : 'danger'}
                             startIcon={actionType === 'release' ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                             onClick={handleAction}
-                            disabled={actionType === 'reject' && !remarks.trim()}
+                            disabled={(actionType === 'reject' && !remarks.trim()) || fundInsufficient}
                         >
                             {actionType === 'release' ? 'Confirm Release' : 'Confirm Rejection'}
                         </Button>
@@ -938,6 +1001,48 @@ const Disbursements = () => {
                         required
                         autoFocus
                     />
+                )}
+                {actionType === 'release' && fundLoading && (
+                    <p className="text-sm text-gray-400 mb-2">Checking revolving fund availability…</p>
+                )}
+                {actionType === 'release' && !fundLoading && fundInfo && (
+                    <>
+                        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex flex-col gap-1">
+                            <span className=" font-bold text-gray-800">Request Amount:</span> {formatPeso(requestAmount)}
+                            <span className=" font-bold text-gray-800">Available Fund:</span> {formatPeso(fundInfo.Amount)}
+                        </div>
+                        <div className={`mb-4 p-3 rounded-lg text-sm text-gray-800 flex flex-col gap-1 border ${
+                            fundInsufficient ? 'bg-red-50 border-red-300' : 'bg-blue-50 border-blue-200'
+                        }`}>
+                            <span className=" font-bold text-gray-800">Funding Source:</span>
+                                    <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="useRevolvingFund"
+                                            value="yes"
+                                            checked={fundChoice === 'yes'}
+                                            onChange={() => setFundChoice('yes')}
+                                        />
+                                        Accounting Revolving Fund
+                                    </label>
+                                    <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="useRevolvingFund"
+                                            value="no"
+                                            checked={fundChoice === 'no'}
+                                            onChange={() => setFundChoice('no')}
+                                        />
+                                        Regular Disbursement
+                                    </label>
+                        </div>
+                        {fundChoice === 'yes' && fundInsufficient && (
+                            <p className="text-sm text-red-600 font-medium mt-2">
+                                Insufficient Revolving Fund Balance
+                            </p>
+                        )}
+                    </>
+
                 )}
             </Modal>
 

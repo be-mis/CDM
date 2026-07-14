@@ -7,7 +7,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from '../components
 import {
   HandCoins, Receipt, Coins, TrendingUp, CheckCircle, XCircle, Eye,
   BarChart3, ClockAlert, Download, Search, ChevronDown, Filter, ArrowUpDown, CalendarDays, Banknote, Timer,
-  ThumbsDown, Paperclip, ChevronRight, Clock, Send, FileEdit,
+  ThumbsDown, Paperclip, ChevronRight, Clock, Send, FileEdit, CreditCard,
 } from 'lucide-react';
 import { formatLongDate } from '../utils/formatters';
 import CashAdvanceForm from '../components/CashAdvanceForm';
@@ -320,6 +320,13 @@ const ManagerDashboard = () => {
   const [actionType, setActionType]   = useState('approve'); // 'approve'|'reject'
   const [remarks, setRemarks]         = useState('');
 
+  // revolving fund (only relevant for approve + cash-advance/reimbursement)
+  const [fundInfo, setFundInfo]       = useState(null);   // { id, funding_code, funding_description, Amount } | null
+  const [fundLoading, setFundLoading] = useState(false);
+  const [fundChoice, setFundChoice]   = useState('no');    // 'yes'|'no' — defaults to No
+  const REVOLVING_FUND_TYPES = ['cash-advance', 'reimbursement'];
+  const FUND_LABELS = { ORF: 'Operations Revolving Fund (ORF)', ARF: 'Accounting Revolving Fund (ARF)' };
+
   // ── fetch ──────────────────────────────────────────────────────────────────
   const fetchPendingApprovals = useCallback(async () => {
     try {
@@ -533,21 +540,46 @@ const ManagerDashboard = () => {
     }
   };
 
-  const openAction = (type) => {
+  const openAction = async (type, row = null) => {
+    const request = row || selectedRequest;
+    if (row) setSelectedRequest(row);
     setActionType(type);
     setRemarks('');
+    setFundChoice('no');
+    setFundInfo(null);
     setViewOpen(false);
     setActionOpen(true);
+
+    // Only cash advances and reimbursements can draw from a revolving fund,
+    // and only when approving.
+    const departmentId = request?.department_id;
+    if (type === 'approve' && departmentId && REVOLVING_FUND_TYPES.includes(request?.approvalType)) {
+      try {
+        setFundLoading(true);
+        const res = await api.get('/approvals/revolving-fund', { params: { department_id: departmentId } });
+        if (res.data.success) setFundInfo(res.data.data);
+      } catch (error) {
+        console.error('Error fetching revolving fund info:', error);
+      } finally {
+        setFundLoading(false);
+      }
+    }
   };
+
+  const useRevolvingFund = actionType === 'approve' && fundChoice === 'yes' && !!fundInfo;
+  const fundRemaining = fundInfo ? parseFloat(fundInfo.Amount) - (selectedRequest?.amount || 0) : null;
+  const fundInsufficient = useRevolvingFund && fundRemaining !== null && fundRemaining < 0;
 
   const handleAction = async () => {
     if (!selectedRequest) return;
+    if (fundInsufficient) return; // guarded in the UI too, but don't submit either way
     try {
       const res = await api.post('/approvals/process', {
         type:    selectedRequest.approvalType,
         id:      selectedRequest.id,
         action:  actionType,
         remarks,
+        useRevolvingFund,
       });
       if (res.data.success) {
         setNotification({
@@ -557,13 +589,16 @@ const ManagerDashboard = () => {
         setActionOpen(false);
         setRemarks('');
         setSelectedRequest(null);
+        setFundInfo(null);
+        setFundChoice('no');
         fetchPendingApprovals();
         fetchStatsData();
         setTimeout(() => setNotification(null), 4000);
       }
     } catch (error) {
       console.error('Error processing approval:', error);
-      setNotification({ message: 'Error processing action. Please try again.', severity: 'error' });
+      const msg = error?.response?.data?.message || 'Error processing action. Please try again.';
+      setNotification({ message: msg, severity: 'error' });
     }
   };
 
@@ -796,6 +831,7 @@ const ManagerDashboard = () => {
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-1">
                             <button
+                              type="button"
                               onClick={() => handleReview(row)}
                               className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
                               title="Review Details"
@@ -803,14 +839,16 @@ const ManagerDashboard = () => {
                               <Eye className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => { setSelectedRequest(row); setActionType('approve'); setActionOpen(true); }}
+                              type="button"
+                              onClick={() => openAction('approve', row)}
                               className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
                               title="Approve"
                             >
                               <CheckCircle className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => { setSelectedRequest(row); setActionType('reject'); setActionOpen(true); }}
+                              type="button"
+                              onClick={() => openAction('reject', row)}
                               className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
                               title="Reject"
                             >
@@ -964,6 +1002,12 @@ const ManagerDashboard = () => {
           <Loading message="Loading request details…" />
         ) : viewData ? (
           <>
+            {viewData.funding_code && (
+              <div className="mb-4 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex items-center gap-2">
+                <CreditCard className="w-4 h-4 shrink-0" />
+                Funded via {FUND_LABELS[viewData.funding_code] || viewData.funding_code}
+              </div>
+            )}
             <RequestTimeline request={viewData} />
             {renderViewForm()}
           </>
@@ -988,7 +1032,7 @@ const ManagerDashboard = () => {
               variant={actionType === 'approve' ? 'success' : 'danger'}
               startIcon={actionType === 'approve' ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
               onClick={handleAction}
-              disabled={actionType === 'reject' && !remarks.trim()}
+              disabled={(actionType === 'reject' && !remarks.trim()) || fundInsufficient}
             >
               {actionType === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
             </Button>
@@ -1011,6 +1055,48 @@ const ManagerDashboard = () => {
             required
             autoFocus
           />
+        )}
+        {actionType === 'approve' && fundLoading && (
+          <p className="text-sm text-gray-400 mb-2">Checking revolving fund availability…</p>
+        )}
+        {actionType === 'approve' && !fundLoading && fundInfo && (
+          <>
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex flex-col gap-1">
+            <span className=" font-bold text-gray-800">Request Amount:</span> {formatPeso(selectedRequest?.amount)}
+            <span className=" font-bold text-gray-800">Available Fund:</span> {formatPeso(fundInfo.Amount)}
+          </div>
+
+            <div className={`text-left rounded-lg p-4 mb-2 border ${
+              fundInsufficient ? 'bg-red-50 border-red-300' : 'border-gray-200'
+            }`}>
+                <span className=" font-bold text-gray-800">Funding Source:</span>
+                  <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="useRevolvingFund"
+                      value="yes"
+                      checked={fundChoice === 'yes'}
+                      onChange={() => setFundChoice('yes')}
+                    />
+                    Operations Revolving Fund
+                  </label>
+                  <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="useRevolvingFund"
+                      value="no"
+                      checked={fundChoice === 'no'}
+                      onChange={() => setFundChoice('no')}
+                    />
+                    Regular Disbursement
+                  </label>
+            </div>
+              {fundChoice === 'yes' && fundInsufficient && (
+                <p className="text-sm text-red-600 font-medium mt-2">
+                  Insufficient Revolving Fund Balance
+                </p>
+              )}
+          </>
         )}
       </Modal>
 

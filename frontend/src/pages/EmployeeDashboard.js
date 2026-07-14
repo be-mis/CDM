@@ -246,14 +246,29 @@ const buildTimelineSteps = (request) => {
 
 const normalizeCashAdvanceView = (data, fallback = {}) => ({
   id: data.id,
+  // BUG FIX: only `refNumber` was set here, but CashAdvanceForm reads
+  // `advanceNumber` (see MyRequests.js line 334) — so the Cash Advance
+  // Number field was always blank even though the record had a value.
+  advanceNumber: data.advance_number || data.advanceNumber || fallback.refNumber,
   refNumber: data.advance_number || data.advanceNumber || fallback.refNumber,
+  advanceDate: data.advance_date || data.advanceDate || fallback.requestDate,
   requestDate: data.advance_date || data.advanceDate || fallback.requestDate,
   requestedBy: data.requested_by || data.requestedBy,
   department: data.department,
   employeeId: data.employee_id || data.employeeId,
+  // BUG FIX: businessUnit was never mapped at all.
+  businessUnit: data.business_unit || data.businessUnit || '',
   purpose: data.purpose,
+  // BUG FIX: amount was never mapped here, so the view modal showed a blank amount.
+  requestedAmount: data.requested_amount ?? data.requestedAmount ?? fallback.amount ?? 0,
+  amount: data.requested_amount ?? data.requestedAmount ?? fallback.amount ?? 0,
+  approvedAmount: data.approved_amount ?? data.approvedAmount ?? 0,
   projectName: data.project_name || data.projectName,
   destination: data.destination,
+  // BUG FIX: dateNeeded was never mapped at all — CashAdvanceForm reads it
+  // directly (see MyRequests.js line 341), so it always showed blank.
+  dateNeeded: data.date_needed || data.dateNeeded || '',
+  dateCoverage: data.date_coverage || data.dateCoverage || '',
   startDate: data.start_date || data.startDate,
   endDate: data.end_date || data.endDate,
   activities: Array.isArray(data.activities)
@@ -265,6 +280,7 @@ const normalizeCashAdvanceView = (data, fallback = {}) => ({
       }))
     : [],
   paymentMethod: data.payment_method || data.paymentMethod,
+  gcashName: data.gcash_name || data.gcashName || '',
   paymentReason: data.payment_reason || data.paymentReason || '',
   checkNumber: data.check_number || data.checkNumber,
   accountNumber: data.account_number || data.accountNumber,
@@ -273,13 +289,12 @@ const normalizeCashAdvanceView = (data, fallback = {}) => ({
   remarks: data.remarks,
   reject_remarks: data.reject_remarks || '',
   release_remarks: data.release_remarks || '',
-  items: Array.isArray(data.items)
-    ? data.items.map((it) => ({
-        id: it.id,
-        description: it.description || it.item_description || '',
-        estimatedAmount: it.estimated_amount ?? it.estimatedAmount ?? it.amount ?? 0,
-      }))
-    : [],
+  // BUG FIX: this used to re-map each item into a bespoke {description,
+  // estimatedAmount} shape. MyRequests.js — the page where this reliably
+  // works — just passes `data.items` straight through, because CashAdvanceForm
+  // is written to read the backend's actual row shape directly. Match that.
+  items: data.items || [],
+  otherItems: data.otherItems || [],
   attachments: data.attachments || [],
   // Timeline fields
   created_at: data.created_at || data.advance_date,
@@ -300,6 +315,12 @@ const normalizeLiquidationView = (data, fallback = {}) => ({
   cashAdvanceNumber: data.cash_advance_number || fallback.cashAdvanceRef,
   submittedBy: data.submitted_by || fallback.submittedBy,
   department: data.department,
+  // BUG FIX: getLiquidationById also returns these travel-coverage dates
+  // (aliased from start_date/end_date); they were never mapped, so the
+  // "Date Coverage" fields in the view modal were always blank.
+  dateCoverageFrom: data.date_coverage_from || fallback.dateCoverageFrom,
+  dateCoverageTo: data.date_coverage_to || fallback.dateCoverageTo,
+  advanceType: data.advance_type || fallback.advanceType,
   totalAdvanceAmount: data.total_advance_amount || fallback.totalExpenses || 0,
   totalActualAmount: data.total_actual_amount || 0,
   refundAmount: data.refund_amount || 0,
@@ -311,18 +332,17 @@ const normalizeLiquidationView = (data, fallback = {}) => ({
   reject_remarks: data.reject_remarks || '',
   release_remarks: data.release_remarks || '',
   status: data.status,
-  items: Array.isArray(data.items)
-    ? data.items.map((it) => ({
-        id: it.id,
-        description: it.description || '',
-        category: it.category || '',
-        estimatedAmount: it.estimated_amount ?? it.estimatedAmount ?? 0,
-        actualAmount: it.actual_amount ?? it.actualAmount ?? 0,
-        receiptNumber: it.receipt_number || '',
-        vendor: it.vendor || '',
-        expenseDate: it.expense_date || '',
-      }))
-    : [],
+  // BUG FIX: this used to re-map each expense row into a bespoke
+  // {description, receipt_number, expense_date} shape that matched neither
+  // the backend's real field names (particulars/receiptNumber/expenseDate,
+  // already camelCased by getLiquidationById) nor LiquidationForm's expected
+  // props — so description/receipt/date were always blank. MyRequests.js
+  // (where this works) passes `data.items` straight through; do the same.
+  items: data.items || [],
+  // BUG FIX: transportation/itinerary was never read here at all, so the
+  // whole section was missing for travel-type liquidations. Pass it through
+  // exactly like MyRequests.js does.
+  transportation: data.transportation || [],
   attachments: data.attachments || [],
   // Timeline fields
   created_at: data.created_at || data.liquidation_date,
@@ -653,19 +673,31 @@ const EmployeeDashboard = () => {
         if (response?.data?.success) {
           setViewData(normalizeCashAdvanceView(response.data.data, request));
         } else {
-          setViewData({ ...request, type: REQUEST_TYPES.CASH_ADVANCE });
+          // BUG FIX: previously fell back to the raw, un-normalized request object
+          // (snake_case fields, no items/activities), which the form couldn't render
+          // correctly. Run it through the same normalizer so the shape is consistent,
+          // and surface that the detail fetch failed.
+          setViewData(normalizeCashAdvanceView(request, request));
+          setErrors((prev) => ({ ...prev, cashAdvances: 'Could not load full details — showing limited info.' }));
         }
       } else if (request.type === REQUEST_TYPES.LIQUIDATION) {
         const response = await api.get(`/liquidations/${request.id}`);
         if (response?.data?.success) {
           setViewData(normalizeLiquidationView(response.data.data, request));
         } else {
-          setViewData({ ...request, type: REQUEST_TYPES.LIQUIDATION });
+          setViewData(normalizeLiquidationView(request, request));
+          setErrors((prev) => ({ ...prev, liquidations: 'Could not load full details — showing limited info.' }));
         }
       }
     } catch (err) {
       console.error('Error fetching request details for view', err);
-      setViewData({ ...request, type: request.type });
+      if (request.type === REQUEST_TYPES.CASH_ADVANCE) {
+        setViewData(normalizeCashAdvanceView(request, request));
+      } else if (request.type === REQUEST_TYPES.LIQUIDATION) {
+        setViewData(normalizeLiquidationView(request, request));
+      } else {
+        setViewData({ ...request, type: request.type });
+      }
     } finally {
       setViewLoading(false);
     }
@@ -706,7 +738,12 @@ const EmployeeDashboard = () => {
   // sorted worst-first. Defined after handlers so useCallback refs are stable.
   const urgentItems = useMemo(() => {
     const items = [];
-    const PENDING_STALE_DAYS = 7;
+    // BUG FIX / RULE CHANGE: approvals are supposed to happen within 2 days
+    // of the request date, not 7. Flag anything still pending once it hits
+    // that SLA. Escalates to "Urgent" once it's double the SLA (4+ days) —
+    // same ratio the code used before (14d urgent vs 7d threshold).
+    const PENDING_STALE_DAYS = 2;
+    const PENDING_URGENT_DAYS = 4;
     const now = new Date();
 
     // 1. Pending liquidation deadlines (overdue / urgent / warning)
@@ -747,7 +784,7 @@ const EmployeeDashboard = () => {
           refNumber: ca.advance_number,
           purpose: ca.purpose,
           amount: ca.requested_amount,
-          urgency: days >= 14 ? URGENCY_LEVELS.URGENT : URGENCY_LEVELS.WARNING,
+          urgency: days >= PENDING_URGENT_DAYS ? URGENCY_LEVELS.URGENT : URGENCY_LEVELS.WARNING,
           daysLeft: null,
           reason: `Awaiting approval for ${days}d`,
           deadline: null,
@@ -772,7 +809,7 @@ const EmployeeDashboard = () => {
           refNumber: liq.liquidation_number,
           purpose: liq.remarks || liq.purpose,
           amount: liq.total_actual_amount,
-          urgency: days >= 14 ? URGENCY_LEVELS.URGENT : URGENCY_LEVELS.WARNING,
+          urgency: days >= PENDING_URGENT_DAYS ? URGENCY_LEVELS.URGENT : URGENCY_LEVELS.WARNING,
           daysLeft: null,
           reason: `Awaiting approval for ${days}d`,
           deadline: null,
@@ -797,7 +834,7 @@ const EmployeeDashboard = () => {
       <div className="mb-8 flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Welcome back, {displayName}! 👋
+            Welcome back, {displayName}!
           </h1>
           <p className="text-gray-600">Here's what's happening with your requests today</p>
         </div>
@@ -1022,6 +1059,7 @@ const EmployeeDashboard = () => {
                     </div>
                     <StatusChip status={request.status} />
                     <button
+                      type="button"
                       onClick={() => handleView(request)}
                       className="p-1.5 text-gray-600 hover:bg-gray-100 rounded transition-colors"
                     >
@@ -1110,6 +1148,7 @@ const EmployeeDashboard = () => {
 
                     {/* Action */}
                     <button
+                      type="button"
                       onClick={item.onAction}
                       className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${urgencyConfig.action}`}
                     >

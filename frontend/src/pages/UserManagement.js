@@ -55,6 +55,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
             </div>
             <div className="flex items-center gap-1">
                 <button
+                    type="button"
                     onClick={() => onPageChange(Math.max(1, currentPage - 1))}
                     disabled={currentPage === 1}
                     className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -67,6 +68,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
                         <span key={`ellipsis-${idx}`} className="px-2 text-sm text-gray-400">…</span>
                     ) : (
                         <button
+                            type="button"
                             key={p}
                             onClick={() => onPageChange(p)}
                             className={`min-w-[2rem] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -80,6 +82,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
                     )
                 )}
                 <button
+                    type="button"
                     onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
                     disabled={currentPage === totalPages}
                     className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -416,6 +419,7 @@ const UserManagement = () => {
                                 />
                                 {searchTerm && (
                                     <button
+                                        type="button"
                                         onClick={() => setSearchTerm('')}
                                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                                     >
@@ -433,6 +437,7 @@ const UserManagement = () => {
                                 Filters {hasActiveFilters ? `(${[searchTerm, roleFilter, statusFilter].filter(Boolean).length})` : ''}
                             </Button>
                             <button
+                                type="button"
                                 onClick={fetchUsers}
                                 className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                                 title="Refresh"
@@ -459,6 +464,7 @@ const UserManagement = () => {
                                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Role</label>
                                     <div className="flex flex-wrap gap-2">
                                         <button
+                                            type="button"
                                             onClick={() => { setRoleFilter(''); setPage(1); }}
                                             className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
                                                 !roleFilter ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -468,6 +474,7 @@ const UserManagement = () => {
                                         </button>
                                         {ROLES.map((role) => (
                                             <button
+                                                type="button"
                                                 key={role}
                                                 onClick={() => { setRoleFilter(role); setPage(1); }}
                                                 className={`px-3 py-1.5 rounded-full text-sm font-medium capitalize transition-colors whitespace-nowrap ${
@@ -488,6 +495,7 @@ const UserManagement = () => {
                                             { value: 'inactive', label: 'Inactive', color: 'bg-slate-500 text-white' },
                                         ].map((opt) => (
                                             <button
+                                                type="button"
                                                 key={opt.value || 'all'}
                                                 onClick={() => { setStatusFilter(opt.value); setPage(1); }}
                                                 className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
@@ -569,6 +577,7 @@ const UserManagement = () => {
                                                 <td className="px-4 py-4">
                                                     <div className="flex items-center justify-center gap-2">
                                                         <button
+                                                            type="button"
                                                             onClick={() => openEditForm(u)}
                                                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                                             title="Edit"
@@ -577,6 +586,7 @@ const UserManagement = () => {
                                                         </button>
                                                         {u.isActive === false ? (
                                                             <button
+                                                                type="button"
                                                                 onClick={() => handleReactivate(u)}
                                                                 disabled={reactivatingId === u.id}
                                                                 className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
@@ -586,6 +596,7 @@ const UserManagement = () => {
                                                             </button>
                                                         ) : (
                                                             <button
+                                                                type="button"
                                                                 onClick={() => setDeactivateTarget(u)}
                                                                 disabled={String(currentUser?.id) === String(u.id)}
                                                                 className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"

@@ -122,8 +122,8 @@ const createCashAdvance = async (req, res) => {
           advance_number, advance_date, requested_by, department_id, 
           employee_id, business_unit, purpose, project_name, destination, start_date, 
           end_date, requested_amount, payment_method, gcash_name, 
-          account_number, date_needed, date_coverage, liquidation_deadline, status, created_by, advance_type, approved_by, approved_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          account_number, date_needed, date_coverage, liquidation_deadline, status, created_by, advance_type, approved_by, approved_at, funding_code
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
           advanceNumber, advanceDate, requestedBy, departmentId,
           employeeId, businessUnit || null, purpose, projectName || null,
@@ -134,7 +134,8 @@ const createCashAdvance = async (req, res) => {
           computedLiquidationDeadline || null, status || 'draft', createdBy,
           advanceType || 'cash',
           approvedBy,
-          approvedAt
+          approvedAt,
+          'RD'
       ]
     );
 
@@ -561,6 +562,7 @@ const getCashAdvances = async (req, res) => {
         ca.id, ca.advance_number, ca.advance_date, ca.requested_by,
         d.name as department, ca.purpose, ca.requested_amount,
         ca.approved_amount, ca.status, ca.payment_method, ca.advance_type,
+        ca.funding_code,
         ca.created_at, ca.updated_at, ca.approved_at,
         ca.approved_by as approver_name,
         ca.released_by, ca.released_at,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-    CheckCircle, XCircle, Eye, X, Hourglass, Banknote,
+    CheckCircle, XCircle, Eye, X, Hourglass, Banknote, CreditCard,
     Search, ChevronLeft, ChevronRight, Clock, Send, FileEdit, ClockAlert,
 } from 'lucide-react';
 import api from '../api';
@@ -34,6 +34,9 @@ const formatDateTime = (value) => {
 // A pending request is considered overdue once it's been sitting for longer
 // than this many days without a decision.
 const OVERDUE_DAYS = 3;
+
+const formatPeso = (amount) =>
+    `₱${parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Pulls whichever "submitted" timestamp field the record happens to have.
 const getSubmittedDate = (item) => {
@@ -103,6 +106,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
             </div>
             <div className="flex items-center gap-1">
                 <button
+                    type="button"
                     onClick={() => onPageChange(Math.max(1, currentPage - 1))}
                     disabled={currentPage === 1}
                     className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -115,6 +119,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
                         <span key={`ellipsis-${idx}`} className="px-2 text-sm text-gray-400">…</span>
                     ) : (
                         <button
+                            type="button"
                             key={p}
                             onClick={() => onPageChange(p)}
                             className={`min-w-[2rem] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -128,6 +133,7 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
                     )
                 )}
                 <button
+                    type="button"
                     onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
                     disabled={currentPage === totalPages}
                     className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -322,6 +328,13 @@ const Approvals = () => {
     const [actionOpen, setActionOpen] = useState(false);
     const [actionType, setActionType] = useState('approve'); // 'approve' or 'reject'
     const [remarks, setRemarks] = useState('');
+
+    // revolving fund (only relevant for approve + cash-advance/reimbursement)
+    const [fundInfo, setFundInfo] = useState(null);   // { id, funding_code, funding_description, Amount } | null
+    const [fundLoading, setFundLoading] = useState(false);
+    const [fundChoice, setFundChoice] = useState('no'); // 'yes'|'no' — defaults to No
+    const REVOLVING_FUND_TABS = { 0: 'cash-advance', 2: 'reimbursement' }; // tab index -> approvalType; tab 1 (liquidations) excluded
+    const FUND_LABELS = { ORF: 'Operations Revolving Fund (ORF)', ARF: 'Accounting Revolving Fund (ARF)' };
     const [notification, setNotification] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('pending');
@@ -369,14 +382,47 @@ const Approvals = () => {
         }
     };
 
+    const openAction = async (type, row = null) => {
+        const request = row || selectedRequest;
+        if (row) setSelectedRequest(row);
+        setViewOpen(false);
+        setActionType(type);
+        setFundChoice('no');
+        setFundInfo(null);
+        setActionOpen(true);
+
+        const departmentId = request?.department_id;
+        const approvalType = REVOLVING_FUND_TABS[activeTab];
+        if (type === 'approve' && departmentId && approvalType) {
+            try {
+                setFundLoading(true);
+                const res = await api.get('/approvals/revolving-fund', { params: { department_id: departmentId } });
+                if (res.data.success) setFundInfo(res.data.data);
+            } catch (error) {
+                console.error('Error fetching revolving fund info:', error);
+            } finally {
+                setFundLoading(false);
+            }
+        }
+    };
+
+    const requestAmount = selectedRequest
+        ? parseFloat(selectedRequest.requested_amount ?? selectedRequest.total_actual_amount ?? selectedRequest.total_amount ?? 0)
+        : 0;
+    const useRevolvingFund = actionType === 'approve' && fundChoice === 'yes' && !!fundInfo;
+    const fundRemaining = fundInfo ? parseFloat(fundInfo.Amount) - requestAmount : null;
+    const fundInsufficient = useRevolvingFund && fundRemaining !== null && fundRemaining < 0;
+
     const handleAction = async () => {
+        if (fundInsufficient) return;
         try {
             const typeMap = { 0: 'cash-advance', 1: 'liquidation', 2: 'reimbursement' };
             const res = await api.post('/approvals/process', {
                 type: typeMap[activeTab],
                 id: selectedRequest.id,
                 action: actionType,
-                remarks: remarks
+                remarks: remarks,
+                useRevolvingFund,
             });
 
             if (res.data.success) {
@@ -387,12 +433,15 @@ const Approvals = () => {
                 setActionOpen(false);
                 setRemarks('');
                 setSelectedRequest(null);
+                setFundInfo(null);
+                setFundChoice('no');
                 fetchPendingApprovals();
                 setTimeout(() => setNotification(null), 3000);
             }
         } catch (error) {
             console.error('Error processing approval:', error);
-            setNotification({ message: 'Error processing action', severity: 'error' });
+            const msg = error?.response?.data?.message || 'Error processing action';
+            setNotification({ message: msg, severity: 'error' });
         }
     };
 
@@ -604,6 +653,7 @@ const Approvals = () => {
                                 <td className="px-4 py-4">
                                     <div className="flex items-center justify-center gap-2">
                                         <button
+                                            type="button"
                                             onClick={() => handleView(row)}
                                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                             title="View Details"
@@ -613,14 +663,16 @@ const Approvals = () => {
                                         {status === 'pending' && (
                                             <>
                                                 <button
-                                                    onClick={() => { setSelectedRequest(row); setActionType('approve'); setActionOpen(true); }}
+                                                    type="button"
+                                                    onClick={() => openAction('approve', row)}
                                                     className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
                                                     title="Approve"
                                                 >
                                                     <CheckCircle className="w-4 h-4" />
                                                 </button>
                                                 <button
-                                                    onClick={() => { setSelectedRequest(row); setActionType('reject'); setActionOpen(true); }}
+                                                    type="button"
+                                                    onClick={() => openAction('reject', row)}
                                                     className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
                                                     title="Reject"
                                                 >
@@ -666,7 +718,7 @@ const Approvals = () => {
     return (
         <div>
             <div className="mb-8">
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">Approvals ✅</h1>
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">Approvals</h1>
                 <p className="text-gray-600">Review and process disbursement requests</p>
             </div>
 
@@ -737,6 +789,7 @@ const Approvals = () => {
                     <div className="flex px-4">
                         {tabs.map((tab, index) => (
                             <button
+                                type="button"
                                 key={index}
                                 onClick={() => handleTabChange(index)}
                                 className={`px-6 py-4 text-sm font-semibold border-b-2 transition-colors ${
@@ -775,6 +828,7 @@ const Approvals = () => {
                         <div className="flex flex-wrap gap-2">
                             {/* All Requests pill */}
                             <button
+                                type="button"
                                 onClick={() => handleStatusFilterChange('all')}
                                 className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
                                     statusFilter === 'all'
@@ -808,6 +862,7 @@ const Approvals = () => {
 
                                 return (
                                     <button
+                                        type="button"
                                         key={status}
                                         onClick={() => handleStatusFilterChange(status)}
                                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${colorClass}`}
@@ -873,14 +928,14 @@ const Approvals = () => {
                                 <Button
                                     variant="danger"
                                     startIcon={<XCircle className="w-4 h-4" />}
-                                    onClick={() => { setViewOpen(false); setActionType('reject'); setActionOpen(true); }}
+                                    onClick={() => openAction('reject')}
                                 >
                                     Reject
                                 </Button>
                                 <Button
                                     variant="success"
                                     startIcon={<CheckCircle className="w-4 h-4" />}
-                                    onClick={() => { setViewOpen(false); setActionType('approve'); setActionOpen(true); }}
+                                    onClick={() => openAction('approve')}
                                 >
                                     Approve
                                 </Button>
@@ -889,6 +944,12 @@ const Approvals = () => {
                     </>
                 }
             >
+                {selectedRequest?.funding_code && (
+                    <div className="mb-4 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 shrink-0" />
+                        Funded via {FUND_LABELS[selectedRequest.funding_code] || selectedRequest.funding_code}
+                    </div>
+                )}
                 {selectedRequest && <RequestTimeline request={selectedRequest} />}
                 {renderViewForm()}
             </Modal>
@@ -907,7 +968,7 @@ const Approvals = () => {
                             variant={actionType === 'approve' ? 'success' : 'danger'}
                             startIcon={actionType === 'approve' ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                             onClick={handleAction}
-                            disabled={actionType === 'reject' && !remarks.trim()}
+                            disabled={(actionType === 'reject' && !remarks.trim()) || fundInsufficient}
                         >
                             {actionType === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
                         </Button>
@@ -930,6 +991,48 @@ const Approvals = () => {
                         required
                         autoFocus
                     />
+                )}
+                {actionType === 'approve' && fundLoading && (
+                    <p className="text-sm text-gray-400 mb-2">Checking revolving fund availability…</p>
+                )}
+                {actionType === 'approve' && !fundLoading && fundInfo && (
+                    <>
+                        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex flex-col gap-1">
+                            <span className=" font-bold text-gray-800">Request Amount:</span> {formatPeso(selectedRequest.calculated_amount || selectedRequest.requested_amount || selectedRequest.total_actual_amount || selectedRequest.total_amount || 0)}
+                            <span className=" font-bold text-gray-800">Available Fund:</span> {formatPeso(fundInfo.Amount)}
+                        </div>
+                        
+                        <div className={`text-left rounded-lg p-4 mb-2 border ${
+                            fundInsufficient ? 'bg-red-50 border-red-300' : 'border-gray-200'
+                        }`}>
+                            <span className=" font-bold text-gray-800">Funding Source:</span>
+                                <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="useRevolvingFund"
+                                        value="yes"
+                                        checked={fundChoice === 'yes'}
+                                        onChange={() => setFundChoice('yes')}
+                                    />
+                                    {fundInfo.funding_description}
+                                </label>
+                                <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="useRevolvingFund"
+                                        value="no"
+                                        checked={fundChoice === 'no'}
+                                        onChange={() => setFundChoice('no')}
+                                    />
+                                    Regular Disbursement
+                                </label>
+                        </div>
+                        {fundChoice === 'yes' && fundInsufficient && (
+                            <p className="text-sm text-red-600 font-medium mt-2">
+                              Insufficient Revolving Fund Balance
+                            </p>
+                        )}
+                    </>
                 )}
             </Modal>
         </div>

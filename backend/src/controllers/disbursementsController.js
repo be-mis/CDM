@@ -61,9 +61,47 @@ const getPendingDisbursements = async (req, res) => {
   }
 };
 
+// ─── GET Accounting Revolving Fund info ───────────────────────────────────────
+// Always resolves by funding_code (default 'ARF'), NOT by department — unlike
+// Approvals' revolving fund lookup, Accounting releases funds for every
+// department, not just its own.
+// GET /disbursements/revolving-fund?funding_code=ARF
+const getRevolvingFund = async (req, res) => {
+  try {
+    const fundingCode = (req.query.funding_code || 'ARF').toUpperCase();
+    const [rows] = await pool.query(
+      `SELECT id, department, funding_code, funding_description, Amount
+       FROM revolving_funds
+       WHERE funding_code = ?`,
+      [fundingCode],
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: rows.length > 0 ? rows[0] : null,
+    });
+  } catch (error) {
+    console.error('Error fetching accounting revolving fund:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching revolving fund',
+      error: error.message,
+    });
+  }
+};
+
+// Which request types can be funded from the Accounting Revolving Fund at
+// release time, and which column holds their own reference number — matches
+// revolving_funds_history.transaction_number. Liquidations are excluded, same
+// as at approval time (they aren't in revolving_funds_history's enum).
+const REVOLVING_FUND_ELIGIBLE_TYPES = {
+  'cash-advance':  { transactionType: 'cash_advance',  numberColumn: 'advance_number' },
+  'reimbursement': { transactionType: 'reimbursement', numberColumn: 'reimbursement_number' },
+};
+
 // ─── POST  process disbursement (release or reject) ──────────────────────────
 const processDisbursement = async (req, res) => {
-  const { type, id, action, remarks } = req.body; // action: 'release' | 'reject'
+  const { type, id, action, remarks, useRevolvingFund } = req.body; // action: 'release' | 'reject'
   const userName = req.user?.name;
 
   if (!['release', 'reject'].includes(action)) {
@@ -89,9 +127,13 @@ const processDisbursement = async (req, res) => {
   const amountColumn = tableName === 'cash_advances' ? 'requested_amount' : 'total_actual_amount';
 
   try {
-    // Verify record exists and is approved — also grab the amount for the audit log
+    // Verify record exists and is approved — also grab the amount, funding_code
+    // (to know if a revolving fund already covered this at approval time), and
+    // this request's own reference number (needed for revolving_funds_history).
+    const eligibility = REVOLVING_FUND_ELIGIBLE_TYPES[type];
+    const numberColumn = eligibility ? eligibility.numberColumn : null;
     const [request] = await pool.query(
-      `SELECT id, status, ${amountColumn} AS amount FROM \`${tableName}\` WHERE id = ? LIMIT 1`,
+      `SELECT id, status, department_id, funding_code, ${amountColumn} AS amount${numberColumn ? `, ${numberColumn} AS transaction_number` : ''} FROM \`${tableName}\` WHERE id = ? LIMIT 1`,
       [id],
     );
     if (request.length === 0) {
@@ -109,24 +151,115 @@ const processDisbursement = async (req, res) => {
     // Release remarks go to release_remarks; rejection remarks overwrite reject_remarks
     const remarksColumn = action === 'reject' ? 'reject_remarks' : 'release_remarks';
 
-    // NOTE: this UPDATE was previously duplicated (ran twice back to back) — removed the extra copy
-    await pool.query(
-      `UPDATE \`${tableName}\`
-       SET status          = ?,
-           released_by     = ?,
-           released_at     = NOW(),
-           \`${remarksColumn}\` = ?
-       WHERE id = ?`,
-      [newStatus, userName, remarks || null, id],
-    );
+    const wantsRevolvingFund = action === 'release' && (useRevolvingFund === true || useRevolvingFund === 'true');
 
-    if (type === 'cash-advance' && action === 'release') {
-      await pool.query(
-        `UPDATE cash_advances
-         SET liquidation_deadline = COALESCE(liquidation_deadline, DATE_ADD(NOW(), INTERVAL 3 DAY))
-         WHERE id = ?`,
-        [id],
+    if (wantsRevolvingFund) {
+      if (!eligibility) {
+        return res.status(400).json({
+          success: false,
+          message: 'This request type cannot be funded from a revolving fund',
+        });
+      }
+      if (request[0].funding_code) {
+        return res.status(400).json({
+          success: false,
+          message: `Request is already funded via ${request[0].funding_code}`,
+        });
+      }
+
+      const [fundRows] = await pool.query(
+        `SELECT id, Amount, funding_code, funding_description FROM revolving_funds WHERE funding_code = 'ARF' FOR UPDATE`,
       );
+      if (fundRows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Accounting Revolving Fund is not configured',
+        });
+      }
+
+      const fund = fundRows[0];
+      const fundBalance = parseFloat(fund.Amount);
+      const amountNeeded = parseFloat(request[0].amount);
+
+      if (fundBalance < amountNeeded) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fund is not enough to cover the total amount requested',
+          remainingFund: fundBalance,
+        });
+      }
+
+      const balanceAfter = fundBalance - amountNeeded;
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+
+        await connection.query(
+          `UPDATE \`${tableName}\`
+           SET status = ?, released_by = ?, released_at = NOW(), \`${remarksColumn}\` = ?, funding_code = ?
+           WHERE id = ?`,
+          [newStatus, userName, remarks || null, fund.funding_code, id],
+        );
+
+        await connection.query(
+          `UPDATE revolving_funds SET Amount = ? WHERE id = ?`,
+          [balanceAfter, fund.id],
+        );
+
+        await connection.query(
+          `INSERT INTO revolving_funds_history
+             (transaction_type, transaction_id, transaction_number, revolving_fund_id, funding_code, total_amount, deducted_amount, balance_before, balance_after, approver_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [
+            eligibility.transactionType,
+            id,
+            request[0].transaction_number || null,
+            fund.id,
+            fund.funding_code,
+            amountNeeded,
+            amountNeeded,
+            fundBalance,
+            balanceAfter,
+            req.user.id,
+          ],
+        );
+
+        if (type === 'cash-advance') {
+          await connection.query(
+            `UPDATE cash_advances
+             SET liquidation_deadline = COALESCE(liquidation_deadline, DATE_ADD(NOW(), INTERVAL 3 DAY))
+             WHERE id = ?`,
+            [id],
+          );
+        }
+
+        await connection.commit();
+      } catch (txError) {
+        await connection.rollback();
+        throw txError;
+      } finally {
+        connection.release();
+      }
+    } else {
+      // NOTE: this UPDATE was previously duplicated (ran twice back to back) — removed the extra copy
+      await pool.query(
+        `UPDATE \`${tableName}\`
+         SET status          = ?,
+             released_by     = ?,
+             released_at     = NOW(),
+             \`${remarksColumn}\` = ?
+         WHERE id = ?`,
+        [newStatus, userName, remarks || null, id],
+      );
+
+      if (type === 'cash-advance' && action === 'release') {
+        await pool.query(
+          `UPDATE cash_advances
+           SET liquidation_deadline = COALESCE(liquidation_deadline, DATE_ADD(NOW(), INTERVAL 3 DAY))
+           WHERE id = ?`,
+          [id],
+        );
+      }
     }
 
     await logAudit({
@@ -134,7 +267,7 @@ const processDisbursement = async (req, res) => {
       action: `${type}_${newStatus}`, // e.g. cash-advance_released
       entity: tableName,
       entityId: id,
-      details: { amount: request[0].amount, remarks: remarks || null },
+      details: { amount: request[0].amount, remarks: remarks || null, usedRevolvingFund: wantsRevolvingFund },
       ip: req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || null
     });
 
@@ -155,4 +288,5 @@ const processDisbursement = async (req, res) => {
 module.exports = {
   getPendingDisbursements,
   processDisbursement,
+  getRevolvingFund,
 };

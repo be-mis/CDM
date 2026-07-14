@@ -361,6 +361,14 @@ const AccountingDashboard = () => {
   const [remarks,       setRemarks]       = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
+  // ── revolving fund (only relevant for release + cash-advance/reimbursement,
+  //    and only when the request wasn't already funded at approval time) ─────
+  const [fundInfo,    setFundInfo]    = useState(null); // { id, funding_code, funding_description, Amount } | null
+  const [fundLoading, setFundLoading] = useState(false);
+  const [fundChoice,  setFundChoice]  = useState('no');  // 'yes'|'no' — defaults to No
+  const REVOLVING_FUND_TYPES = ['cash-advance', 'reimbursement'];
+  const FUND_LABELS = { ORF: 'Operations Revolving Fund (ORF)', ARF: 'Accounting Revolving Fund (ARF)' };
+
   // ── fetch ──────────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     try {
@@ -530,16 +538,37 @@ const AccountingDashboard = () => {
     }
   };
 
-  const openAction = (row, verb) => {
+  const openAction = async (row, verb) => {
     setSelectedRequest(row);
     setActionVerb(verb);
     setRemarks('');
+    setFundChoice('no');
+    setFundInfo(null);
     setViewOpen(false);
     setActionOpen(true);
+
+    // Only offer ARF when releasing, for cash-advance/reimbursement, and only
+    // if the request wasn't already funded by a revolving fund at approval time.
+    if (verb === 'release' && REVOLVING_FUND_TYPES.includes(row?.approvalType) && !row?.funding_code) {
+      try {
+        setFundLoading(true);
+        const res = await api.get('/disbursements/revolving-fund');
+        if (res.data.success) setFundInfo(res.data.data);
+      } catch (error) {
+        console.error('Error fetching revolving fund info:', error);
+      } finally {
+        setFundLoading(false);
+      }
+    }
   };
+
+  const useRevolvingFund = actionVerb === 'release' && fundChoice === 'yes' && !!fundInfo;
+  const fundRemaining = fundInfo ? parseFloat(fundInfo.Amount) - (selectedRequest?.amount || 0) : null;
+  const fundInsufficient = useRevolvingFund && fundRemaining !== null && fundRemaining < 0;
 
   const handleAction = async () => {
     if (!selectedRequest) return;
+    if (fundInsufficient) return;
     try {
       setActionLoading(true);
       const res = await api.post('/disbursements/process', {
@@ -547,6 +576,7 @@ const AccountingDashboard = () => {
         id:      selectedRequest.id,
         action:  actionVerb,           // 'release' | 'reject'
         remarks: remarks || null,
+        useRevolvingFund,
       });
       if (res.data.success) {
         setNotification({
@@ -558,6 +588,8 @@ const AccountingDashboard = () => {
         setActionOpen(false);
         setRemarks('');
         setSelectedRequest(null);
+        setFundInfo(null);
+        setFundChoice('no');
         fetchAll();
         setTimeout(() => setNotification(null), 4000);
       } else {
@@ -570,7 +602,8 @@ const AccountingDashboard = () => {
       }
     } catch (error) {
       console.error('Error processing disbursement:', error);
-      setNotification({ message: 'Error processing action. Please try again.', severity: 'error' });
+      const msg = error?.response?.data?.message || 'Error processing action. Please try again.';
+      setNotification({ message: msg, severity: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -629,7 +662,7 @@ const AccountingDashboard = () => {
       {/* ── Section 1: Summary Cards ── */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 tracking-wider mb-3">Financial Summary</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-4 gap-4">
 
           <Card className="!bg-blue-50 border border-blue-200 text-white shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
@@ -682,28 +715,6 @@ const AccountingDashboard = () => {
               </div>
             </CardContent>
           </Card>
-
-          <Card className={`${overdueLiquidationCount > 0 ? '!bg-orange-50 border-orange-200' : '!bg-purple-50 border-purple-200'} border text-white shadow-sm hover:shadow-md transition-shadow`}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className={`text-sm font-semibold mb-2 ${overdueLiquidationCount > 0 ? 'text-orange-800' : 'text-purple-800'}`}>
-                    CA Pending Liquidation
-                  </p>
-                  <span className={`text-4xl font-bold ${overdueLiquidationCount > 0 ? 'text-orange-800' : 'text-purple-800'}`}>
-                    {loading ? '—' : cashAdvancesPendingLiquidation.length}
-                  </span>
-                  {!loading && overdueLiquidationCount > 0 && (
-                    <p className="text-xs font-semibold text-orange-700 mt-1">
-                      {overdueLiquidationCount} overdue ({'>'}{LIQUIDATION_DUE_DAYS}d)
-                    </p>
-                  )}
-                </div>
-                <Receipt className={`w-12 h-12 opacity-30 ${overdueLiquidationCount > 0 ? 'text-orange-800' : 'text-purple-800'}`} />
-              </div>
-            </CardContent>
-          </Card>
-
         </div>
       </div>
 
@@ -842,6 +853,7 @@ const AccountingDashboard = () => {
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-1">
                             <button
+                              type="button"
                               onClick={() => handleView(row)}
                               className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
                               title="View Details"
@@ -849,6 +861,7 @@ const AccountingDashboard = () => {
                               <Eye className="w-4 h-4" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => openAction(row, 'release')}
                               className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
                               title="Release Funds"
@@ -856,6 +869,7 @@ const AccountingDashboard = () => {
                               <CheckCircle className="w-4 h-4" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => openAction(row, 'reject')}
                               className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
                               title="Reject"
@@ -1197,6 +1211,12 @@ const AccountingDashboard = () => {
           <Loading message="Loading request details…" />
         ) : viewData ? (
           <>
+            {viewData.funding_code && (
+              <div className="mb-4 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex items-center gap-2">
+                <CreditCard className="w-4 h-4 shrink-0" />
+                Funded via {FUND_LABELS[viewData.funding_code] || viewData.funding_code}
+              </div>
+            )}
             <RequestTimeline request={viewData} />
             {renderViewForm()}
           </>
@@ -1223,7 +1243,7 @@ const AccountingDashboard = () => {
               variant={actionVerb === 'release' ? 'success' : 'danger'}
               startIcon={actionVerb === 'release' ? <Send className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
               onClick={handleAction}
-              disabled={actionLoading || (actionVerb === 'reject' && !remarks.trim())}
+              disabled={actionLoading || (actionVerb === 'reject' && !remarks.trim()) || fundInsufficient}
             >
               {actionLoading
                 ? 'Processing…'
@@ -1248,6 +1268,47 @@ const AccountingDashboard = () => {
             required
             autoFocus
           />
+        )}
+        {actionVerb === 'release' && fundLoading && (
+          <p className="text-sm text-gray-400 mb-2">Checking revolving fund availability…</p>
+        )}
+        {actionVerb === 'release' && !fundLoading && fundInfo && (
+          <>
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex flex-col gap-1">
+            <span className=" font-bold text-gray-800">Request Amount:</span> {formatPeso(selectedRequest?.amount)}
+            <span className=" font-bold text-gray-800">Available Fund:</span> {formatPeso(fundInfo.Amount)}
+          </div>
+          <div className={`mb-4 p-3 rounded-lg text-sm text-gray-800 flex flex-col gap-1 border ${
+            fundInsufficient ? 'bg-red-50 border-red-300' : 'bg-gray-50 border-gray-200'
+          }`}>
+            <span className=" font-bold text-gray-800">Funding Source:</span>
+            <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+              <input
+              type="radio"
+              name="useRevolvingFund"
+              value="yes"
+              checked={fundChoice === 'yes'}
+              onChange={() => setFundChoice('yes')}
+              />
+              Accounting Revolving Fund
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+              <input
+              type="radio"
+              name="useRevolvingFund"
+              value="no"
+              checked={fundChoice === 'no'}
+              onChange={() => setFundChoice('no')}
+              />
+              Regular Disbursement
+            </label>
+          </div>
+          {fundChoice === 'yes' &&  fundInsufficient && (
+            <p className="text-sm text-red-600 font-medium mt-2">
+              Insufficient Revolving Fund Balance
+            </p>
+          )}
+          </>
         )}
       </Modal>
 

@@ -9,6 +9,9 @@ router.use(verifyToken);
 // GET /api/disbursements/pending - Get all approved requests pending release
 router.get('/pending', disbursementsController.getPendingDisbursements);
 
+// GET /api/disbursements/revolving-fund - Get the Accounting Revolving Fund (ARF) info
+router.get('/revolving-fund', disbursementsController.getRevolvingFund);
+
 // POST /api/disbursements/process - Release or reject funds for a request
 router.post('/process', disbursementsController.processDisbursement);
 

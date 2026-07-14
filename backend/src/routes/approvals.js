@@ -12,6 +12,9 @@ router.get('/pending', approvalsController.getPendingApprovals);
 // GET /api/approvals/all - Get all requests (all statuses) for the current user
 router.get('/all', approvalsController.getAllApprovals);
 
+// GET /api/approvals/revolving-fund?department_id=8 - Get revolving fund info for a department
+router.get('/revolving-fund', approvalsController.getRevolvingFund);
+
 // POST /api/approvals/process - Approve or Reject a request
 router.post('/process', approvalsController.processApproval);
 

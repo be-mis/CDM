@@ -80,7 +80,7 @@ const formatDateTime = (d) => {
 };
 
 // Reusable pagination control (mirrors Approvals.js / UserManagement.js)
-const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSizeChange }) => {
+const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSizeChange, disabled }) => {
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   if (totalItems === 0) return null;
 
@@ -108,8 +108,9 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
           <label className="text-sm text-gray-600 whitespace-nowrap">Rows per page</label>
           <select
             value={pageSize}
+            disabled={disabled}
             onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            className="border border-gray-300 rounded-lg px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
+            className="border border-gray-300 rounded-lg px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white disabled:opacity-50"
           >
             <option value={10}>10</option>
             <option value={25}>25</option>
@@ -120,8 +121,9 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
       </div>
       <div className="flex items-center gap-1">
         <button
+          type="button"
           onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-          disabled={currentPage === 1}
+          disabled={currentPage === 1 || disabled}
           className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           aria-label="Previous page"
         >
@@ -132,8 +134,10 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
             <span key={`ellipsis-${idx}`} className="px-2 text-sm text-gray-400">…</span>
           ) : (
             <button
+              type="button"
               key={p}
               onClick={() => onPageChange(p)}
+              disabled={disabled}
               className={`min-w-[2rem] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 p === currentPage
                   ? 'bg-primary-600 text-white'
@@ -145,8 +149,9 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
           )
         )}
         <button
+          type="button"
           onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-          disabled={currentPage === totalPages}
+          disabled={currentPage === totalPages || disabled}
           className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           aria-label="Next page"
         >
@@ -260,7 +265,7 @@ const AuditLogs = () => {
                 key={key}
                 className="px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-700"
               >
-                {key}: {value ?? '—'}
+                {key}: {value === null || value === undefined ? '—' : String(value)}
               </span>
             ))}
           </div>
@@ -399,6 +404,7 @@ const AuditLogs = () => {
               />
               {filters.search && (
                 <button
+                  type="button"
                   onClick={() => handleFilterChange('search', '')}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
@@ -416,6 +422,7 @@ const AuditLogs = () => {
               Filters {hasActiveFilters ? `(${Object.values(filters).filter(v => v !== '').length})` : ''}
             </Button>
             <button
+              type="button"
               onClick={() => fetchLogs(pagination.page, pagination.limit)}
               className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
               title="Refresh"
@@ -495,11 +502,11 @@ const AuditLogs = () => {
 
       {/* Table */}
       <Card>
-        {loading ? (
+        {loading && logs.length === 0 ? (
           <Loading message="Loading audit logs..." />
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className={`overflow-x-auto transition-opacity ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -536,7 +543,7 @@ const AuditLogs = () => {
                             onClick={() => setExpandedRow(isExpanded ? null : log.id)}
                           >
                             <td className="px-3 py-3">
-                              <button className="text-gray-400">
+                              <button type="button" className="text-gray-400">
                                 {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                               </button>
                             </td>
@@ -592,6 +599,7 @@ const AuditLogs = () => {
               pageSize={pagination.limit}
               onPageChange={handlePageChange}
               onPageSizeChange={handleRowsPerPageChange}
+              disabled={loading}
             />
           </>
         )}
