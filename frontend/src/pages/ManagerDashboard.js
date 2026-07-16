@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
-import { Cell, PieChart, Pie, Label } from 'recharts';
+import { Cell, PieChart, Pie, Label, BarChart, Bar, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '../components/ui/Chart';
 import {
   HandCoins, Receipt, Coins, TrendingUp, CheckCircle, XCircle, Eye,
@@ -291,6 +291,10 @@ const ManagerDashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const displayName = user?.name || user?.username || user?.email || 'Manager';
+  // Admin accounts see the approval queue across every department; regular
+  // managers/approvers stay scoped to just the department(s) they approve
+  // for (existing behavior, unchanged).
+  const isAdmin = user?.role === 'admin';
 
   // ── data state ─────────────────────────────────────────────────────────────
   const [loading, setLoading]         = useState(false);
@@ -331,7 +335,12 @@ const ManagerDashboard = () => {
   const fetchPendingApprovals = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get('/approvals/pending');
+      // Admins pull the full cross-department queue (scope=all); regular
+      // approvers omit the param and the API keeps scoping to their own
+      // department(s) as before.
+      const res = await api.get('/approvals/pending', {
+        params: isAdmin ? { scope: 'all' } : undefined,
+      });
       if (res.data.success) setPendingData(res.data.data);
     } catch (error) {
       console.error('Error fetching pending approvals:', error);
@@ -339,7 +348,7 @@ const ManagerDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   const fetchStatsData = useCallback(async () => {
     try {
@@ -349,7 +358,9 @@ const ManagerDashboard = () => {
       // not the ones they approve. /approvals/all returns every request
       // (any status, excluding drafts) for the departments this user is an
       // approver for — which is what the manager stats below need.
-      const res = await api.get('/approvals/all');
+      const res = await api.get('/approvals/all', {
+        params: isAdmin ? { scope: 'all' } : undefined,
+      });
       if (res.data.success) {
         const { cashAdvances, liquidations, reimbursements } = res.data.data;
         setAllCashAdvances(cashAdvances || []);
@@ -361,7 +372,7 @@ const ManagerDashboard = () => {
     } finally {
       setStatsLoading(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     fetchPendingApprovals();
@@ -412,9 +423,10 @@ const ManagerDashboard = () => {
     if (queueSearch) {
       const q = queueSearch.toLowerCase();
       rows = rows.filter(r =>
-        (r.refNumber || '').toLowerCase().includes(q) ||
-        (r.employee  || '').toLowerCase().includes(q) ||
-        (r.purpose   || '').toLowerCase().includes(q)
+        (r.refNumber  || '').toLowerCase().includes(q) ||
+        (r.employee   || '').toLowerCase().includes(q) ||
+        (r.purpose    || '').toLowerCase().includes(q) ||
+        (r.department || '').toLowerCase().includes(q)
       );
     }
     return [...rows].sort((a, b) => {
@@ -498,6 +510,33 @@ const ManagerDashboard = () => {
       { label: 'Overdue', value: buckets['Overdue'], color: '#ef4444' },
     ];
   }, [pendingApprovals]);
+
+  // Admin-only: breakdown of the pending queue by department. Only useful
+  // when the queue spans multiple departments (i.e. for admins) — regular
+  // managers' queues are already scoped to their own department.
+  const departmentData = useMemo(() => {
+    if (!isAdmin) return [];
+    const counts = {};
+    pendingApprovals.forEach(r => {
+      const dept = r.department || 'Unassigned';
+      counts[dept] = (counts[dept] || 0) + 1;
+    });
+    const palette = [
+      '#6366f1', '#ec4899', '#06b6d4', '#f59e0b', '#22c55e', '#8b5cf6',
+      '#f97316', '#14b8a6', '#ef4444', '#3b82f6', '#a855f7', '#84cc16',
+    ];
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value], i) => ({ label, value, color: palette[i % palette.length] }));
+  }, [isAdmin, pendingApprovals]);
+
+  const departmentChartConfig = useMemo(() => {
+    const cfg = { value: { label: 'Requests' } };
+    departmentData.forEach(d => {
+      cfg[d.label] = { label: d.label, color: d.color };
+    });
+    return cfg;
+  }, [departmentData]);
 
   // ── recent actions (approved/rejected/returned, by this approver) ──────────
   const recentActions = useMemo(() => {
@@ -765,6 +804,9 @@ const ManagerDashboard = () => {
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Request No.</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Type</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Requestor</th>
+                    {isAdmin && (
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Department</th>
+                    )}
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Request Date</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Amount</th>
                     <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Days Pending</th>
@@ -774,7 +816,7 @@ const ManagerDashboard = () => {
                 <tbody className="divide-y divide-gray-200">
                   {filteredQueue.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-10 text-center text-gray-400 text-sm">
+                      <td colSpan={isAdmin ? 8 : 7} className="py-10 text-center text-gray-400 text-sm">
                         No results found.
                       </td>
                     </tr>
@@ -801,6 +843,11 @@ const ManagerDashboard = () => {
                             <span className="text-sm text-gray-900 truncate max-w-[120px]" title={row.employee}>{row.employee}</span>
                           </div>
                         </td>
+                        {isAdmin && (
+                          <td className="px-4 py-4">
+                            <span className="text-sm text-gray-600">{row.department || '—'}</span>
+                          </td>
+                        )}
                         <td className="px-4 py-4">
                           <span className="text-sm text-gray-600">{formatLongDate(row.date)}</span>
                         </td>
@@ -869,7 +916,7 @@ const ManagerDashboard = () => {
       {/* ── Section 3 & 4: Charts ── */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Approval Monitoring</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className={`grid grid-cols-1 md:grid-cols-2 ${isAdmin ? 'lg:grid-cols-3' : ''} gap-6`}>
 
           {/* Pending by Type – donut */}
           <Card>
@@ -912,6 +959,40 @@ const ManagerDashboard = () => {
               </div>
             </CardContent>
           </Card>
+
+          {/* Pending Requests by Department — admin only, since regular
+              managers' queues are already scoped to a single department */}
+          {isAdmin && (
+            <Card>
+              <CardContent className="p-6">
+                <h3 className="text-sm font-bold text-gray-900 mb-4">Pending Requests by Department</h3>
+                {departmentData.length === 0 ? (
+                  <p className="text-center text-sm text-gray-400 py-4">No data</p>
+                ) : (
+                  <ChartContainer config={departmentChartConfig} className="h-[220px] w-full">
+                    <BarChart accessibilityLayer data={departmentData} layout="vertical" margin={{ left: 8 }}>
+                      <CartesianGrid horizontal={false} />
+                      <XAxis type="number" hide />
+                      <YAxis
+                        dataKey="label"
+                        type="category"
+                        tickLine={false}
+                        axisLine={false}
+                        width={90}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar dataKey="value" radius={4} barSize={24} maxBarSize={28}>
+                        {departmentData.map((d, i) => (
+                          <Cell key={`dept-cell-${i}`} fill={d.color} style={{ fill: d.color }} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import {
@@ -42,12 +42,14 @@ const TYPE_LABELS = {
   replenish: 'Replenishment',
 };
 
-const getTypeIcon = (type) => {
-  if (type === 'cash_advance') return <HandCoins className="w-4 h-4 text-indigo-500" />;
-  if (type === 'reimbursement') return <Coins className="w-4 h-4 text-cyan-500" />;
-  if (type === 'replenish') return <PlusCircle className="w-4 h-4 text-green-500" />;
-  return null;
+// Static icon map instead of a function that re-creates elements on every
+// call — same elements are reused across renders since they take no props.
+const TYPE_ICONS = {
+  cash_advance: <HandCoins className="w-4 h-4 text-indigo-500" />,
+  reimbursement: <Coins className="w-4 h-4 text-cyan-500" />,
+  replenish: <PlusCircle className="w-4 h-4 text-green-500" />,
 };
+const getTypeIcon = (type) => TYPE_ICONS[type] || null;
 
 // Replenishments add money to a fund; every other transaction type deducts.
 const isReplenishment = (type) => type === 'replenish';
@@ -57,8 +59,23 @@ const isReplenishment = (type) => type === 'replenish';
 const getHistoryAmount = (h) =>
   isReplenishment(h.transaction_type) ? h.replenish_amount : h.deducted_amount;
 
-// Reusable pagination control (matches the one used in Approvals.js)
-const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSizeChange }) => {
+// Debounce hook — delays updating the returned value until `value` has
+// stopped changing for `delay` ms. Used for the transaction search box so
+// we don't re-filter (and re-render) on every single keystroke.
+const useDebouncedValue = (value, delay = 300) => {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+};
+
+// Reusable pagination control (matches the one used in Approvals.js).
+// Memoized: with page-size and search/filter changes elsewhere on the page,
+// this avoids re-rendering the (potentially many) page-number buttons unless
+// its own props actually change.
+const Pagination = memo(({ currentPage, totalItems, pageSize, onPageChange, onPageSizeChange }) => {
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   if (totalItems === 0) return null;
 
@@ -137,7 +154,293 @@ const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSiz
       </div>
     </div>
   );
-};
+});
+Pagination.displayName = 'Pagination';
+
+// Single fund summary card. Memoized so the whole fund grid doesn't
+// re-render just because unrelated state (search text, modal form, etc.)
+// changed elsewhere on the page.
+const FundCard = memo(({ fund, onReplenish }) => {
+  const style = FUND_STYLES[fund.funding_code] || DEFAULT_FUND_STYLE;
+  const Icon = style.icon;
+  return (
+    <Card className={`${style.bg} border shadow-sm hover:shadow-md transition-shadow`}>
+      <CardContent className="p-4 sm:p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className={`${style.text} text-sm font-semibold mb-1 truncate`}>
+              {fund.funding_description}
+            </p>
+            <p className={`${style.text} text-xs opacity-70 mb-2 truncate`}>
+              {fund.funding_code} • Dept {fund.department}
+            </p>
+            <span className={`text-2xl sm:text-4xl font-bold ${style.text} break-words`}>
+              {formatPeso(fund.Amount)}
+            </span>
+          </div>
+          <Icon className={`w-9 h-9 sm:w-12 sm:h-12 ${style.text} opacity-30 shrink-0`} />
+        </div>
+        <div className="mt-4 pt-4 border-t border-black/5 flex flex-wrap gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            startIcon={<PlusCircle className="w-4 h-4" />}
+            onClick={() => onReplenish(fund)}
+          >
+            Replenish
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+});
+FundCard.displayName = 'FundCard';
+
+// Single transaction history row. Memoized so paging/filtering only
+// re-renders the rows that actually changed identity.
+const HistoryRow = memo(({ h }) => (
+  <tr className="hover:bg-gray-50 transition-colors">
+    <td className="px-4 py-3 text-sm text-gray-500">{formatLongDate(h.created_at)}</td>
+    <td className="px-4 py-3">
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+        FUND_PILL_STYLES[h.funding_code] || DEFAULT_PILL_STYLE
+      }`}>
+        {h.funding_code || '—'}
+      </span>
+    </td>
+    <td className="px-4 py-3">
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+        {getTypeIcon(h.transaction_type)}{TYPE_LABELS[h.transaction_type] || h.transaction_type}
+      </span>
+    </td>
+    <td className="px-4 py-3 text-sm font-semibold text-gray-900">{h.transaction_number}</td>
+    <td className={`px-4 py-3 text-sm font-semibold flex items-center gap-1 ${
+      isReplenishment(h.transaction_type) ? 'text-green-600' : 'text-red-600'
+    }`}>
+      {isReplenishment(h.transaction_type) ? (
+        <TrendingUp className="w-3.5 h-3.5" />
+      ) : (
+        <TrendingDown className="w-3.5 h-3.5" />
+      )}
+      {isReplenishment(h.transaction_type) ? '+' : '−'}{formatPeso(getHistoryAmount(h))}
+    </td>
+    <td className="px-4 py-3 text-sm text-gray-500">{formatPeso(h.balance_before)}</td>
+    <td className="px-4 py-3 text-sm text-gray-700">{formatPeso(h.balance_after)}</td>
+    <td className="px-4 py-3">
+      {h.remarks ? (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+          h.remarks === 'Settled'
+            ? 'bg-green-100 text-green-800'
+            : 'bg-amber-100 text-amber-800'
+        }`}>
+          {h.remarks}
+        </span>
+      ) : (
+        <span className="text-gray-300 text-xs">—</span>
+      )}
+    </td>
+  </tr>
+));
+HistoryRow.displayName = 'HistoryRow';
+
+// Mobile card version of a transaction row — shown below the `sm:` breakpoint
+// instead of a horizontally-scrolling table row, so the key details (date,
+// type, amount, running balance) are readable without side-scrolling.
+const HistoryCard = memo(({ h }) => (
+  <div className="p-3 rounded-lg border border-gray-200 bg-white">
+    <div className="flex items-start justify-between gap-2">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+            FUND_PILL_STYLES[h.funding_code] || DEFAULT_PILL_STYLE
+          }`}>
+            {h.funding_code || '—'}
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 whitespace-nowrap">
+            {getTypeIcon(h.transaction_type)}{TYPE_LABELS[h.transaction_type] || h.transaction_type}
+          </span>
+        </div>
+        <p className="text-sm font-semibold text-gray-900 mt-1.5 truncate">{h.transaction_number}</p>
+        <p className="text-xs text-gray-500 mt-0.5">{formatLongDate(h.created_at)}</p>
+      </div>
+      <div className={`shrink-0 text-sm font-semibold flex items-center gap-1 ${
+        isReplenishment(h.transaction_type) ? 'text-green-600' : 'text-red-600'
+      }`}>
+        {isReplenishment(h.transaction_type) ? (
+          <TrendingUp className="w-3.5 h-3.5" />
+        ) : (
+          <TrendingDown className="w-3.5 h-3.5" />
+        )}
+        {isReplenishment(h.transaction_type) ? '+' : '−'}{formatPeso(getHistoryAmount(h))}
+      </div>
+    </div>
+
+    <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+      <span className="text-gray-500">
+        {formatPeso(h.balance_before)} <span className="mx-1">→</span> {formatPeso(h.balance_after)}
+      </span>
+      {h.remarks ? (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-semibold ${
+          h.remarks === 'Settled'
+            ? 'bg-green-100 text-green-800'
+            : 'bg-amber-100 text-amber-800'
+        }`}>
+          {h.remarks}
+        </span>
+      ) : (
+        <span className="text-gray-300">—</span>
+      )}
+    </div>
+  </div>
+));
+HistoryCard.displayName = 'HistoryCard';
+
+// Replenish modal, fully self-contained with its own form state. Splitting
+// this out is the single biggest runtime win in this file: before, every
+// keystroke in the Amount / Reference No. fields set state on the parent
+// RevolvingFunds component, which re-rendered the entire page — including
+// the fund grid and up to 100 transaction-history rows — on each keystroke.
+// Now a keystroke only re-renders this small modal.
+const ReplenishModal = memo(({ fund, open, onClose, onSuccess }) => {
+  const [amount, setAmount] = useState('');
+  const [reference, setReference] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  // Reset the form whenever a new fund is targeted / the modal re-opens.
+  useEffect(() => {
+    if (open) {
+      setAmount('');
+      setReference('');
+      setError('');
+    }
+  }, [open, fund?.id]);
+
+  const handleClose = useCallback(() => {
+    if (submitting) return;
+    onClose();
+  }, [submitting, onClose]);
+
+  const handleSubmit = useCallback(async () => {
+    const parsedAmount = parseFloat(amount);
+    if (!parsedAmount || parsedAmount <= 0) {
+      setError('Enter an amount greater than zero.');
+      return;
+    }
+    if (!reference.trim()) {
+      setError('Reference number is required.');
+      return;
+    }
+    if (!fund) return;
+
+    try {
+      setSubmitting(true);
+      setError('');
+      const res = await api.post(`/revolving-funds/${fund.id}/replenish`, {
+        amount: parsedAmount,
+        transaction_number: reference.trim(),
+      });
+
+      if (res.data.success) {
+        onSuccess(res.data.data.fund, parsedAmount);
+      } else {
+        setError(res.data.message || 'Failed to replenish fund.');
+      }
+    } catch (err) {
+      console.error('Error replenishing fund:', err);
+      setError(err.response?.data?.message || 'Failed to replenish fund.');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [amount, reference, fund, onSuccess]);
+
+  const parsedAmount = parseFloat(amount);
+  const newBalance = fund && amount && !isNaN(parsedAmount)
+    ? parseFloat(fund.Amount || 0) + parsedAmount
+    : null;
+
+  return (
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title={
+        <div className="flex items-center gap-3">
+          <span>Replenish Fund</span>
+          {fund && (
+            <span className="px-3 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
+              {fund.funding_code}
+            </span>
+          )}
+        </div>
+      }
+      maxWidth="sm"
+      actions={
+        <>
+          <Button variant="secondary" onClick={handleClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            startIcon={<PlusCircle className="w-4 h-4" />}
+            onClick={handleSubmit}
+            disabled={submitting || !amount || !reference.trim()}
+          >
+            {submitting ? 'Replenishing…' : 'Replenish Fund'}
+          </Button>
+        </>
+      }
+    >
+      {fund && (
+        <div className="space-y-4">
+          <div className="px-4 py-2.5 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800 flex items-center justify-between">
+            <span className="font-semibold">Current Balance: {formatPeso(fund.Amount)}</span>
+          </div>
+
+          {error && (
+            <Alert severity="error" onClose={() => setError('')}>
+              {error}
+            </Alert>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Amount to Add</label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              fullWidth
+              startAdornment={<span className="text-gray-400">₱</span>}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reference No. <span className="text-red-500">*</span>
+            </label>
+            <Input
+              placeholder="e.g. DV-2026-0001"
+              fullWidth
+              required
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+            />
+          </div>
+
+          {newBalance !== null && (
+            <p className="text-sm text-gray-500">
+              New balance will be{' '}
+              <span className="font-semibold text-gray-800">{formatPeso(newBalance)}</span>
+            </p>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+});
+ReplenishModal.displayName = 'ReplenishModal';
 
 // ─── main component ──────────────────────────────────────────────────────────
 
@@ -151,15 +454,14 @@ const RevolvingFunds = () => {
 
   const [replenishFundTarget, setReplenishFundTarget] = useState(null);
   const [replenishOpen, setReplenishOpen] = useState(false);
-  const [replenishAmount, setReplenishAmount] = useState('');
-  const [replenishReference, setReplenishReference] = useState('');
-  const [replenishSubmitting, setReplenishSubmitting] = useState(false);
-  const [replenishError, setReplenishError] = useState('');
 
   // Combined transaction history across all funds (Section 2)
   const [allHistory, setAllHistory] = useState([]);
   const [allHistoryLoading, setAllHistoryLoading] = useState(true);
-  const [allHistorySearch, setAllHistorySearch] = useState('');
+  const [allHistorySearchInput, setAllHistorySearchInput] = useState('');
+  // Debounced so typing in the search box doesn't re-filter the (possibly
+  // large) history list on every keystroke — only 300ms after typing stops.
+  const allHistorySearch = useDebouncedValue(allHistorySearchInput, 300);
   const [allHistoryFundFilter, setAllHistoryFundFilter] = useState('All');
   const [allHistoryPage, setAllHistoryPage] = useState(1);
   const [allHistoryPageSize, setAllHistoryPageSize] = useState(20);
@@ -200,60 +502,26 @@ const RevolvingFunds = () => {
 
   useEffect(() => { fetchAllHistory(); }, [fetchAllHistory]);
 
-  const openReplenish = (fund) => {
+  // Stable references so FundCard / ReplenishModal (both memoized) don't
+  // re-render just because RevolvingFunds re-rendered for an unrelated reason.
+  const openReplenish = useCallback((fund) => {
     setReplenishFundTarget(fund);
-    setReplenishAmount('');
-    setReplenishReference('');
-    setReplenishError('');
     setReplenishOpen(true);
-  };
+  }, []);
 
-  const closeReplenish = () => {
-    if (replenishSubmitting) return;
+  const closeReplenish = useCallback(() => {
     setReplenishOpen(false);
-    setReplenishFundTarget(null);
-  };
+  }, []);
 
-  const handleReplenishSubmit = async () => {
-    const amount = parseFloat(replenishAmount);
-    if (!amount || amount <= 0) {
-      setReplenishError('Enter an amount greater than zero.');
-      return;
-    }
-    if (!replenishReference.trim()) {
-      setReplenishError('Reference number is required.');
-      return;
-    }
-    if (!replenishFundTarget) return;
-
-    try {
-      setReplenishSubmitting(true);
-      setReplenishError('');
-      const res = await api.post(`/revolving-funds/${replenishFundTarget.id}/replenish`, {
-        amount,
-        transaction_number: replenishReference.trim(),
-      });
-
-      if (res.data.success) {
-        const updatedFund = res.data.data.fund;
-        setFunds((prev) => prev.map((f) => (f.id === updatedFund.id ? updatedFund : f)));
-        setNotification({
-          message: `${updatedFund.funding_code} replenished by ${formatPeso(amount)}.`,
-          severity: 'success',
-        });
-        setReplenishOpen(false);
-        setReplenishFundTarget(null);
-        fetchAllHistory();
-      } else {
-        setReplenishError(res.data.message || 'Failed to replenish fund.');
-      }
-    } catch (error) {
-      console.error('Error replenishing fund:', error);
-      setReplenishError(error.response?.data?.message || 'Failed to replenish fund.');
-    } finally {
-      setReplenishSubmitting(false);
-    }
-  };
+  const handleReplenishSuccess = useCallback((updatedFund, amount) => {
+    setFunds((prev) => prev.map((f) => (f.id === updatedFund.id ? updatedFund : f)));
+    setNotification({
+      message: `${updatedFund.funding_code} replenished by ${formatPeso(amount)}.`,
+      severity: 'success',
+    });
+    setReplenishOpen(false);
+    fetchAllHistory();
+  }, [fetchAllHistory]);
 
   // ── combined transaction history (Section 2) ─────────────────────────────
   const fundFilterOptions = useMemo(() => {
@@ -290,14 +558,29 @@ const RevolvingFunds = () => {
     return filteredAllHistory.slice(start, start + allHistoryPageSize);
   }, [filteredAllHistory, allHistoryPage, allHistoryPageSize]);
 
+  const handlePageSizeChange = useCallback((size) => {
+    setAllHistoryPageSize(size);
+    setAllHistoryPage(1);
+  }, []);
+
+  const handleSearchChange = useCallback((e) => {
+    setAllHistorySearchInput(e.target.value);
+    setAllHistoryPage(1);
+  }, []);
+
+  const handleFundFilterChange = useCallback((code) => {
+    setAllHistoryFundFilter(code);
+    setAllHistoryPage(1);
+  }, []);
+
   // ── render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-8">
 
       {/* ── Header ── */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-1">Revolving Funds</h1>
-        <p className="text-gray-500">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">Revolving Funds</h1>
+        <p className="text-sm sm:text-base text-gray-500">
           Welcome back, <span className="font-medium text-gray-700">{displayName}</span> — monitor fund balances and disbursement history.
         </p>
       </div>
@@ -311,7 +594,7 @@ const RevolvingFunds = () => {
       {/* ── Section 1: Summary Cards ── */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 tracking-wider mb-3">Fund Balances</h2>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
           {loading ? (
             <Card>
@@ -320,43 +603,9 @@ const RevolvingFunds = () => {
               </CardContent>
             </Card>
           ) : (
-            funds.map((fund) => {
-              const style = FUND_STYLES[fund.funding_code] || DEFAULT_FUND_STYLE;
-              const Icon = style.icon;
-              return (
-                <Card
-                  key={fund.id}
-                  className={`${style.bg} border shadow-sm hover:shadow-md transition-shadow`}
-                >
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className={`${style.text} text-sm font-semibold mb-1`}>
-                          {fund.funding_description}
-                        </p>
-                        <p className={`${style.text} text-xs opacity-70 mb-2`}>
-                          {fund.funding_code} • Dept {fund.department}
-                        </p>
-                        <span className={`text-4xl font-bold ${style.text}`}>
-                          {formatPeso(fund.Amount)}
-                        </span>
-                      </div>
-                      <Icon className={`w-12 h-12 ${style.text} opacity-30`} />
-                    </div>
-                    <div className="mt-4 pt-4 border-t border-black/5 flex flex-wrap gap-2">
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        startIcon={<PlusCircle className="w-4 h-4" />}
-                        onClick={() => openReplenish(fund)}
-                      >
-                        Replenish
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })
+            funds.map((fund) => (
+              <FundCard key={fund.id} fund={fund} onReplenish={openReplenish} />
+            ))
           )}
 
         </div>
@@ -364,7 +613,7 @@ const RevolvingFunds = () => {
 
       {/* ── Section 2: Transaction History (all funds) ── */}
       <Card>
-        <CardContent className="p-6">
+        <CardContent className="p-4 sm:p-6">
           <h3 className="text-sm font-bold text-gray-900 mb-4">Transaction History</h3>
 
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
@@ -373,11 +622,8 @@ const RevolvingFunds = () => {
                 placeholder="Search by reference number, type, or fund…"
                 fullWidth
                 startAdornment={<Search className="w-4 h-4 text-gray-400" />}
-                value={allHistorySearch}
-                onChange={(e) => {
-                  setAllHistorySearch(e.target.value);
-                  setAllHistoryPage(1);
-                }}
+                value={allHistorySearchInput}
+                onChange={handleSearchChange}
               />
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -385,10 +631,7 @@ const RevolvingFunds = () => {
                 <button
                   type="button"
                   key={code}
-                  onClick={() => {
-                    setAllHistoryFundFilter(code);
-                    setAllHistoryPage(1);
-                  }}
+                  onClick={() => handleFundFilterChange(code)}
                   className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
                     allHistoryFundFilter === code
                       ? 'bg-primary-600 border-primary-600 text-white'
@@ -407,7 +650,15 @@ const RevolvingFunds = () => {
             <p className="text-gray-400 text-center py-8 text-sm">No transactions found.</p>
           ) : (
             <>
-              <div className="overflow-x-auto border border-gray-200 rounded-lg">
+              {/* Mobile: stacked cards (below sm:) */}
+              <div className="space-y-2 sm:hidden">
+                {paginatedAllHistory.map((h) => (
+                  <HistoryCard key={h.id} h={h} />
+                ))}
+              </div>
+
+              {/* Desktop/tablet: table (sm: and up) */}
+              <div className="hidden sm:block overflow-x-auto border border-gray-200 rounded-lg">
                 <table className="w-full min-w-[900px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
@@ -420,47 +671,7 @@ const RevolvingFunds = () => {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {paginatedAllHistory.map((h) => (
-                      <tr key={h.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-3 text-sm text-gray-500">{formatLongDate(h.created_at)}</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                            FUND_PILL_STYLES[h.funding_code] || DEFAULT_PILL_STYLE
-                          }`}>
-                            {h.funding_code || '—'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
-                            {getTypeIcon(h.transaction_type)}{TYPE_LABELS[h.transaction_type] || h.transaction_type}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">{h.transaction_number}</td>
-                        <td className={`px-4 py-3 text-sm font-semibold flex items-center gap-1 ${
-                          isReplenishment(h.transaction_type) ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          {isReplenishment(h.transaction_type) ? (
-                            <TrendingUp className="w-3.5 h-3.5" />
-                          ) : (
-                            <TrendingDown className="w-3.5 h-3.5" />
-                          )}
-                          {isReplenishment(h.transaction_type) ? '+' : '−'}{formatPeso(getHistoryAmount(h))}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{formatPeso(h.balance_before)}</td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{formatPeso(h.balance_after)}</td>
-                        <td className="px-4 py-3">
-                          {h.remarks ? (
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                              h.remarks === 'Settled'
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}>
-                              {h.remarks}
-                            </span>
-                          ) : (
-                            <span className="text-gray-300 text-xs">—</span>
-                          )}
-                        </td>
-                      </tr>
+                      <HistoryRow key={h.id} h={h} />
                     ))}
                   </tbody>
                 </table>
@@ -470,10 +681,7 @@ const RevolvingFunds = () => {
                 totalItems={filteredAllHistory.length}
                 pageSize={allHistoryPageSize}
                 onPageChange={setAllHistoryPage}
-                onPageSizeChange={(size) => {
-                  setAllHistoryPageSize(size);
-                  setAllHistoryPage(1);
-                }}
+                onPageSizeChange={handlePageSizeChange}
               />
             </>
           )}
@@ -483,86 +691,12 @@ const RevolvingFunds = () => {
       {/* ══════════════════════════════════════════════════════════════════════
           REPLENISH FUND MODAL
       ══════════════════════════════════════════════════════════════════════ */}
-      <Modal
+      <ReplenishModal
+        fund={replenishFundTarget}
         open={replenishOpen}
         onClose={closeReplenish}
-        title={
-          <div className="flex items-center gap-3">
-            <span>Replenish Fund</span>
-            {replenishFundTarget && (
-              <span className="px-3 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
-                {replenishFundTarget.funding_code}
-              </span>
-            )}
-          </div>
-        }
-        maxWidth="sm"
-        actions={
-          <>
-            <Button variant="secondary" onClick={closeReplenish} disabled={replenishSubmitting}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              startIcon={<PlusCircle className="w-4 h-4" />}
-              onClick={handleReplenishSubmit}
-              disabled={replenishSubmitting || !replenishAmount || !replenishReference.trim()}
-            >
-              {replenishSubmitting ? 'Replenishing…' : 'Replenish Fund'}
-            </Button>
-          </>
-        }
-      >
-        {replenishFundTarget && (
-          <div className="space-y-4">
-            <div className="px-4 py-2.5 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800 flex items-center justify-between">
-              <span className="font-semibold">Current Balance: {formatPeso(replenishFundTarget.Amount)}</span>
-            </div>
-
-            {replenishError && (
-              <Alert severity="error" onClose={() => setReplenishError('')}>
-                {replenishError}
-              </Alert>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Amount to Add</label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                fullWidth
-                startAdornment={<span className="text-gray-400">₱</span>}
-                value={replenishAmount}
-                onChange={(e) => setReplenishAmount(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Reference No. <span className="text-red-500">*</span>
-              </label>
-              <Input
-                placeholder="e.g. DV-2026-0001"
-                fullWidth
-                required
-                value={replenishReference}
-                onChange={(e) => setReplenishReference(e.target.value)}
-              />
-            </div>
-
-            {replenishAmount && !isNaN(parseFloat(replenishAmount)) && (
-              <p className="text-sm text-gray-500">
-                New balance will be{' '}
-                <span className="font-semibold text-gray-800">
-                  {formatPeso(parseFloat(replenishFundTarget.Amount || 0) + parseFloat(replenishAmount || 0))}
-                </span>
-              </p>
-            )}
-          </div>
-        )}
-      </Modal>
+        onSuccess={handleReplenishSuccess}
+      />
 
     </div>
   );

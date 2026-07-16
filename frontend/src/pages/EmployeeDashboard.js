@@ -4,8 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import {
   HandCoins, ReceiptText, Coins, TrendingUp, AlertTriangle, Eye,
-  Clock, Send, Banknote, FileEdit, CheckCircle, XCircle, Receipt,
-  RefreshCw
+  Clock, Send, Banknote, FileEdit, CheckCircle, XCircle, Receipt
 } from 'lucide-react';
 import CashAdvanceForm from '../components/CashAdvanceForm';
 import LiquidationForm from '../components/LiquidationForm';
@@ -41,6 +40,26 @@ const URGENCY_LEVELS = {
 const URGENCY_DAYS = {
   URGENT_THRESHOLD: 3,
   WARNING_THRESHOLD: 7,
+};
+
+// Static per-urgency style lookup for the "Needs Your Attention" list.
+// Defined once at module scope instead of being rebuilt on every render/item.
+const URGENT_ITEM_STYLES = {
+  [URGENCY_LEVELS.OVERDUE]: {
+    row: 'bg-red-50 border border-red-200',
+    badge: 'bg-red-100 text-red-700 border-red-300',
+    action: 'bg-red-600 hover:bg-red-700 text-white',
+  },
+  [URGENCY_LEVELS.URGENT]: {
+    row: 'bg-orange-50 border border-orange-200',
+    badge: 'bg-orange-100 text-orange-700 border-orange-300',
+    action: 'bg-orange-500 hover:bg-orange-600 text-white',
+  },
+  [URGENCY_LEVELS.WARNING]: {
+    row: 'bg-yellow-50 border border-yellow-200',
+    badge: 'bg-yellow-100 text-yellow-700 border-yellow-300',
+    action: 'bg-yellow-500 hover:bg-yellow-600 text-white',
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -453,11 +472,11 @@ const RequestTimeline = ({ request }) => {
 
 // Stat card for the summary overview section
 const OverviewStatCard = ({ label, count, loading, className = '' }) => (
-  <div className={`text-center p-4 bg-blue-50 rounded-lg border ${className}`}>
-    <h3 className="text-3xl font-bold mb-2">
+  <div className={`text-center p-3 sm:p-4 bg-blue-50 rounded-lg border ${className}`}>
+    <h3 className="text-2xl sm:text-3xl font-bold mb-1 sm:mb-2">
       {loading ? <Spinner size="sm" /> : count}
     </h3>
-    <p className="text-sm">{label}</p>
+    <p className="text-xs sm:text-sm">{label}</p>
   </div>
 );
 
@@ -606,7 +625,7 @@ const EmployeeDashboard = () => {
           { label: 'Pending Approval', count: count(liquidations, (i) => normalizeStatus(i.status).includes('pending')) },
           { label: 'Approved', count: count(liquidations, (i) => normalizeStatus(i.status).includes('approved')) },
           { label: 'Liquidated', count: count(liquidations, (i) => ['liquidated', 'completed'].some((s) => normalizeStatus(i.status).includes(s))) },
-          { label: 'Draft', count: count(liquidations, (i) => normalizeStatus(i.status) === 'draft') },
+          { label: 'Rejected', count: count(liquidations, (i) => normalizeStatus(i.status).includes('rejected')) },
         ],
       };
     }
@@ -618,7 +637,7 @@ const EmployeeDashboard = () => {
           { label: 'Pending Approval', count: count(reimbursements, (i) => normalizeStatus(i.status).includes('pending')) },
           { label: 'Approved', count: count(reimbursements, (i) => normalizeStatus(i.status).includes('approved')) },
           { label: 'Released', count: count(reimbursements, (i) => ['released', 'disbursed'].some((s) => normalizeStatus(i.status).includes(s))) },
-          { label: 'Draft', count: count(reimbursements, (i) => normalizeStatus(i.status) === 'draft') },
+          { label: 'Rejected', count: count(reimbursements, (i) => normalizeStatus(i.status).includes('rejected')) },
         ],
       };
     }
@@ -629,10 +648,21 @@ const EmployeeDashboard = () => {
         { label: 'Pending Approval', count: count(cashAdvances, (i) => normalizeStatus(i.status).includes('pending')) },
         { label: 'Approved', count: count(cashAdvances, (i) => normalizeStatus(i.status).includes('approved')) },
         { label: 'Disbursed', count: count(cashAdvances, (i) => ['disbursed', 'released'].some((s) => normalizeStatus(i.status).includes(s))) },
-        { label: 'Draft', count: count(cashAdvances, (i) => normalizeStatus(i.status) === 'draft') },
+        { label: 'Rejected', count: count(cashAdvances, (i) => normalizeStatus(i.status).includes('rejected')) },
       ],
     };
   }, [selectedOverviewType, cashAdvances, liquidations, reimbursements]);
+
+  // Counts for the top summary cards — drafts are excluded since they're
+  // not yet submitted requests.
+  const nonDraftCounts = useMemo(() => {
+    const notDraft = (i) => normalizeStatus(i.status) !== 'draft';
+    return {
+      cashAdvances: cashAdvances.filter(notDraft).length,
+      liquidations: liquidations.filter(notDraft).length,
+      reimbursements: reimbursements.filter(notDraft).length,
+    };
+  }, [cashAdvances, liquidations, reimbursements]);
 
   // Most recent 4 requests (cash advances + liquidations combined)
   const recentRequests = useMemo(() => {
@@ -831,23 +861,13 @@ const EmployeeDashboard = () => {
   return (
     <div>
       {/* Welcome Header */}
-      <div className="mb-8 flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+      <div className="mb-6 sm:mb-8 flex items-start justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1.5 sm:mb-2 break-words">
             Welcome back, {displayName}!
           </h1>
-          <p className="text-gray-600">Here's what's happening with your requests today</p>
+          <p className="text-sm sm:text-base text-gray-600">Here's what's happening with your requests today</p>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          startIcon={<RefreshCw className="w-4 h-4" />}
-          onClick={fetchAll}
-          disabled={loading}
-          className="mt-1"
-        >
-          Refresh
-        </Button>
       </div>
 
       {/* Error banners */}
@@ -866,12 +886,12 @@ const EmployeeDashboard = () => {
       {/* Pending Liquidations Table */}
       {!loading && pendingLiquidationCAs.length > 0 && (
         <div className="mb-6 border border-orange-200 rounded-xl overflow-hidden shadow-sm">
-          <div className="flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-orange-50 to-amber-50 border-b border-orange-100">
-            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-orange-100 border border-orange-200">
+          <div className="flex items-center gap-3 px-4 sm:px-6 py-3 sm:py-4 bg-gradient-to-r from-orange-50 to-amber-50 border-b border-orange-100">
+            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-orange-100 border border-orange-200 shrink-0">
               <AlertTriangle className="w-5 h-5 text-orange-600" />
             </div>
-            <div className="flex-1">
-              <h3 className="text-base font-bold text-orange-900">
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm sm:text-base font-bold text-orange-900">
                 Cash Advances Pending Liquidation
               </h3>
               <p className="text-xs text-orange-700 mt-0.5">
@@ -885,26 +905,26 @@ const EmployeeDashboard = () => {
       )}
 
       {/* Statistics Cards & Request Status Overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-1 lg:grid-cols-1 xl:grid-cols-1 gap-4">
           {[
             {
               type: OVERVIEW_TYPES.CASH_ADVANCES,
               label: 'Cash Advances',
-              count: cashAdvances.length,
+              count: nonDraftCounts.cashAdvances,
               Icon: HandCoins,
             },
             {
               type: OVERVIEW_TYPES.LIQUIDATIONS,
               label: 'Liquidations',
-              count: liquidations.length,
+              count: nonDraftCounts.liquidations,
               Icon: ReceiptText,
             },
             {
               type: OVERVIEW_TYPES.REIMBURSEMENTS,
               label: 'Reimbursements',
-              count: reimbursements.length,
+              count: nonDraftCounts.reimbursements,
               Icon: Coins,
             },
           ].map(({ type, label, count, gradient, Icon }) => (
@@ -916,15 +936,15 @@ const EmployeeDashboard = () => {
               }`}
               onClick={() => setSelectedOverviewType(type)}
             >
-              <CardContent className="p-6 h-full">
-                <div className="flex items-center justify-between h-full">
+              <CardContent className="p-4 sm:p-6 h-full">
+                <div className="flex items-center justify-between h-full gap-3">
                   <div className="min-w-0">
                     <p className={`text-sm mb-2 whitespace-nowrap ${selectedOverviewType === type ? 'text-white' : 'text-blue-800'}`}>{label}</p>
-                    <h3 className={`text-4xl font-bold min-h-[2.5rem] flex items-center ${selectedOverviewType === type ? 'text-white' : 'text-blue-800'}`}>
+                    <h3 className={`text-3xl sm:text-4xl font-bold min-h-[2.5rem] flex items-center ${selectedOverviewType === type ? 'text-white' : 'text-blue-800'}`}>
                       {loading ? <Spinner size="md" className="text-white" /> : count}
                     </h3>
                   </div>
-                  <Icon className={`w-12 h-12 ${selectedOverviewType === type ? 'text-white' : 'text-blue-800'} opacity-50 shrink-0`} />
+                  <Icon className={`w-9 h-9 sm:w-12 sm:h-12 ${selectedOverviewType === type ? 'text-white' : 'text-blue-800'} opacity-50 shrink-0`} />
                 </div>
               </CardContent>
             </Card>
@@ -933,11 +953,11 @@ const EmployeeDashboard = () => {
 
         {/* Request Status Overview */}
         <Card className="lg:col-span-3 border !border-blue-200">
-          <CardContent className="p-6 rounded-lg">
-            <h2 className="text-xl font-semibold my-4">
+          <CardContent className="p-4 sm:p-6 rounded-lg">
+            <h2 className="text-lg sm:text-xl font-semibold my-2 sm:my-4">
               Request Status Overview
             </h2>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
             {overviewStats.stats.map((item) => {
               const borderStyles = {
                 'Pending Approval': 'border-orange-200 bg-orange-50 text-orange-800',
@@ -945,7 +965,7 @@ const EmployeeDashboard = () => {
                 'Disbursed': 'border-blue-300 bg-blue-50 text-blue-800',
                 'Released': 'border-blue-300 bg-blue-50 text-blue-800',
                 'Liquidated': 'border-blue-300 bg-blue-50 text-blue-800',
-                'Draft': 'border-gray-300 bg-gray-50 text-gray-800',
+                'Rejected': 'border-red-300 bg-red-50 text-red-800',
               };
 
               return (
@@ -993,28 +1013,28 @@ const EmployeeDashboard = () => {
       </Modal>
 
       {/* Quick Actions & Recent Requests */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6">
         {/* Quick Actions */}
-        <Card className="col-span-1 border !border-blue-200 ">
-          <CardContent className="p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Quick Actions</h2>
-            <div className="grid grid-cols-1 gap-3">
+        <Card className="col-span-3 lg:col-span-1 border !border-blue-200 ">
+          <CardContent className="p-4 sm:p-6">
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4 sm:mb-6">Quick Actions</h2>
+            <div className="grid grid-cols-3 sm:grid-cols-1 gap-2 sm:gap-3">
               {[
-                { label: 'New Cash Advance', icon: HandCoins, path: '/cash-advance', color: 'border-primary-500 text-primary-600 hover:bg-primary-50' },
-                { label: 'Liquidate', icon: ReceiptText, path: '/liquidation', color: 'border-pink-500 text-pink-600 hover:bg-pink-50' },
-                { label: 'Reimbursement', icon: Coins, path: '/reimbursement', color: 'border-cyan-500 text-cyan-600 hover:bg-cyan-50' },
-                { label: 'View Reports', icon: TrendingUp, path: '/reports', color: 'border-yellow-500 text-yellow-700 hover:bg-yellow-50' },
-              ].map(({ label, icon: Icon, path, color }) => (
+                { label: 'New Cash Advance', shortLabel: 'Advance', icon: HandCoins, path: '/cash-advance', color: 'border-primary-500 text-primary-600 hover:bg-primary-50' },
+                { label: 'Liquidate', shortLabel: 'Liquidate', icon: ReceiptText, path: '/liquidation', color: 'border-pink-500 text-pink-600 hover:bg-pink-50' },
+                { label: 'Reimbursement', shortLabel: 'Reimburse', icon: Coins, path: '/reimbursement', color: 'border-cyan-500 text-cyan-600 hover:bg-cyan-50' },
+              ].map(({ label, shortLabel, icon: Icon, path, color }) => (
                 <Button
                   key={path}
                   variant="secondary"
                   size="md"
                   fullWidth
-                  startIcon={<Icon className="w-5 h-5" />}
+                  startIcon={<Icon className="w-4 h-4 sm:w-5 sm:h-5" />}
                   onClick={() => navigate(path)}
-                  className={`py-3 ${color}`}
+                  className={`gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-1.5 sm:px-4 text-[11px] sm:text-sm leading-tight ${color}`}
                 >
-                  {label}
+                  <span className="sm:hidden">{shortLabel}</span>
+                  <span className="hidden sm:inline">{label}</span>
                 </Button>
               ))}
             </div>
@@ -1023,8 +1043,8 @@ const EmployeeDashboard = () => {
 
         {/* Recent Requests */}
         <Card className="col-span-3 border !border-blue-200 ">
-          <CardContent className="p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Recent Requests</h2>
+          <CardContent className="p-4 sm:p-6">
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4 sm:mb-6">Recent Requests</h2>
             {loading ? (
               <Loading message="Loading requests..." />
             ) : recentRequests.length === 0 ? (
@@ -1036,35 +1056,39 @@ const EmployeeDashboard = () => {
                 {recentRequests.map((request, index) => (
                   <li
                     key={`${request.type}-${request.id}`}
-                    className={`flex items-center gap-3 pb-3 ${
+                    className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 pb-3 ${
                       index < recentRequests.length - 1 ? 'border-b border-gray-200' : ''
                     }`}
                   >
-                    <div className="flex-shrink-0">
-                      {request.type === REQUEST_TYPES.CASH_ADVANCE ? (
-                        <HandCoins className="w-6 h-6 text-primary-600" />
-                      ) : (
-                        <ReceiptText className="w-6 h-6 text-pink-600" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {request.type === REQUEST_TYPES.CASH_ADVANCE
-                          ? `Cash Advance — ${request.refNumber}`
-                          : `Liquidation — ${request.refNumber}`}
-                      </p>
-                      <p className="text-xs text-gray-600">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-shrink-0">
+                          {request.type === REQUEST_TYPES.CASH_ADVANCE ? (
+                            <HandCoins className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600" />
+                          ) : (
+                            <ReceiptText className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
+                          )}
+                        </div>
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {request.type === REQUEST_TYPES.CASH_ADVANCE
+                            ? `Cash Advance — ${request.refNumber}`
+                            : `Liquidation — ${request.refNumber}`}
+                        </p>
+                      </div>
+                      <p className="text-xs text-gray-600 truncate mt-0.5 pl-7">
                         {formatCurrency(request.amount)} • {formatStatus(request.status)}
                       </p>
                     </div>
-                    <StatusChip status={request.status} />
-                    <button
-                      type="button"
-                      onClick={() => handleView(request)}
-                      className="p-1.5 text-gray-600 hover:bg-gray-100 rounded transition-colors"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-2 pl-7 sm:pl-0 flex-shrink-0">
+                      <StatusChip status={request.status} />
+                      <button
+                        type="button"
+                        onClick={() => handleView(request)}
+                        className="flex-shrink-0 p-1.5 text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -1075,14 +1099,14 @@ const EmployeeDashboard = () => {
 
       {/* ── Urgent Attention Panel ────────────────────────────────────────── */}
       {!loading && urgentItems.length > 0 && (
-        <Card className="border-red-200">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-red-100 border border-red-200">
+        <Card className="border-red-200 mt-6">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex items-center gap-3 mb-4 sm:mb-5">
+              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-red-100 border border-red-200 shrink-0">
                 <AlertTriangle className="w-5 h-5 text-red-600" />
               </div>
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">Needs Your Attention</h2>
+              <div className="min-w-0">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Needs Your Attention</h2>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {urgentItems.length} item{urgentItems.length !== 1 ? 's' : ''} require action
                 </p>
@@ -1091,70 +1115,47 @@ const EmployeeDashboard = () => {
 
             <ul className="space-y-3">
               {urgentItems.map((item) => {
-                const urgencyConfig = {
-                  [URGENCY_LEVELS.OVERDUE]: {
-                    row: 'bg-red-50 border border-red-200',
-                    badge: 'bg-red-100 text-red-700 border-red-300',
-                    action: 'bg-red-600 hover:bg-red-700 text-white',
-                  },
-                  [URGENCY_LEVELS.URGENT]: {
-                    row: 'bg-orange-50 border border-orange-200',
-                    badge: 'bg-orange-100 text-orange-700 border-orange-300',
-                    action: 'bg-orange-500 hover:bg-orange-600 text-white',
-                  },
-                  [URGENCY_LEVELS.WARNING]: {
-                    row: 'bg-yellow-50 border border-yellow-200',
-                    badge: 'bg-yellow-100 text-yellow-700 border-yellow-300',
-                    action: 'bg-yellow-500 hover:bg-yellow-600 text-white',
-                  },
-                }[item.urgency] || {};
+                const urgencyConfig = URGENT_ITEM_STYLES[item.urgency] || {};
 
                 return (
                   <li
                     key={item.id}
-                    className={`flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-lg ${urgencyConfig.row}`}
+                    className={`flex items-start sm:items-center justify-between sm:justify-start gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg ${urgencyConfig.row}`}
                   >
-                    {/* Icon */}
-                    <div className="flex-shrink-0">
-                      {item.type === REQUEST_TYPES.CASH_ADVANCE ? (
-                        <HandCoins className="w-5 h-5 text-gray-600" />
-                      ) : (
-                        <ReceiptText className="w-5 h-5 text-gray-600" />
-                      )}
-                    </div>
-
-                    {/* Details */}
+                    {/* Left: icon locked to ref number; badge + amount stack below, indented to align under the text */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-gray-900 font-mono">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-shrink-0">
+                          {item.type === REQUEST_TYPES.CASH_ADVANCE ? (
+                            <HandCoins className="w-5 h-5 text-gray-600" />
+                          ) : (
+                            <ReceiptText className="w-5 h-5 text-gray-600" />
+                          )}
+                        </div>
+                        <span className="text-sm font-semibold text-gray-900 font-mono truncate">
                           {item.refNumber || '—'}
                         </span>
-                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${urgencyConfig.badge}`}>
+                      </div>
+                      <div className="pl-7">
+                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap inline-flex w-fit mt-1 ${urgencyConfig.badge}`}>
                           {item.reason}
                         </span>
+                        <p className="text-xs text-gray-600 truncate mt-0.5">
+                          {formatCurrency(parseFloat(item.amount || 0))}
+                          {item.deadline && <span className="text-gray-500"> · {formatLongDate(item.deadline)}</span>}
+                        </p>
                       </div>
-                      <p className="text-xs text-gray-600 mt-0.5 truncate" title={item.purpose}>
-                        {item.label}{item.purpose ? ` · ${item.purpose}` : ''}
-                      </p>
-                      <p className="text-xs font-medium text-gray-700 mt-0.5">
-                        {formatCurrency(parseFloat(item.amount || 0))}
-                        {item.deadline && (
-                          <span className="text-gray-500 font-normal ml-2">
-                            · Deadline: {formatLongDate(item.deadline)}
-                          </span>
-                        )}
-                      </p>
                     </div>
 
-                    {/* Action */}
+                    {/* Action - stays on the right */}
                     <button
                       type="button"
                       onClick={item.onAction}
-                      className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${urgencyConfig.action}`}
+                      className={`flex-shrink-0 self-center inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors active:scale-[0.98] ${urgencyConfig.action}`}
                     >
                       {item.actionLabel === 'Create Liquidation' && <Receipt className="w-3.5 h-3.5" />}
                       {item.actionLabel === 'View' && <Eye className="w-3.5 h-3.5" />}
-                      {item.actionLabel}
+                      <span className="hidden sm:inline">{item.actionLabel}</span>
                     </button>
                   </li>
                 );

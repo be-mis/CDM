@@ -123,7 +123,7 @@ const TruncatedViewField = ({ value, label }) => (
 
 // ReimbursementForm component
 const ReimbursementForm = (props) => {
-  const { editData, onClose, viewOnly = false, hideCloseButton = false, accountingEdit = false, editReason = '', onSaved } = props || {};
+  const { editData, onClose, viewOnly = false, hideCloseButton = false, accountingEdit = false, editReason = '', editResultStatus = 'released', onSaved } = props || {};
   const isEditMode = !!editData;
   const { user }   = useAuth();
   const navigate   = useNavigate();
@@ -678,16 +678,23 @@ const ReimbursementForm = (props) => {
     if (requestedStatus === 'draft'   && !validateDraft())  return;
     setSubmitting(true);
     try {
-      // Accounting is correcting an already-approved reimbursement. Saving
-      // the correction also releases it — the previous status is no longer
-      // preserved. `edit_reason` ties the change to the Audit Logs.
+      // Accounting/Admin is correcting a reimbursement outside the normal
+      // flow. Saving the correction also advances its status — the previous
+      // status is no longer preserved. `edit_reason` ties the change to the
+      // Audit Logs. `editResultStatus` decides where it lands: 'released'
+      // when edited from Disbursements (already approved, now being
+      // released), or 'approved' when edited from Approvals (admin editing +
+      // approving a pending request).
+      const isApprovingEdit = accountingEdit && editResultStatus === 'approved';
       const autoApprove = !accountingEdit && requestedStatus === 'pending' && isApprover;
-      const status = accountingEdit ? 'released' : (autoApprove ? 'approved' : requestedStatus);
-      const approverFields = accountingEdit
-        ? {}
-        : autoApprove
-          ? { approver: user.name, approvedDate: new Date().toISOString().split('T')[0] }
-          : { approver: '', approvedDate: '' };
+      const status = accountingEdit ? editResultStatus : (autoApprove ? 'approved' : requestedStatus);
+      const approverFields = isApprovingEdit
+        ? { approver: user.name, approvedDate: new Date().toISOString().split('T')[0] }
+        : accountingEdit
+          ? {}
+          : autoApprove
+            ? { approver: user.name, approvedDate: new Date().toISOString().split('T')[0] }
+            : { approver: '', approvedDate: '' };
 
       // Phase 1: Save reimbursement header + child rows (no new files yet)
       const phase1Payload = {
@@ -746,7 +753,9 @@ const ReimbursementForm = (props) => {
 
       showSnackbar(
         accountingEdit
-          ? 'Transaction updated and released successfully. The change has been recorded in the Audit Logs.'
+          ? (isApprovingEdit
+              ? 'Transaction updated and approved successfully. The change has been recorded in the Audit Logs.'
+              : 'Transaction updated and released successfully. The change has been recorded in the Audit Logs.')
           : (status === 'draft' ? 'Draft saved successfully!' : 'Reimbursement submitted successfully!'),
         'success',
       );
@@ -1093,7 +1102,7 @@ const ReimbursementForm = (props) => {
       </Card>
 
       {/* Action Buttons */}
-      <div className="flex gap-4 justify-end items-center">
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-end items-stretch sm:items-center">
         {!viewOnly && (
           <>
             {!accountingEdit && (
@@ -1102,6 +1111,7 @@ const ReimbursementForm = (props) => {
                 startIcon={<Save className="w-4 h-4" />}
                 onClick={handleSaveDraft}
                 disabled={submitting}
+                className="w-full sm:w-auto"
               >
                 {submitting ? 'Saving…' : 'Save Draft'}
               </Button>
@@ -1111,6 +1121,7 @@ const ReimbursementForm = (props) => {
               startIcon={<Send className="w-4 h-4" />}
               onClick={handleSubmit}
               disabled={submitting || (accountingEdit && !editReason?.trim())}
+              className="w-full sm:w-auto"
             >
               {submitting
                 ? (accountingEdit ? 'Updating…' : 'Submitting…')
@@ -1139,7 +1150,7 @@ const ReimbursementForm = (props) => {
       <Modal
         open={confirmReleaseOpen}
         onClose={() => setConfirmReleaseOpen(false)}
-        title="Release Transaction"
+        title={editResultStatus === 'approved' ? 'Approve Transaction' : 'Release Transaction'}
         maxWidth="sm"
         actions={
           <>
@@ -1152,13 +1163,17 @@ const ReimbursementForm = (props) => {
               onClick={handleConfirmRelease}
               disabled={submitting}
             >
-              {submitting ? 'Releasing…' : 'Confirm Release'}
+              {submitting ? (editResultStatus === 'approved' ? 'Approving…' : 'Releasing…') : (editResultStatus === 'approved' ? 'Confirm Approval' : 'Confirm Release')}
             </Button>
           </>
         }
       >
         <p className="text-gray-700">
-          Updating this transaction will mark it as <span className="font-semibold text-green-700">Released</span>. Continue?
+          {editResultStatus === 'approved' ? (
+            <>Updating this transaction will mark it as <span className="font-semibold text-green-700">Approved</span>, with you as the approver. Continue?</>
+          ) : (
+            <>Updating this transaction will mark it as <span className="font-semibold text-green-700">Released</span>. Continue?</>
+          )}
         </p>
       </Modal>
     </div>

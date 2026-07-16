@@ -52,7 +52,7 @@ const CashAdvanceForm = (props) => {
         return `${year}-${month}-${day}`;
     };
 
-    const { editData, onClose, viewOnly = false, hideCloseButton = false, accountingEdit = false, editReason = '', onSaved } = props || {};
+    const { editData, onClose, viewOnly = false, hideCloseButton = false, accountingEdit = false, editReason = '', editResultStatus = 'released', onSaved } = props || {};
 
     const [formData, setFormData] = useState(() => {
 
@@ -427,24 +427,33 @@ const CashAdvanceForm = (props) => {
             // FIX 3: Same date preservation logic as handleSaveDraft.
             const advanceDate = editData?.id ? formData.advanceDate : getTodayString();
 
-            // Accounting is correcting an already-approved transaction. Saving
-            // the correction also releases it — the previous status is no
-            // longer preserved. `edit_reason` ties the change to the Audit Logs.
+            // Accounting/Admin is correcting a transaction outside the normal
+            // flow. Saving the correction also advances its status — the
+            // previous status is no longer preserved. `edit_reason` ties the
+            // change to the Audit Logs. `editResultStatus` decides where it
+            // lands: 'released' when edited from Disbursements (already
+            // approved, now being released), or 'approved' when edited from
+            // Approvals (admin editing + approving a pending request).
             if (accountingEdit) {
+                const isApprovingEdit = editResultStatus === 'approved';
                 const payload = {
                     ...formData,
                     advanceDate,
                     items,
                     requestedAmount: calculateTotal(),
-                    status: 'released',
-                    approver: editData.approver || editData.approved_by || '',
-                    approvedDate: editData.approvedDate || editData.approved_at || '',
+                    status: editResultStatus,
+                    approver: isApprovingEdit ? user.name : (editData.approver || editData.approved_by || ''),
+                    approvedDate: isApprovingEdit ? getTodayString() : (editData.approvedDate || editData.approved_at || ''),
                     editReason: editReason.trim(),
                 };
                 const res = await api.put(`/cash-advances/${editData.id}`, payload);
                 if (res.data.success) {
                     if (attachments.length > 0 || pendingDeletes.length > 0) await uploadAttachments(res.data.data.id);
-                    showNotification('Transaction updated and released successfully. The change has been recorded in the Audit Logs.');
+                    showNotification(
+                        isApprovingEdit
+                            ? 'Transaction updated and approved successfully. The change has been recorded in the Audit Logs.'
+                            : 'Transaction updated and released successfully. The change has been recorded in the Audit Logs.'
+                    );
                     if (onSaved) onSaved();
                     else if (onClose) onClose();
                 }
@@ -572,7 +581,7 @@ const CashAdvanceForm = (props) => {
             <Modal
                 open={confirmReleaseOpen}
                 onClose={() => setConfirmReleaseOpen(false)}
-                title="Release Transaction"
+                title={editResultStatus === 'approved' ? 'Approve Transaction' : 'Release Transaction'}
                 maxWidth="sm"
                 actions={
                     <>
@@ -585,13 +594,17 @@ const CashAdvanceForm = (props) => {
                             onClick={handleConfirmRelease}
                             disabled={isSubmitting}
                         >
-                            {isSubmitting ? 'Releasing…' : 'Confirm Release'}
+                            {isSubmitting ? (editResultStatus === 'approved' ? 'Approving…' : 'Releasing…') : (editResultStatus === 'approved' ? 'Confirm Approval' : 'Confirm Release')}
                         </Button>
                     </>
                 }
             >
                 <p className="text-gray-700">
-                    Updating this transaction will mark it as <span className="font-semibold text-green-700">Released</span>. Continue?
+                    {editResultStatus === 'approved' ? (
+                        <>Updating this transaction will mark it as <span className="font-semibold text-green-700">Approved</span>, with you as the approver. Continue?</>
+                    ) : (
+                        <>Updating this transaction will mark it as <span className="font-semibold text-green-700">Released</span>. Continue?</>
+                    )}
                 </p>
             </Modal>
 
@@ -611,7 +624,7 @@ const CashAdvanceForm = (props) => {
                                 <TruncatedViewField label="Department" value={formData.department} />
                                 <div className="relative border border-gray-300 rounded-lg px-3 py-2 flex items-center">
                                     <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600">Business Unit</span>
-                                    <div className="flex gap-6 w-full">
+                                    <div className="flex flex-wrap gap-x-4 gap-y-1.5 w-full">
                                         <label className="flex items-center gap-1 text-sm">
                                             <input type="radio" name="businessUnit" value="EPC" checked={formData.businessUnit === 'EPC'} onChange={handleInputChange} className="w-4 h-4" />
                                             EPC
@@ -763,7 +776,7 @@ const CashAdvanceForm = (props) => {
                         inputRefs={itemInputRefs}
                     />
                     <div className="mt-6 flex justify-end">
-                        <div className="min-w-[180px] p-4 border border-gray-200 rounded-lg">
+                        <div className="w-full sm:w-auto sm:min-w-[180px] p-4 border border-gray-200 rounded-lg">
                             <p className="text-xs text-gray-600 mb-1">Grand Total Amount</p>
                             <h3 className={`text-2xl font-semibold ${errors.total ? 'text-red-600' : 'text-gray-900'}`}>
                                 ₱ {calculateTotal().toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -797,7 +810,7 @@ const CashAdvanceForm = (props) => {
                 </CardContent>
             </Card>
 
-            <div className="flex gap-4 justify-end items-center">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-end items-stretch sm:items-center">
                 {!viewOnly && (
                     <>
                         {!accountingEdit && (
@@ -806,6 +819,7 @@ const CashAdvanceForm = (props) => {
                                 startIcon={<Save className="w-4 h-4" />}
                                 onClick={handleSaveDraft}
                                 disabled={isSubmitting}
+                                className="w-full sm:w-auto"
                             >
                                 {isSubmitting ? 'Saving…' : 'Save Draft'}
                             </Button>
@@ -815,6 +829,7 @@ const CashAdvanceForm = (props) => {
                             startIcon={<Send className="w-4 h-4" />}
                             onClick={handleSubmit}
                             disabled={isSubmitting || (accountingEdit && !editReason?.trim())}
+                            className="w-full sm:w-auto"
                         >
                             {isSubmitting
                                 ? (accountingEdit ? 'Updating…' : 'Submitting…')

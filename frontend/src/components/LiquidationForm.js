@@ -117,7 +117,7 @@ const TruncatedViewField = ({ value, label }) => (
 // LiquidationForm
 // ─────────────────────────────────────────────────────────────────────────────
 const LiquidationForm = (props) => {
-  const { initialData, editData, onClose, viewOnly = false, accountingEdit = false, editReason = '', onSaved } = props || {};
+  const { initialData, editData, onClose, viewOnly = false, accountingEdit = false, editReason = '', editResultStatus = 'released', onSaved } = props || {};
   const isEditMode = !!editData;
   const { user }   = useAuth();
   const navigate   = useNavigate();
@@ -705,16 +705,23 @@ const LiquidationForm = (props) => {
     if (!validateForm()) return;
     setSubmitting(true);
     try {
-      // Accounting is correcting an already-approved liquidation. Saving the
-      // correction also releases it — the previous status is no longer
-      // preserved. `edit_reason` ties the change to the Audit Logs.
+      // Accounting/Admin is correcting a liquidation outside the normal flow.
+      // Saving the correction also advances its status — the previous status
+      // is no longer preserved. `edit_reason` ties the change to the Audit
+      // Logs. `editResultStatus` decides where it lands: 'released' when
+      // edited from Disbursements (already approved, now being released), or
+      // 'approved' when edited from Approvals (admin editing + approving a
+      // pending request).
+      const isApprovingEdit = accountingEdit && editResultStatus === 'approved';
       const autoApprove = !accountingEdit && requestedStatus === 'pending' && isApprover;
-      const status = accountingEdit ? 'released' : (autoApprove ? 'approved' : requestedStatus);
-      const approverFields = accountingEdit
-        ? {}
-        : autoApprove
-          ? { approver: user.name, approvedDate: new Date().toISOString().split('T')[0] }
-          : { approver: '', approvedDate: '' };
+      const status = accountingEdit ? editResultStatus : (autoApprove ? 'approved' : requestedStatus);
+      const approverFields = isApprovingEdit
+        ? { approver: user.name, approvedDate: new Date().toISOString().split('T')[0] }
+        : accountingEdit
+          ? {}
+          : autoApprove
+            ? { approver: user.name, approvedDate: new Date().toISOString().split('T')[0] }
+            : { approver: '', approvedDate: '' };
 
       // ── Phase 1: Save liquidation with existing/no attachments first ──────
       // Pass expenses/itinerary as-is (existing receipts stay, new ones pending)
@@ -774,7 +781,9 @@ const LiquidationForm = (props) => {
 
       showSnackbar(
         accountingEdit
-          ? 'Transaction updated and released successfully. The change has been recorded in the Audit Logs.'
+          ? (isApprovingEdit
+              ? 'Transaction updated and approved successfully. The change has been recorded in the Audit Logs.'
+              : 'Transaction updated and released successfully. The change has been recorded in the Audit Logs.')
           : (status === 'draft' ? 'Draft saved successfully!' : 'Liquidation submitted successfully!'),
         'success',
       );
@@ -837,7 +846,7 @@ const LiquidationForm = (props) => {
                 value={viewOnly ? formatLongDate(formData.liquidationDate) : formData.liquidationDate}
               />
               
-              <div className="col-span-1 md:col-span-2 relative border border-gray-200 rounded-lg px-3 h-[38px] flex items-center gap-2 bg-gray-50">
+              <div className="col-span-1 md:col-span-2 relative border border-gray-200 rounded-lg px-3 py-2 sm:h-[38px] flex flex-wrap sm:flex-nowrap items-center gap-2 bg-gray-50">
                 <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-500 z-10">
                   Date Coverage
                 </span>
@@ -846,7 +855,7 @@ const LiquidationForm = (props) => {
                     ? formatLongDate(formData.dateCoverageFrom)
                     : '—'}
                 </span>
-                <span className="text-gray-400 text-sm">–</span>
+                <span className="text-gray-400 text-sm hidden sm:inline">–</span>
                 <span className="text-sm text-gray-900 truncate">
                   {formData.dateCoverageTo
                     ? formatLongDate(formData.dateCoverageTo)
@@ -1095,7 +1104,7 @@ const LiquidationForm = (props) => {
       </Card>
 
       {/* Action Buttons */}
-      <div className="flex gap-4 justify-end items-center">
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-end items-stretch sm:items-center">
         {!viewOnly && (
           <>
             {!accountingEdit && (
@@ -1104,6 +1113,7 @@ const LiquidationForm = (props) => {
                 startIcon={<Save className="w-4 h-4" />}
                 onClick={handleSaveDraft}
                 disabled={submitting}
+                className="w-full sm:w-auto"
               >
                 {submitting ? 'Saving…' : 'Save Draft'}
               </Button>
@@ -1113,6 +1123,7 @@ const LiquidationForm = (props) => {
               startIcon={<Send className="w-4 h-4" />}
               onClick={handleSubmit}
               disabled={submitting || (accountingEdit && !editReason?.trim())}
+              className="w-full sm:w-auto"
             >
               {submitting
                 ? (accountingEdit ? 'Updating…' : 'Submitting…')
@@ -1141,7 +1152,7 @@ const LiquidationForm = (props) => {
       <Modal
         open={confirmReleaseOpen}
         onClose={() => setConfirmReleaseOpen(false)}
-        title="Release Transaction"
+        title={editResultStatus === 'approved' ? 'Approve Transaction' : 'Release Transaction'}
         maxWidth="sm"
         actions={
           <>
@@ -1154,13 +1165,17 @@ const LiquidationForm = (props) => {
               onClick={handleConfirmRelease}
               disabled={submitting}
             >
-              {submitting ? 'Releasing…' : 'Confirm Release'}
+              {submitting ? (editResultStatus === 'approved' ? 'Approving…' : 'Releasing…') : (editResultStatus === 'approved' ? 'Confirm Approval' : 'Confirm Release')}
             </Button>
           </>
         }
       >
         <p className="text-gray-700">
-          Updating this transaction will mark it as <span className="font-semibold text-green-700">Released</span>. Continue?
+          {editResultStatus === 'approved' ? (
+            <>Updating this transaction will mark it as <span className="font-semibold text-green-700">Approved</span>, with you as the approver. Continue?</>
+          ) : (
+            <>Updating this transaction will mark it as <span className="font-semibold text-green-700">Released</span>. Continue?</>
+          )}
         </p>
       </Modal>
     </div>

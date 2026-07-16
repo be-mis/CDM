@@ -5,6 +5,7 @@ import {
     Search, ChevronLeft, ChevronRight, Clock, Send, FileEdit, ClockAlert,
 } from 'lucide-react';
 import api from '../api';
+import { useAuth } from '../context/AuthContext';
 import { formatLongDate } from '../utils/formatters';
 import CashAdvanceForm from '../components/CashAdvanceForm';
 import LiquidationForm from '../components/LiquidationForm';
@@ -314,6 +315,9 @@ const RequestTimeline = ({ request }) => {
 };
 
 const Approvals = () => {
+    const { user } = useAuth();
+    const isAdmin = Boolean(user?.role?.toLowerCase().includes('admin'));
+
     const TAB_SLUGS = ['cash-advances', 'liquidations', 'reimbursements'];
     const [searchParams, setSearchParams] = useSearchParams();
     const [activeTab, setActiveTab] = useState(() => {
@@ -340,6 +344,12 @@ const Approvals = () => {
     const [statusFilter, setStatusFilter] = useState('pending');
     const [pageSize, setPageSize] = useState(10);
     const [page, setPage] = useState({ cashAdvances: 1, liquidations: 1, reimbursements: 1 });
+
+    // ── Edit transaction state (admin only) ────────────────────────────────
+    const [editOpen, setEditOpen] = useState(false);
+    const [editRequest, setEditRequest] = useState(null);
+    const [editReason, setEditReason] = useState('');
+    const [editLoading, setEditLoading] = useState(false);
 
     const tabKeyMap = { 0: 'cashAdvances', 1: 'liquidations', 2: 'reimbursements' };
 
@@ -450,6 +460,79 @@ const Approvals = () => {
         if (activeTab === 0) return <CashAdvanceForm editData={selectedRequest} viewOnly />;
         if (activeTab === 1) return <LiquidationForm editData={selectedRequest} viewOnly />;
         if (activeTab === 2) return <ReimbursementForm editData={selectedRequest} viewOnly />;
+        return null;
+    };
+
+    // ── Edit transaction handlers (admin only) ──────────────────────────────
+    // Editing a transaction here PUTs the change to the same record and is
+    // expected to be recorded in the Audit Logs by the backend (before/after
+    // values, editor, timestamp). We collect a mandatory "reason for edit" so
+    // there's always context if the change needs to be reviewed later.
+    const handleOpenEdit = async (row) => {
+        if (!isAdmin) return;
+        if ((row.status || '').toLowerCase() !== 'pending') {
+            setNotification({ message: 'Only pending requests can be edited.', severity: 'error' });
+            return;
+        }
+        try {
+            setEditLoading(true);
+            setEditReason('');
+            setEditOpen(true);
+            const typeMap = { 0: 'cash-advances', 1: 'liquidations', 2: 'reimbursements' };
+            const endpoint = typeMap[activeTab];
+            // Fetch the full record — the row we have here comes from the
+            // summary list (/approvals/all) and may be missing fields the
+            // form needs (line items, breakdowns, receipts, etc).
+            const res = await api.get(`/${endpoint}/${row.id}`);
+            if (res.data.success) {
+                setEditRequest(res.data.data);
+            } else {
+                setNotification({ message: 'Failed to load transaction for editing.', severity: 'error' });
+                setEditOpen(false);
+            }
+        } catch (error) {
+            console.error('Error fetching transaction for edit:', error);
+            setNotification({ message: 'Failed to load transaction for editing.', severity: 'error' });
+            setEditOpen(false);
+        } finally {
+            setEditLoading(false);
+        }
+    };
+
+    const handleCloseEdit = () => {
+        if (editLoading) return; // don't let them close mid-fetch
+        setEditOpen(false);
+        setEditRequest(null);
+        setEditReason('');
+    };
+
+    // The forms submit to the API themselves (they always have — there's no
+    // onSave callback). When `accountingEdit` is true, saving also advances
+    // the record's status — `editResultStatus="approved"` here means an
+    // admin editing a pending request also approves it (with themselves as
+    // approver) rather than leaving it pending or releasing it, which is the
+    // behavior used when this same edit flow is triggered from Disbursements.
+    // The form hides "Save Draft", labels the submit button "Update
+    // Transaction", shows a "Confirm Approval" prompt, and attaches
+    // `edit_reason` to the payload for the Audit Logs. This just reacts once
+    // the form reports it's done.
+    const handleEditSaved = () => {
+        handleCloseEdit();
+        fetchPendingApprovals();
+    };
+
+    const renderEditForm = () => {
+        if (!editRequest) return null;
+        const commonProps = {
+            editData: editRequest,
+            accountingEdit: true,
+            editReason,
+            editResultStatus: 'approved',
+            onSaved: handleEditSaved,
+        };
+        if (activeTab === 0) return <CashAdvanceForm {...commonProps} />;
+        if (activeTab === 1) return <LiquidationForm {...commonProps} />;
+        if (activeTab === 2) return <ReimbursementForm {...commonProps} />;
         return null;
     };
 
@@ -660,6 +743,16 @@ const Approvals = () => {
                                         >
                                             <Eye className="w-4 h-4" />
                                         </button>
+                                        {status === 'pending' && isAdmin && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleOpenEdit(row)}
+                                                className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                                title="Edit Transaction (recorded in Audit Logs)"
+                                            >
+                                                <FileEdit className="w-4 h-4" />
+                                            </button>
+                                        )}
                                         {status === 'pending' && (
                                             <>
                                                 <button
@@ -1035,6 +1128,53 @@ const Approvals = () => {
                     </>
                 )}
             </Modal>
+
+            {/* Edit Transaction Modal (admin only) */}
+            {isAdmin && (
+                <Modal
+                    open={editOpen}
+                    onClose={handleCloseEdit}
+                    title={
+                        <div className="flex items-center gap-3">
+                            <span>Edit Transaction</span>
+                            <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full flex items-center gap-1">
+                                <FileEdit className="w-3 h-3" />
+                                Audit Logged
+                            </span>
+                        </div>
+                    }
+                    maxWidth="xl"
+                    actions={
+                        <Button variant="secondary" onClick={handleCloseEdit} disabled={editLoading}>
+                            Cancel
+                        </Button>
+                    }
+                >
+                    {editLoading ? (
+                        <Loading message="Loading transaction…" />
+                    ) : (
+                        <>
+                            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                                Changes here are recorded in the Audit Logs — what changed, who made the change, and when — so please provide a reason before saving. Saving will also <span className="font-semibold">approve</span> this request, with you listed as the approver.
+                            </div>
+                            <Input
+                                label="Reason for Edit"
+                                placeholder="e.g. Corrected amount per updated receipt"
+                                multiline
+                                fullWidth
+                                rows={2}
+                                value={editReason}
+                                onChange={(e) => setEditReason(e.target.value)}
+                                required
+                                autoFocus
+                            />
+                            <div className="mt-4">
+                                {renderEditForm()}
+                            </div>
+                        </>
+                    )}
+                </Modal>
+            )}
         </div>
     );
 };

@@ -1117,50 +1117,50 @@ const MyRequests = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-6">
         <Card className="!bg-orange-50 border border-orange-200 text-white shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
+          <CardContent className="p-3 sm:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-orange-800 text-sm font-semibold mb-2">Pending</p>
-                <h3 className="text-4xl font-bold text-orange-800">{stats.pending}</h3>
+                <p className="text-orange-800 text-xs sm:text-sm font-semibold mb-1 sm:mb-2">Pending</p>
+                <h3 className="text-2xl sm:text-4xl font-bold text-orange-800">{stats.pending}</h3>
               </div>
-              <Clock className="w-12 h-12 text-orange-800 opacity-50" />
+              <Clock className="w-7 h-7 sm:w-12 sm:h-12 text-orange-800 opacity-50" />
             </div>
           </CardContent>
         </Card>
 
         <Card className="!bg-green-50 border border-green-200 text-white shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
+          <CardContent className="p-3 sm:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-green-800 text-sm font-semibold mb-2">Approved</p>
-                <h3 className="text-4xl font-bold text-green-800">{stats.approved}</h3>
+                <p className="text-green-800 text-xs sm:text-sm font-semibold mb-1 sm:mb-2">Approved</p>
+                <h3 className="text-2xl sm:text-4xl font-bold text-green-800">{stats.approved}</h3>
               </div>
-              <CheckCircle className="w-12 h-12 text-green-800 opacity-50" />
+              <CheckCircle className="w-7 h-7 sm:w-12 sm:h-12 text-green-800 opacity-50" />
             </div>
           </CardContent>
         </Card>
 
         <Card className="!bg-rose-50 border border-rose-200 text-white shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
+          <CardContent className="p-3 sm:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-rose-800 text-sm font-semibold mb-2">Rejected</p>
-                <h3 className="text-4xl font-bold text-rose-800">{stats.rejected}</h3>
+                <p className="text-rose-800 text-xs sm:text-sm font-semibold mb-1 sm:mb-2">Rejected</p>
+                <h3 className="text-2xl sm:text-4xl font-bold text-rose-800">{stats.rejected}</h3>
               </div>
-              <XCircle className="w-12 h-12 text-rose-800 opacity-50" />
+              <XCircle className="w-7 h-7 sm:w-12 sm:h-12 text-rose-800 opacity-50" />
             </div>
           </CardContent>
         </Card>
         <Card className="!bg-blue-50 border border-blue-200 text-white shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
+          <CardContent className="p-3 sm:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-blue-800 text-sm font-semibold mb-2">Released</p>
-                <h3 className="text-4xl font-bold text-blue-800">{stats.released}</h3>
+                <p className="text-blue-800 text-xs sm:text-sm font-semibold mb-1 sm:mb-2">Released</p>
+                <h3 className="text-2xl sm:text-4xl font-bold text-blue-800">{stats.released}</h3>
               </div>
-              <CheckCircle className="w-12 h-12 text-blue-800 opacity-50" />
+              <CheckCircle className="w-7 h-7 sm:w-12 sm:h-12 text-blue-800 opacity-50" />
             </div>
           </CardContent>
         </Card>
@@ -1170,13 +1170,13 @@ const MyRequests = () => {
       <Card>
         {/* Navigation Tabs */}
         <div className="border-b border-gray-200">
-          <div className="flex px-4 gap-2">
+          <div className="flex px-2 sm:px-4 gap-1 sm:gap-2 overflow-x-auto">
             {tabs.map((tab, index) => (
               <button
                 type="button"
                 key={index}
                 onClick={() => handleTabChange(null, index)}
-                className={`flex items-center gap-2 px-6 py-4 text-sm font-semibold border-b-2 transition-colors ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-semibold border-b-2 whitespace-nowrap transition-colors ${
                   tabValue === index
                     ? 'border-primary-600 text-primary-600'
                     : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
@@ -1253,7 +1253,83 @@ const MyRequests = () => {
 
           {/* Cash Advances Tab Panel */}
           {tabValue === 0 && (
-            <div className="overflow-x-auto border border-gray-200 rounded-lg">
+            <>
+              {/* Mobile card list */}
+              <div className="sm:hidden space-y-2">
+                {loading ? (
+                  <Loading message="Loading cash advances..." />
+                ) : filteredCashAdvances.length === 0 ? (
+                  <p className="py-10 text-center text-gray-400 text-sm">No results found.</p>
+                ) : (
+                  paginatedCashAdvances.map((request) => (
+                    <div
+                      key={request.id}
+                      className={`p-3 rounded-lg border border-gray-200 overflow-hidden ${
+                        request.urgency === 'overdue' ? 'bg-red-50/40 border-l-4 border-l-red-500' :
+                        request.urgency === 'urgent'  ? 'bg-orange-50/40 border-l-4 border-l-orange-400' :
+                        request.urgency === 'warning' ? 'bg-yellow-50/40 border-l-4 border-l-yellow-400' : ''
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-semibold font-mono text-gray-900 truncate min-w-0 flex-1">{request.refNumber}</p>
+                        <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">
+                          ₱{request.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">{formatLongDate(request.requestDate)}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                        <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border ${getStatusColor(request.status)}`}>
+                          {request.status}
+                        </span>
+                        {request.urgency && request.urgency !== 'normal' && (
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full border ${
+                            request.urgency === 'overdue' ? 'border-red-200 bg-red-50 text-red-700' :
+                            request.urgency === 'urgent'  ? 'border-orange-200 bg-orange-50 text-orange-700' :
+                                                            'border-yellow-200 bg-yellow-50 text-yellow-700'
+                          }`}>
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            {request.urgency === 'overdue' ? 'Overdue' :
+                             request.urgency === 'urgent'  ? 'Urgent' : 'Due soon'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                        <p className="text-xs text-gray-600 truncate min-w-0 flex-1">
+                          {isApproverUser ? 'Accounting: ' : 'Approver: '}{isApproverUser ? request.releasedBy : request.approver}
+                        </p>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button type="button" onClick={() => handleView(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors" aria-label="View details">
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {['draft', 'cancelled', 'rejected'].includes((request.status || '').toLowerCase()) && (
+                            <button type="button" onClick={() => handleEdit(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors" aria-label="Edit">
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {request.status === 'Draft' && (
+                            <button type="button" onClick={() => handleDeleteCashAdvance(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" aria-label="Delete">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {request.status === 'Pending Approval' && (
+                            <button type="button" onClick={() => handleDeleteCashAdvance(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" aria-label="Cancel request">
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          )}
+                          {request.status.toLowerCase().includes('released') && !liquidations.some(l => l.cashAdvanceRef === request.refNumber) && (
+                            <button type="button" onClick={() => handleCreateLiquidation(request)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded transition-colors" aria-label="Create liquidation">
+                              <Receipt className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden sm:block overflow-x-auto border border-gray-200 rounded-lg">
               <table className="w-full min-w-[800px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -1363,7 +1439,8 @@ const MyRequests = () => {
                   )}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
 
           {/* Cash Advances Pagination */}
@@ -1379,7 +1456,62 @@ const MyRequests = () => {
 
           {/* Liquidations Tab Panel */}
           {tabValue === 1 && (
-            <div className="overflow-x-auto border border-gray-200 rounded-lg">
+            <>
+              {/* Mobile card list */}
+              <div className="sm:hidden space-y-2">
+                {loading ? (
+                  <Loading message="Loading liquidations..." />
+                ) : filteredLiquidations.length === 0 ? (
+                  <p className="py-10 text-center text-gray-400 text-sm">No results found.</p>
+                ) : (
+                  paginatedLiquidations.map((request) => (
+                    <div key={request.id} className="p-3 rounded-lg border border-gray-200 overflow-hidden">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-semibold font-mono text-gray-900 truncate min-w-0 flex-1">{request.refNumber}</p>
+                        <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">
+                          ₱{request.totalExpenses.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        CA ref: {request.cashAdvanceRef} · {formatLongDate(request.submitDate)}
+                      </p>
+                      <div className="mt-2">
+                        <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border ${getStatusColor(request.status)}`}>
+                          {request.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                        <p className="text-xs text-gray-600 truncate min-w-0 flex-1">
+                          {isApproverUser ? 'Disburse by: ' : 'Approver: '}{isApproverUser ? request.releasedBy : request.approver}
+                        </p>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button type="button" onClick={() => handleViewLiquidation(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors" aria-label="View details">
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {['draft', 'cancelled', 'rejected'].includes((request.status || '').toLowerCase()) && (
+                            <button type="button" onClick={() => handleEditLiquidation(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors" aria-label="Edit">
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {request.status === 'Draft' && (
+                            <button type="button" onClick={() => handleDeleteLiquidation(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" aria-label="Delete">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {request.status === 'Pending Approval' && (
+                            <button type="button" onClick={() => handleDeleteLiquidation(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" aria-label="Cancel request">
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden sm:block overflow-x-auto border border-gray-200 rounded-lg">
               <table className="w-full min-w-[800px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -1457,7 +1589,8 @@ const MyRequests = () => {
                   )}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
 
           {/* Liquidations Pagination */}
@@ -1473,7 +1606,60 @@ const MyRequests = () => {
 
           {/* Reimbursements Tab Panel */}
           {tabValue === 2 && (
-            <div className="overflow-x-auto border border-gray-200 rounded-lg">
+            <>
+              {/* Mobile card list */}
+              <div className="sm:hidden space-y-2">
+                {loading ? (
+                  <Loading message="Loading reimbursements..." />
+                ) : filteredReimbursements.length === 0 ? (
+                  <p className="py-10 text-center text-gray-400 text-sm">No results found.</p>
+                ) : (
+                  paginatedReimbursements.map((request) => (
+                    <div key={request.id} className="p-3 rounded-lg border border-gray-200 overflow-hidden">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-semibold font-mono text-gray-900 truncate min-w-0 flex-1">{request.refNumber}</p>
+                        <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">
+                          ₱{request.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">{formatLongDate(request.submitDate)}</p>
+                      <div className="mt-2">
+                        <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border ${getStatusColor(request.status)}`}>
+                          {request.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                        <p className="text-xs text-gray-600 truncate min-w-0 flex-1">
+                          {isApproverUser ? 'Disburse by: ' : 'Approver: '}{isApproverUser ? request.releasedBy : request.approver}
+                        </p>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button type="button" onClick={() => handleViewReimbursement(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors" aria-label="View details">
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {['draft', 'cancelled', 'rejected'].includes((request.status || '').toLowerCase()) && (
+                            <button type="button" onClick={() => handleEditReimbursement(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors" aria-label="Edit">
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {request.status === 'Draft' && (
+                            <button type="button" onClick={() => handleDeleteReimbursement(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" aria-label="Delete">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {request.status === 'Pending Approval' && (
+                            <button type="button" onClick={() => handleDeleteReimbursement(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" aria-label="Cancel request">
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden sm:block overflow-x-auto border border-gray-200 rounded-lg">
               <table className="w-full min-w-[800px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -1549,7 +1735,8 @@ const MyRequests = () => {
                   )}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
 
           {/* Reimbursements Pagination */}
