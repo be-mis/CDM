@@ -56,7 +56,6 @@ const CashAdvanceForm = (props) => {
 
     const [formData, setFormData] = useState(() => {
 
-        console.log('Initializing formData with editData:', editData);
         if (editData) {
             return {
                 advanceNumber: editData.advanceNumber || editData.advance_number || '',
@@ -124,6 +123,7 @@ const CashAdvanceForm = (props) => {
     const [attachments, setAttachments] = useState([]);
     const [pendingDeletes, setPendingDeletes] = useState([]);
     const [notification, setNotification] = useState(null);
+    const [attachmentSizeError, setAttachmentSizeError] = useState(null);
     const [errors, setErrors] = useState({});
     const [userProfile, setUserProfile] = useState(null);
     // FIX 3: Loading state to prevent duplicate submissions on rapid double-click.
@@ -539,15 +539,34 @@ const CashAdvanceForm = (props) => {
         setTimeout(() => setNotification(null), 4000);
     };
 
+    const MAX_ATTACHMENT_SIZE_MB = 2;
+    const MAX_ATTACHMENT_SIZE_BYTES = MAX_ATTACHMENT_SIZE_MB * 1024 * 1024;
+
     const handleFileAttach = (e) => {
+        const incomingFiles = Array.from(e.target.files);
+
+        const oversizedFiles = incomingFiles.filter(f => f.size > MAX_ATTACHMENT_SIZE_BYTES);
+        const acceptedFiles = incomingFiles.filter(f => f.size <= MAX_ATTACHMENT_SIZE_BYTES);
+
+        if (oversizedFiles.length > 0) {
+            const message = `${oversizedFiles.map(f => f.name).join(', ')} exceed${oversizedFiles.length === 1 ? 's' : ''} the ${MAX_ATTACHMENT_SIZE_MB}MB size limit and ${oversizedFiles.length === 1 ? 'was' : 'were'} not attached.`;
+            setAttachmentSizeError(message);
+            showNotification(message, 'error');
+        } else {
+            setAttachmentSizeError(null);
+        }
+
         // FIX 6: Track created object URLs so they can be revoked on unmount.
-        const files = Array.from(e.target.files).map(f => {
+        const files = acceptedFiles.map(f => {
             const url = URL.createObjectURL(f);
             objectUrlsRef.current.push(url);
             f.preview = url;
             return f;
         });
         setAttachments(prev => [...prev, ...files]);
+
+        // Reset input so re-selecting the same (rejected) file re-triggers onChange
+        e.target.value = '';
     };
 
     const removeAttachment = (index) => {
@@ -807,6 +826,16 @@ const CashAdvanceForm = (props) => {
                         onAttach={handleFileAttach}
                         onRemove={removeAttachment}
                     />
+                    {!viewOnly && (
+                        <p className="text-xs text-gray-500 mt-1">
+                            Maximum size per attachment: {MAX_ATTACHMENT_SIZE_MB}MB
+                        </p>
+                    )}
+                    {attachmentSizeError && (
+                        <InlineAlert severity="error">
+                            {attachmentSizeError}
+                        </InlineAlert>
+                    )}
                 </CardContent>
             </Card>
 

@@ -15,6 +15,9 @@ import ExpensesBreakdown, { blankExpense } from './forms/Expensesbreakdown';
 import ItinerarySheet, { blankItinerary } from './forms/Itinerarysheet';
 
 // Module-level helpers and constants
+const MAX_ATTACHMENT_SIZE_MB = 2;
+const MAX_ATTACHMENT_SIZE_BYTES = MAX_ATTACHMENT_SIZE_MB * 1024 * 1024;
+
 const currencyFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -208,6 +211,7 @@ const ReimbursementForm = (props) => {
   });
   const [pendingDeletes, setPendingDeletes] = useState([]);
   const [snackbar,       setSnackbar]       = useState({ open: false, message: '', severity: 'success' });
+  const [attachmentSizeError, setAttachmentSizeError] = useState(null);
   const [errors,         setErrors]         = useState({});
   const [submitting,     setSubmitting]     = useState(false);
   // Gate accounting's "Update Transaction" behind an explicit confirmation
@@ -332,12 +336,30 @@ const ReimbursementForm = (props) => {
 
   // ── Top-level supporting documents ────────────────────────────────────────
   const handleFileAttach = useCallback((e) => {
-    const files = Array.from(e.target.files).map((f) => {
+    const incomingFiles = Array.from(e.target.files);
+
+    const oversizedFiles = incomingFiles.filter((f) => f.size > MAX_ATTACHMENT_SIZE_BYTES);
+    const acceptedFiles = incomingFiles.filter((f) => f.size <= MAX_ATTACHMENT_SIZE_BYTES);
+
+    if (oversizedFiles.length > 0) {
+      const message = `${oversizedFiles.map((f) => f.name).join(', ')} exceed${oversizedFiles.length === 1 ? 's' : ''} the ${MAX_ATTACHMENT_SIZE_MB}MB size limit and ${oversizedFiles.length === 1 ? 'was' : 'were'} not attached.`;
+      setAttachmentSizeError(message);
+      showSnackbar(message, 'error');
+    } else {
+      setAttachmentSizeError(null);
+    }
+
+    const files = acceptedFiles.map((f) => {
       try { f.preview = URL.createObjectURL(f); } catch { f.preview = null; }
       return f;
     });
     setAttachments((prev) => [...prev, ...files]);
-    showSnackbar(`${files.length} file(s) attached`, 'success');
+    if (files.length > 0) {
+      showSnackbar(`${files.length} file(s) attached`, 'success');
+    }
+
+    // Reset input so re-selecting the same (rejected) file re-triggers onChange
+    e.target.value = '';
   }, [showSnackbar]);
 
   const removeAttachment = useCallback(async (index) => {
@@ -1015,6 +1037,7 @@ const ReimbursementForm = (props) => {
             errors={errors}
             minDate={formData.dateCoverageFrom || undefined}
             maxDate={formData.dateCoverageTo   || undefined}
+            onSnackbar={showSnackbar}
           />
         </CardContent>
       </Card>
@@ -1081,9 +1104,19 @@ const ReimbursementForm = (props) => {
                   <Paperclip className="w-4 h-4 mr-2" />
                   Attach Files
                 </label>
+                <p className="text-xs text-gray-500 mt-1">
+                  Maximum size per attachment: {MAX_ATTACHMENT_SIZE_MB}MB
+                </p>
               </>
             )}
           </div>
+          {attachmentSizeError && (
+            <div className="mb-4">
+              <InlineAlert severity="error">
+                {attachmentSizeError}
+              </InlineAlert>
+            </div>
+          )}
           {attachments.length > 0 && (
             <div className="mt-4">
               <AttachmentViewer

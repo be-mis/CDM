@@ -19,6 +19,9 @@ const vatTypeOptions = [
 
 const isMobileDevice = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
+const MAX_ATTACHMENT_SIZE_MB = 2;
+const MAX_ATTACHMENT_SIZE_BYTES = MAX_ATTACHMENT_SIZE_MB * 1024 * 1024;
+
 export const blankExpense = (id = 1) => ({
   id,
   particulars:    '',
@@ -65,6 +68,7 @@ const ExpensesBreakdown = ({
 }) => {
   const [ocrLoading, setOcrLoading] = useState({});
   const [previewReceipt, setPreviewReceipt] = useState(null);
+  const [fileSizeErrors, setFileSizeErrors] = useState({});
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -181,9 +185,24 @@ const ExpensesBreakdown = ({
       const file = event.target.files[0];
       if (!file) return;
       event.target.value = '';
+
+      if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+        const message = `${file.name} exceeds the ${MAX_ATTACHMENT_SIZE_MB}MB size limit and was not attached.`;
+        setFileSizeErrors((prev) => ({ ...prev, [itemId]: message }));
+        notify(message, 'error');
+        return;
+      }
+
+      setFileSizeErrors((prev) => {
+        if (!prev[itemId]) return prev;
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
+
       await processReceiptFile(itemId, file);
     },
-    [processReceiptFile],
+    [processReceiptFile, notify],
   );
 
   const handleRemoveAttachment = useCallback(
@@ -211,6 +230,12 @@ const ExpensesBreakdown = ({
           };
         }),
       );
+      setFileSizeErrors((prev) => {
+        if (!prev[itemId]) return prev;
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
     },
     [expenses, onExpensesChange],
   );
@@ -413,6 +438,9 @@ const ExpensesBreakdown = ({
                           </>
                         )}
                       </label>
+                      <p className="text-[10px] text-gray-400 mt-1">
+                        Max size: {MAX_ATTACHMENT_SIZE_MB}MB
+                      </p>
                     </>
                   ) : (
                     <div className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-white border border-gray-200 min-h-[38px]">

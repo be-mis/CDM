@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import { Plus, Trash2, Paperclip, X } from 'lucide-react';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
+import { InlineAlert } from '../ui/Alert';
 import { formatLongDate } from '../../utils/formatters';
 import ReceiptPreviewModal from '../modal/Receiptpreviewmodal';
 
@@ -10,6 +11,9 @@ import ReceiptPreviewModal from '../modal/Receiptpreviewmodal';
 // ---------------------------------------------------------------------------
 const nextId = (arr) =>
   arr.length === 0 ? 1 : Math.max(...arr.map((x) => x.id)) + 1;
+
+const MAX_ATTACHMENT_SIZE_MB = 2;
+const MAX_ATTACHMENT_SIZE_BYTES = MAX_ATTACHMENT_SIZE_MB * 1024 * 1024;
 
 export const blankItinerary = (id = 1) => ({
   id,
@@ -40,8 +44,15 @@ const ItinerarySheet = ({
   errors = {},
   minDate,
   maxDate,
+  onSnackbar,
 }) => {
   const [previewReceipt, setPreviewReceipt] = React.useState(null);
+  const [fileSizeErrors, setFileSizeErrors] = React.useState({});
+
+  const notify = useCallback(
+    (message, severity = 'success') => onSnackbar?.(message, severity),
+    [onSnackbar],
+  );
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
@@ -73,16 +84,37 @@ const ItinerarySheet = ({
       const file = e.target.files[0];
       if (!file) return;
       e.target.value = '';
+
+      if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+        const message = `${file.name} exceeds the ${MAX_ATTACHMENT_SIZE_MB}MB size limit and was not attached.`;
+        setFileSizeErrors((prev) => ({ ...prev, [id]: message }));
+        notify(message, 'error');
+        return;
+      }
+
+      setFileSizeErrors((prev) => {
+        if (!prev[id]) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+
       try { file.preview = URL.createObjectURL(file); } catch { file.preview = null; }
       updateItem(id, 'receipt', file);
     },
-    [updateItem],
+    [updateItem, notify],
   );
 
   const handleRemoveReceipt = useCallback(
     (id, currentReceipt) => {
       try { if (currentReceipt?.preview) URL.revokeObjectURL(currentReceipt.preview); } catch { }
       updateItem(id, 'receipt', null);
+      setFileSizeErrors((prev) => {
+        if (!prev[id]) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     },
     [updateItem],
   );
@@ -264,6 +296,9 @@ const ItinerarySheet = ({
                           <Paperclip className="w-3.5 h-3.5 mr-1.5" />
                           Attach File
                         </label>
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          Max size: {MAX_ATTACHMENT_SIZE_MB}MB
+                        </p>
                       </>
                     ) : (
                       <div className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-white border border-gray-200 min-h-[38px]">
