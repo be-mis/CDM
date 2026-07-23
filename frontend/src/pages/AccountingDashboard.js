@@ -44,6 +44,33 @@ const TYPE_STYLES = {
   'Reimbursement': 'bg-cyan-50 text-cyan-700',
 };
 
+// Release/processing stage aging: 2-day window starting from approvedAt
+// (the day approval finished), not the original request date.
+// Day 0-1 = Normal, Day 2 = Deadline, Day 3+ = Overdue.
+const getReleasePriority = (days) => {
+  if (days === null) return null;
+  if (days >= 3) return 'Overdue';
+  if (days === 2) return 'Deadline';
+  return 'Normal';
+};
+
+const RELEASE_PRIORITY_STYLES = {
+  Overdue:  'bg-red-100 text-red-700 border border-red-200',
+  Deadline: 'bg-amber-100 text-amber-700 border border-amber-200',
+  Normal:   'bg-green-100 text-green-700 border border-green-200',
+};
+
+// Liquidation stage aging: due 3 days after the cash advance's coverage end
+// date, or else overdue. Day 0-2 = Normal, Day 3 = Deadline (due today),
+// Day 4+ = Overdue. Same 3-tier pattern as approval and release aging above,
+// just clocked from coverageEnd instead of created_at/approved_at.
+const getLiquidationPriority = (days, dueDays) => {
+  if (days === null) return null;
+  if (days > dueDays) return 'Overdue';
+  if (days === dueDays) return 'Deadline';
+  return 'Normal';
+};
+
 // Maps raw DB row → normalised display row
 const normaliseRow = (item, type) => {
   const reqNumber =
@@ -83,6 +110,13 @@ const normaliseRow = (item, type) => {
     approvedAt: item.approved_at || item.approval_date || null,  // ✅ ADD THIS
     releasedBy: item.released_by  || null,
     releasedAt: item.released_at  || null,
+    // ✅ Date Coverage of the Transaction (Cash Advance only).
+    // Confirmed against CashAdvanceForm.js: the form stores start_date/end_date
+    // (camelCase startDate/endDate on submit) and derives a display-only
+    // "dateCoverage" string from them — so we read the two raw dates directly
+    // rather than relying on that derived string.
+    coverageStart: item.start_date || item.startDate || null,
+    coverageEnd:   item.end_date   || item.endDate   || null,
     // ⚠️ Liquidation-tracking fields (Cash Advance only). Adjust the source
     // field names below to match whatever your API actually returns.
     liquidationSubmitted: Boolean(
@@ -400,6 +434,15 @@ const AccountingDashboard = () => {
   const releasedRows  = useMemo(() => allRows.filter(r => r.status === 'released'),  [allRows]);
   const rejectedRows  = useMemo(() => allRows.filter(r => r.status === 'rejected'),  [allRows]);
 
+  // Most recent releases first, capped to the 10 latest (falls back to the
+  // request date if a release timestamp wasn't recorded).
+  const recentReleases = useMemo(
+    () => [...releasedRows]
+      .sort((a, b) => new Date(b.releasedAt || b.date) - new Date(a.releasedAt || a.date))
+      .slice(0, 5),
+    [releasedRows],
+  );
+
   // ⚠️ Adjust to match your org's liquidation policy.
   const LIQUIDATION_DUE_DAYS = 3;
 
@@ -410,10 +453,12 @@ const AccountingDashboard = () => {
     [cashAdvances],
   );
 
+  // ✅ Deadline counting starts from the coverage End Date (same rule as
+  // Disbursement Monitoring: 0–2 days, 3 days = deadline, >3 days = overdue).
   const overdueLiquidationCount = useMemo(
     () => cashAdvancesPendingLiquidation.filter(r => {
-      const days = daysPending(r.releasedAt || r.date);
-      return days !== null && days > LIQUIDATION_DUE_DAYS;
+      const days = daysPending(r.coverageEnd || r.releasedAt || r.date);
+      return getLiquidationPriority(days, LIQUIDATION_DUE_DAYS) === 'Overdue';
     }).length,
     [cashAdvancesPendingLiquidation],
   );
@@ -444,7 +489,7 @@ const AccountingDashboard = () => {
     // ✅ Use approvedAt for overdue calculation
     const overdueCount = approvedRows.filter(r => {
       const days = daysPending(r.approvedAt || r.date);
-      return days !== null && days > 3;
+      return getReleasePriority(days) === 'Overdue';
     }).length;
 
     const releasedThisMonth = releasedRows.filter(r => {
@@ -481,16 +526,16 @@ const AccountingDashboard = () => {
   // ── release aging buckets ──────────────────────────────────────────────────
   const releaseAgingData = useMemo(() => {
     const buckets = [
-      { label: '0–2 Days', min: 0,  max: 2,        color: '#22c55e' },
-      { label: '3 Days',   min: 3,  max: 3,        color: '#f59e0b' },
-      { label: 'Overdue',  min: 4,  max: Infinity,  color: '#ef4444' },
+      { label: 'Day 0–1: Normal',  key: 'Normal',   color: '#22c55e' },
+      { label: 'Day 2: Deadline', key: 'Deadline', color: '#f59e0b' },
+      { label: 'Day 3+: Overdue', key: 'Overdue',  color: '#ef4444' },
     ];
     return buckets.map(b => ({
       ...b,
       value: approvedRows.filter(r => {
         // ✅ Use approvedAt, fallback to date if not available
         const d = daysPending(r.approvedAt || r.date);
-        return d !== null && d >= b.min && d <= b.max;
+        return getReleasePriority(d) === b.key;
       }).length,
     }));
   }, [approvedRows]);
@@ -517,6 +562,45 @@ const AccountingDashboard = () => {
     });
     return cfg;
   }, [departmentData]);
+
+  // ── liquidation aging buckets (Cash Advance Pending Liquidation) ──────────
+  const liquidationAgingData = useMemo(() => {
+    const buckets = [
+      { label: `Day 0–${LIQUIDATION_DUE_DAYS - 1}: Normal`, key: 'Normal',   color: '#22c55e' },
+      { label: `Day ${LIQUIDATION_DUE_DAYS}: Deadline`,       key: 'Deadline', color: '#f59e0b' },
+      { label: `Day ${LIQUIDATION_DUE_DAYS}+ : Overdue`, key: 'Overdue',  color: '#ef4444' },
+    ];
+    return buckets.map(b => ({
+      ...b,
+      value: cashAdvancesPendingLiquidation.filter(r => {
+        const days = daysPending(r.coverageEnd || r.releasedAt || r.date);
+        return getLiquidationPriority(days, LIQUIDATION_DUE_DAYS) === b.key;
+      }).length,
+    }));
+  }, [cashAdvancesPendingLiquidation, LIQUIDATION_DUE_DAYS]);
+
+  const liquidationByDepartmentData = useMemo(() => {
+    const counts = {};
+    cashAdvancesPendingLiquidation.forEach(r => {
+      const dept = r.department || 'Unassigned';
+      counts[dept] = (counts[dept] || 0) + 1;
+    });
+    const palette = [
+      '#6366f1', '#ec4899', '#06b6d4', '#f59e0b', '#22c55e', '#8b5cf6',
+      '#f97316', '#14b8a6', '#ef4444', '#3b82f6', '#a855f7', '#84cc16',
+    ];
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value], i) => ({ label, value, color: palette[i % palette.length] }));
+  }, [cashAdvancesPendingLiquidation]);
+
+  const liquidationByDepartmentConfig = useMemo(() => {
+    const cfg = { value: { label: 'Cash Advances' } };
+    liquidationByDepartmentData.forEach(d => {
+      cfg[d.label] = { label: d.label, color: d.color };
+    });
+    return cfg;
+  }, [liquidationByDepartmentData]);
 
   const handleView = async (row) => {
     try {
@@ -659,62 +743,106 @@ const AccountingDashboard = () => {
         </Alert>
       )}
 
-      {/* ── Section 1: Summary Cards ── */}
+      
+      {/* ── Section 3: Charts ── */}
       <div>
-        <h2 className="text-sm font-semibold text-gray-500 tracking-wider mb-3">Financial Summary</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-4 gap-4">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Disbursement Monitoring</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-6">
 
-          <Card className="!bg-blue-50 border border-blue-200 text-white shadow-sm hover:shadow-md transition-shadow">
+          {/* Pending for Release by Type */}
+          <Card>
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-blue-800 text-sm font-semibold mb-2">For Release</p>
-                  <span className="text-4xl font-bold text-blue-800">{loading ? '—' : stats.forRelease}</span>
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Pending Release by Type</h3>
+              <div className="flex flex-col items-center gap-4">
+                <DonutChart data={typeDonutData} size={130} />
+                <div className="w-full space-y-1.5">
+                  {typeDonutData.map(d => (
+                    <div key={d.label} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                        <span className="text-gray-600">{d.label}</span>
+                      </div>
+                      <span className="font-bold text-gray-900">{d.value}</span>
+                    </div>
+                  ))}
                 </div>
-                <Clock className="w-12 h-12 text-blue-800 opacity-30" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className={`${stats.overdueCount > 0 ? '!bg-red-50 border-red-200' : '!bg-gray-50 border-gray-200'} border text-white shadow-sm hover:shadow-md transition-shadow`}>
+          {/* Overall Status Breakdown */}
+          {/* <Card>
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className={`text-sm font-semibold mb-2 ${stats.overdueCount > 0 ? 'text-red-800' : 'text-gray-600'}`}>
-                    Overdue Requests
-                  </p>
-                  <span className={`text-4xl font-bold ${stats.overdueCount > 0 ? 'text-red-800' : 'text-gray-500'}`}>
-                    {loading ? '—' : stats.overdueCount}
-                  </span>
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Overall Status Breakdown</h3>
+              <div className="flex flex-col items-center gap-4">
+                <DonutChart data={statusDonutData} size={130} />
+                <div className="w-full space-y-1.5">
+                  {statusDonutData.map(d => (
+                    <div key={d.label} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                        <span className="text-gray-600">{d.label}</span>
+                      </div>
+                      <span className="font-bold text-gray-900">{d.value}</span>
+                    </div>
+                  ))}
                 </div>
-                <ClockAlert className={`w-12 h-12 opacity-30 ${stats.overdueCount > 0 ? 'text-red-800' : 'text-gray-500'}`} />
+              </div>
+            </CardContent>
+          </Card> */}
+
+          {/* Release Aging — how long approved items have been waiting */}
+          <Card>
+            <CardContent className="p-6">
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Release Aging</h3>
+              <div className="flex flex-col items-center gap-4">
+                <DonutChart data={releaseAgingData} size={130} />
+                <div className="w-full space-y-1.5">
+                  {releaseAgingData.map(d => (
+                    <div key={d.label} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                        <span className="text-gray-600">{d.label}</span>
+                      </div>
+                      <span className="font-bold text-gray-900">{d.value}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="!bg-green-50 border border-green-200 text-white shadow-sm hover:shadow-md transition-shadow">
+          {/* Requests by Department (from Disbursement Queue) */}
+          <Card>
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-green-800 text-sm font-semibold mb-2">Released This Month</p>
-                  <span className="text-4xl font-bold text-green-800">{loading ? '—' : stats.releasedThisMonth}</span>
-                </div>
-                <CheckCircle className="w-12 h-12 text-green-800 opacity-30" />
-              </div>
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Pending Requests by Department</h3>
+              {departmentData.length === 0 ? (
+                <p className="text-center text-sm text-gray-400 py-4">No data</p>
+              ) : (
+                <ChartContainer config={departmentChartConfig} className="h-[220px] w-full">
+                  <BarChart accessibilityLayer data={departmentData} layout="vertical" margin={{ left: 8 }}>
+                    <CartesianGrid horizontal={false} />
+                    <XAxis type="number" hide />
+                    <YAxis
+                      dataKey="label"
+                      type="category"
+                      tickLine={false}
+                      axisLine={false}
+                      width={90}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar dataKey="value" radius={4} barSize={24} maxBarSize={28}>
+                      {departmentData.map((d, i) => (
+                        <Cell key={`dept-cell-${i}`} fill={d.color} style={{ fill: d.color }} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ChartContainer>
+              )}
             </CardContent>
           </Card>
 
-          <Card className="!bg-red-50 border border-red-200 text-white shadow-sm hover:shadow-md transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-red-800 text-sm font-semibold mb-2">Rejected This Month</p>
-                  <span className="text-4xl font-bold text-red-800">{loading ? '—' : stats.rejectedThisMonth}</span>
-                </div>
-                <XCircle className="w-12 h-12 text-red-800 opacity-30" />
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
 
@@ -831,18 +959,11 @@ const AccountingDashboard = () => {
                           {(() => {
                             // ✅ Use approvedAt for "days pending release"
                             const days = daysPending(row.approvedAt || row.date);
-                            if (days === null) return <span className="text-gray-400 text-sm">—</span>;
-                            const isOverdue = days > 3;
-                            const isWarning = days === 3;
+                            const priority = getReleasePriority(days);
+                            if (priority === null) return <span className="text-gray-400 text-sm">—</span>;
                             return (
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                                isOverdue
-                                  ? 'bg-red-100 text-red-700 border border-red-200'
-                                  : isWarning
-                                  ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                                  : 'bg-green-100 text-green-700 border border-green-200'
-                              }`}>
-                                {isOverdue && <span>⚠</span>}
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${RELEASE_PRIORITY_STYLES[priority]}`}>
+                                {priority === 'Overdue' && <ClockAlert className="w-3 h-3" />}
                                 {days}d
                               </span>
                             );
@@ -889,107 +1010,6 @@ const AccountingDashboard = () => {
         </CardContent>
       </Card>
 
-      {/* ── Section 3: Charts ── */}
-      <div>
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Disbursement Monitoring</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-6">
-
-          {/* Pending for Release by Type */}
-          <Card>
-            <CardContent className="p-6">
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Pending Release by Type</h3>
-              <div className="flex flex-col items-center gap-4">
-                <DonutChart data={typeDonutData} size={130} />
-                <div className="w-full space-y-1.5">
-                  {typeDonutData.map(d => (
-                    <div key={d.label} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-                        <span className="text-gray-600">{d.label}</span>
-                      </div>
-                      <span className="font-bold text-gray-900">{d.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Overall Status Breakdown */}
-          {/* <Card>
-            <CardContent className="p-6">
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Overall Status Breakdown</h3>
-              <div className="flex flex-col items-center gap-4">
-                <DonutChart data={statusDonutData} size={130} />
-                <div className="w-full space-y-1.5">
-                  {statusDonutData.map(d => (
-                    <div key={d.label} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-                        <span className="text-gray-600">{d.label}</span>
-                      </div>
-                      <span className="font-bold text-gray-900">{d.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card> */}
-
-          {/* Release Aging — how long approved items have been waiting */}
-          <Card>
-            <CardContent className="p-6">
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Release Aging</h3>
-              <div className="flex flex-col items-center gap-4">
-                <DonutChart data={releaseAgingData} size={130} />
-                <div className="w-full space-y-1.5">
-                  {releaseAgingData.map(d => (
-                    <div key={d.label} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-                        <span className="text-gray-600">{d.label}</span>
-                      </div>
-                      <span className="font-bold text-gray-900">{d.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Requests by Department (from Disbursement Queue) */}
-          <Card>
-            <CardContent className="p-6">
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Pending Requests by Department</h3>
-              {departmentData.length === 0 ? (
-                <p className="text-center text-sm text-gray-400 py-4">No data</p>
-              ) : (
-                <ChartContainer config={departmentChartConfig} className="h-[220px] w-full">
-                  <BarChart accessibilityLayer data={departmentData} layout="vertical" margin={{ left: 8 }}>
-                    <CartesianGrid horizontal={false} />
-                    <XAxis type="number" hide />
-                    <YAxis
-                      dataKey="label"
-                      type="category"
-                      tickLine={false}
-                      axisLine={false}
-                      width={90}
-                      tick={{ fontSize: 11 }}
-                    />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Bar dataKey="value" radius={4} barSize={24} maxBarSize={28}>
-                      {departmentData.map((d, i) => (
-                        <Cell key={`dept-cell-${i}`} fill={d.color} style={{ fill: d.color }} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ChartContainer>
-              )}
-            </CardContent>
-          </Card>
-
-        </div>
-      </div>
 
       {/* ── Section 3b: Cash Advance Pending Liquidation ── */}
       <div>
@@ -1043,6 +1063,62 @@ const AccountingDashboard = () => {
           </Card>
         </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+
+          {/* Liquidation Aging — how long released cash advances have sat unliquidated */}
+          <Card>
+            <CardContent className="p-6">
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Liquidation Aging</h3>
+              <div className="flex flex-col items-center gap-4">
+                <DonutChart data={liquidationAgingData} size={130} />
+                <div className="w-full space-y-1.5">
+                  {liquidationAgingData.map(d => (
+                    <div key={d.label} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                        <span className="text-gray-600">{d.label}</span>
+                      </div>
+                      <span className="font-bold text-gray-900">{d.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Pending Liquidation by Department */}
+          <Card>
+            <CardContent className="p-6">
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Pending Liquidation by Department</h3>
+              {liquidationByDepartmentData.length === 0 ? (
+                <p className="text-center text-sm text-gray-400 py-4">No data</p>
+              ) : (
+                <ChartContainer config={liquidationByDepartmentConfig} className="h-[220px] w-full">
+                  <BarChart accessibilityLayer data={liquidationByDepartmentData} layout="vertical" margin={{ left: 8 }}>
+                    <CartesianGrid horizontal={false} />
+                    <XAxis type="number" hide />
+                    <YAxis
+                      dataKey="label"
+                      type="category"
+                      tickLine={false}
+                      axisLine={false}
+                      width={90}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar dataKey="value" radius={4} barSize={24} maxBarSize={28}>
+                      {liquidationByDepartmentData.map((d, i) => (
+                        <Cell key={`liq-dept-cell-${i}`} fill={d.color} style={{ fill: d.color }} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+
+        </div>
+
         <Card>
           <CardContent className="p-6">
             {loading ? (
@@ -1056,17 +1132,18 @@ const AccountingDashboard = () => {
                 <table className="w-full min-w-[700px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      {['Reference No.', 'Requestor', 'Department', 'Amount', 'Released Date', 'Days Since Release', 'Status'].map(h => (
+                      {['Reference No.', 'Requestor', 'Department', 'Amount', 'Date Coverage', 'Days Since Coverage End', 'Status'].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 tracking-wider">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {[...cashAdvancesPendingLiquidation]
-                      .sort((a, b) => (daysPending(b.releasedAt || b.date) ?? 0) - (daysPending(a.releasedAt || a.date) ?? 0))
+                      .sort((a, b) => (daysPending(b.coverageEnd || b.releasedAt || b.date) ?? 0) - (daysPending(a.coverageEnd || a.releasedAt || a.date) ?? 0))
                       .map((item) => {
-                        const days = daysPending(item.releasedAt || item.date);
-                        const isOverdue = days !== null && days > LIQUIDATION_DUE_DAYS;
+                        // ✅ Days are counted from the coverage End Date, not the Released Date
+                        const days = daysPending(item.coverageEnd || item.releasedAt || item.date);
+                        const priority = getLiquidationPriority(days, LIQUIDATION_DUE_DAYS);
                         return (
                           <tr key={`ca-liq-${item.id}`} className="hover:bg-gray-50 transition-colors">
                             <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.reqNumber}</td>
@@ -1082,24 +1159,36 @@ const AccountingDashboard = () => {
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-600">{item.department}</td>
                             <td className="px-4 py-3 text-sm font-semibold text-gray-900">{formatPeso(item.amount)}</td>
-                            <td className="px-4 py-3 text-sm text-gray-500">{formatLongDate(item.releasedAt || item.date)}</td>
+                            <td className="px-4 py-3 text-sm text-gray-500">
+                              {item.coverageStart || item.coverageEnd ? (
+                                <span className="whitespace-nowrap">
+                                  {item.coverageStart ? formatLongDate(item.coverageStart) : '—'}
+                                  {' – '}
+                                  {item.coverageEnd ? formatLongDate(item.coverageEnd) : '—'}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">—</span>
+                              )}
+                            </td>
                             <td className="px-4 py-3 text-center">
-                              {days === null ? (
+                              {priority === null ? (
                                 <span className="text-gray-400 text-sm">—</span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
-                                  {isOverdue && <span>⚠</span>}
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${RELEASE_PRIORITY_STYLES[priority]}`}>
+                                  {priority === 'Overdue' && <ClockAlert className="w-3 h-3" />}
                                   {days}d
                                 </span>
                               )}
                             </td>
                             <td className="px-4 py-3">
                               <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full ${
-                                isOverdue
+                                priority === 'Overdue'
                                   ? 'bg-red-50 text-red-700 border border-red-200'
+                                  : priority === 'Deadline'
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
                                   : 'bg-purple-50 text-purple-700 border border-purple-200'
                               }`}>
-                                {isOverdue ? 'Overdue' : 'Pending'}
+                                {priority === 'Overdue' ? 'Overdue' : priority === 'Deadline' ? 'Due today' : 'Pending'}
                               </span>
                             </td>
                           </tr>
@@ -1120,7 +1209,7 @@ const AccountingDashboard = () => {
           <CardContent className="p-6">
             {loading ? (
               <Loading message="Loading recent releases…" />
-            ) : releasedRows.length === 0 ? (
+            ) : recentReleases.length === 0 ? (
               <p className="text-gray-400 text-center py-8 text-sm">No released transactions yet.</p>
             ) : (
               <div className="overflow-x-auto border border-gray-200 rounded-lg">
@@ -1133,7 +1222,7 @@ const AccountingDashboard = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {releasedRows.slice(0, 10).map((item) => (
+                    {recentReleases.map((item) => (
                       <tr key={`${item.approvalType}-${item.id}`} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.reqNumber}</td>
                         <td className="px-4 py-3">
@@ -1156,24 +1245,11 @@ const AccountingDashboard = () => {
                 </table>
               </div>
             )}
-            {releasedRows.length > 10 && (
-              <div className="mt-4 pt-4 border-t border-gray-100 flex justify-end">
-                <Button
-                  variant="secondary"
-                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                  startIcon={<ChevronRight className="w-4 h-4" />}
-                >
-                  View All Released ({releasedRows.length})
-                </Button>
-              </div>
-            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          VIEW DETAILS MODAL
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* VIEW DETAILS MODAL */}
       <Modal
         open={viewOpen}
         onClose={handleCloseView}
@@ -1225,9 +1301,7 @@ const AccountingDashboard = () => {
         )}
       </Modal>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          ACTION CONFIRMATION MODAL
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* ACTION CONFIRMATION MODAL */}
       <Modal
         open={actionOpen}
         onClose={() => setActionOpen(false)}

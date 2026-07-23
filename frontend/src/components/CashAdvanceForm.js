@@ -122,8 +122,7 @@ const CashAdvanceForm = (props) => {
 
     const [attachments, setAttachments] = useState([]);
     const [pendingDeletes, setPendingDeletes] = useState([]);
-    const [notification, setNotification] = useState(null);
-    const [attachmentSizeError, setAttachmentSizeError] = useState(null);
+    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
     const [errors, setErrors] = useState({});
     const [userProfile, setUserProfile] = useState(null);
     // FIX 3: Loading state to prevent duplicate submissions on rapid double-click.
@@ -131,6 +130,10 @@ const CashAdvanceForm = (props) => {
     // Gate accounting's "Update Transaction" behind an explicit confirmation
     // since saving now also releases the transaction.
     const [confirmReleaseOpen, setConfirmReleaseOpen] = useState(false);
+    // Shown after a brand-new request is successfully submitted, instead of
+    // redirecting straight away. Holds the confirmed transaction number so
+    // the user can note it down before returning to My Requests.
+    const [successModal, setSuccessModal] = useState({ open: false, advanceNumber: '' });
 
     // Track object URLs for cleanup to prevent memory leaks (FIX 6)
     const objectUrlsRef = useRef([]);
@@ -494,18 +497,25 @@ const CashAdvanceForm = (props) => {
 
             if (res.data.success) {
                 if (attachments.length > 0 || pendingDeletes.length > 0) await uploadAttachments(res.data.data.id);
-                showNotification(
-                    isApprover
-                        ? 'Request submitted and forwarded to Accounting for disbursement.'
-                        : 'Request submitted successfully!'
-                );
-                if (onClose) onClose();
+                // Trust the server-confirmed advance number over the
+                // client-generated provisional one, falling back to the
+                // local value if the API doesn't echo it back.
+                const confirmedNumber = res.data.data?.advanceNumber || res.data.data?.advance_number || formData.advanceNumber;
+                setSuccessModal({ open: true, advanceNumber: confirmedNumber });
             }
         } catch (e) {
             showNotification('Error submitting request', 'error');
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    // Called when the user dismisses the success modal — this is what
+    // actually triggers the redirect back to My Requests, deferred until
+    // they've had a chance to see/note the transaction number.
+    const handleSuccessOkay = () => {
+        setSuccessModal({ open: false, advanceNumber: '' });
+        if (onClose) onClose();
     };
 
     const uploadAttachments = async (id) => {
@@ -535,8 +545,7 @@ const CashAdvanceForm = (props) => {
     };
 
     const showNotification = (message, severity = 'success') => {
-        setNotification({ message, severity });
-        setTimeout(() => setNotification(null), 4000);
+        setSnackbar({ open: true, message, severity });
     };
 
     const MAX_ATTACHMENT_SIZE_MB = 2;
@@ -550,10 +559,7 @@ const CashAdvanceForm = (props) => {
 
         if (oversizedFiles.length > 0) {
             const message = `${oversizedFiles.map(f => f.name).join(', ')} exceed${oversizedFiles.length === 1 ? 's' : ''} the ${MAX_ATTACHMENT_SIZE_MB}MB size limit and ${oversizedFiles.length === 1 ? 'was' : 'were'} not attached.`;
-            setAttachmentSizeError(message);
             showNotification(message, 'error');
-        } else {
-            setAttachmentSizeError(null);
         }
 
         // FIX 6: Track created object URLs so they can be revoked on unmount.
@@ -627,11 +633,37 @@ const CashAdvanceForm = (props) => {
                 </p>
             </Modal>
 
-            {notification && (
-                <Alert severity={notification.severity} onClose={() => setNotification(null)}>
-                    {notification.message}
-                </Alert>
-            )}
+            <Modal
+                open={successModal.open}
+                onClose={handleSuccessOkay}
+                title="Request Submitted"
+                maxWidth="sm"
+                actions={
+                    <Button variant="primary" onClick={handleSuccessOkay}>
+                        Okay
+                    </Button>
+                }
+            >
+                <div className="flex flex-col items-center text-center gap-3 py-2">
+                    <CheckCircle className="w-12 h-12 text-green-600" />
+                    <p className="text-gray-700">
+                        Your cash advance request has been submitted successfully.
+                    </p>
+                    <div className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50">
+                        <p className="text-xs text-gray-600">Transaction Number</p>
+                        <p className="text-lg font-bold text-gray-900">{successModal.advanceNumber}</p>
+                    </div>
+                </div>
+            </Modal>
+
+            <Alert
+                open={snackbar.open}
+                onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
+                message={snackbar.message}
+                severity={snackbar.severity}
+                duration={4000}
+                position="bottom-right"
+            />
 
             <Card>
                 <CardContent>
@@ -682,7 +714,7 @@ const CashAdvanceForm = (props) => {
                                 <div className="md:col-span-2">
                                     <div className={`relative border ${errors.dateCoverage ? 'border-red-600' : 'border-gray-300'} rounded-lg px-3 py-2 flex items-center gap-2 focus-within:border-primary-600 hover:border-gray-900`}>
                                         <span className={`absolute -top-2 left-3 bg-white px-1 text-xs ${errors.dateCoverage ? 'text-red-600' : 'text-gray-600'}`}>
-                                            Date Coverage {errors.dateCoverage && '*'}
+                                            Period Covered {errors.dateCoverage && '*'}
                                         </span>
                                         <input
                                             type={viewOnly ? 'text' : 'date'}
@@ -759,7 +791,7 @@ const CashAdvanceForm = (props) => {
                                 </div>
                                 <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="col-span-1 md:col-span-2">
-                                        <label className="px-1 text-xs text-gray-600">Date Coverage</label>
+                                        <label className="px-1 text-xs text-gray-600">Period Covered</label>
                                         <div className={` border-b border-gray-200 flex items-center justify-between gap-2 px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900`}>
                                             {formatLongDate(formData.startDate)}
                                             <span className="text-gray-500">—</span>
@@ -830,11 +862,6 @@ const CashAdvanceForm = (props) => {
                         <p className="text-xs text-gray-500 mt-1">
                             Maximum size per attachment: {MAX_ATTACHMENT_SIZE_MB}MB
                         </p>
-                    )}
-                    {attachmentSizeError && (
-                        <InlineAlert severity="error">
-                            {attachmentSizeError}
-                        </InlineAlert>
                     )}
                 </CardContent>
             </Card>

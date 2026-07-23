@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { Paperclip } from 'lucide-react';
 import Button from '../ui/Button';
-import AttachmentViewer from '../AttachmentViewer';
+import AttachmentViewer from '../modal/AttachmentViewer';
 
 const AttachmentsSection = ({
     attachments,

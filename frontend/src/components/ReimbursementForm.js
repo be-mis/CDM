@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Save, Paperclip, Send, CheckCircle } from 'lucide-react';
+import { Save, Paperclip, Send, CheckCircle, CreditCard } from 'lucide-react';
 import api from '../api';
-import AttachmentViewer from './AttachmentViewer';
+import AttachmentViewer from './modal/AttachmentViewer';
 import { useAuth } from '../context/AuthContext';
 import Button from './ui/Button';
 import Input from './ui/Input';
@@ -126,10 +126,32 @@ const TruncatedViewField = ({ value, label }) => (
 
 // ReimbursementForm component
 const ReimbursementForm = (props) => {
-  const { editData, onClose, viewOnly = false, hideCloseButton = false, accountingEdit = false, editReason = '', editResultStatus = 'released', onSaved } = props || {};
+  const { editData, onClose, viewOnly = false, hideCloseButton = false, accountingEdit = false, editReason = '', editResultStatus = 'released', onSaved, lockedFields = [] } = props || {};
   const isEditMode = !!editData;
+  // ORF-funded requests can still be released/rejected, but the amount and
+  // remarks that the fund deduction was calculated from must not change —
+  // see Disbursements.js/renderEditForm for where lockedFields is set.
+  const isAmountLocked  = lockedFields.includes('amount');
+  const isRemarksLocked = lockedFields.includes('remarks');
   const { user }   = useAuth();
   const navigate   = useNavigate();
+
+  // Self-submitted reimbursements from an Operations approver auto-approve
+  // on submit (see `isApprover`/`autoApprove` below) and skip the Approvals
+  // queue — so this is the only place they get to choose ORF vs Regular
+  // Disbursement. Deliberately Operations-only (not any approver/department).
+  const isOperationsApprover = !!(
+    (user?.role?.toLowerCase().includes('approver') ||
+     user?.role?.toLowerCase().includes('manager') ||
+     user?.is_approver) &&
+    (user?.department || '').toUpperCase() === 'OPERATIONS'
+  );
+  const showFundChoice = isOperationsApprover && !viewOnly && !accountingEdit;
+
+  const [fundChoice, setFundChoice] = useState('no'); // 'yes' | 'no'
+  const [fundInfo,   setFundInfo]   = useState(null); // { id, funding_code, funding_description, Amount } | null
+  const [fundLoading, setFundLoading] = useState(false);
+  const [fundModalOpen, setFundModalOpen] = useState(false);
 
   // Form state initialization with editData fallback for edit mode, or sensible defaults for create mode
   const [formData, setFormData] = useState(() => {
@@ -158,7 +180,7 @@ const ReimbursementForm = (props) => {
     return {
       reimbursementNumber: '',
       reimbursementDate:   new Date().toISOString().split('T')[0],
-      dateNeeded:          '',
+      dateNeeded:          getMinDateNeeded(),
       requestedBy:         user?.name       || '',
       department:     user?.department_id || user?.departmentId || '',
       departmentName: user?.department_name || user?.departmentName || user?.department || '',
@@ -211,13 +233,16 @@ const ReimbursementForm = (props) => {
   });
   const [pendingDeletes, setPendingDeletes] = useState([]);
   const [snackbar,       setSnackbar]       = useState({ open: false, message: '', severity: 'success' });
-  const [attachmentSizeError, setAttachmentSizeError] = useState(null);
   const [errors,         setErrors]         = useState({});
   const [submitting,     setSubmitting]     = useState(false);
   // Gate accounting's "Update Transaction" behind an explicit confirmation
   // since saving now also releases the transaction.
   const [confirmReleaseOpen, setConfirmReleaseOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState(null);
+  // Shown after a brand-new reimbursement is successfully submitted, instead
+  // of redirecting straight away. Holds the confirmed reimbursement number
+  // so the user can note it down before returning to My Requests.
+  const [successModal, setSuccessModal] = useState({ open: false, reimbursementNumber: '' });
 
   const handleExpensesChange = useCallback((updated) => {
     if (typeof updated === 'function') {
@@ -312,6 +337,29 @@ const ReimbursementForm = (props) => {
     }
   }, [formData.paymentMethod, userProfile]);
 
+  // Keep "Period Covered" (from) in sync with "Date Needed" — mirrors Cash
+  // Advance's Period Covered behavior. Runs on mount too (not just on manual
+  // change), so now that Date Needed is pre-filled by default, Date
+  // Coverage From gets seeded automatically as well. Never overwrites a
+  // value the user already set/edited (e.g. loaded from editData).
+  useEffect(() => {
+    if (!formData.dateNeeded) return;
+
+    const needed = new Date(formData.dateNeeded);
+    if (!isNaN(needed.getTime())) {
+      const neededStr = needed.toISOString().split('T')[0];
+
+      setFormData((prev) => {
+        if (prev.dateCoverageFrom && prev.dateCoverageFrom !== '') return prev;
+        if (prev.dateCoverageFrom === neededStr) return prev;
+        return {
+          ...prev,
+          dateCoverageFrom: neededStr,
+        };
+      });
+    }
+  }, [formData.dateNeeded]);
+
   // ── Derived totals ─────────────────────────────────────────────────────────
   const totalAmount = useMemo(
     () =>
@@ -320,17 +368,35 @@ const ReimbursementForm = (props) => {
     [expenses, itineraryItems],
   );
 
+  // Fetch the Operations Revolving Fund balance so the approver can see it
+  // before choosing to fund their own reimbursement from it. Reuses the
+  // same endpoint the Approvals page uses.
+  useEffect(() => {
+    if (!showFundChoice) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setFundLoading(true);
+        const res = await api.get('/approvals/revolving-fund', {
+          params: { department_id: formData.department },
+        });
+        if (!cancelled && res.data.success) setFundInfo(res.data.data);
+      } catch (err) {
+        console.error('Error fetching Operations Revolving Fund info:', err);
+      } finally {
+        if (!cancelled) setFundLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showFundChoice, formData.department]);
+
+  const fundInsufficient =
+    showFundChoice && fundChoice === 'yes' && fundInfo && parseFloat(fundInfo.Amount) < totalAmount;
+
   // ── Form field handler ─────────────────────────────────────────────────────
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
-    setFormData((prev) => {
-      const next = { ...prev, [name]: value };
-      // Keep "Period Covered" start in sync with "Date Needed"
-      if (name === 'dateNeeded') {
-        next.dateCoverageFrom = value;
-      }
-      return next;
-    });
+    setFormData((prev) => ({ ...prev, [name]: value }));
     setErrors((prev) => ({ ...prev, [name]: '', ...(name === 'dateNeeded' ? { dateCoverageFrom: '' } : {}) }));
   }, []);
 
@@ -343,10 +409,7 @@ const ReimbursementForm = (props) => {
 
     if (oversizedFiles.length > 0) {
       const message = `${oversizedFiles.map((f) => f.name).join(', ')} exceed${oversizedFiles.length === 1 ? 's' : ''} the ${MAX_ATTACHMENT_SIZE_MB}MB size limit and ${oversizedFiles.length === 1 ? 'was' : 'were'} not attached.`;
-      setAttachmentSizeError(message);
       showSnackbar(message, 'error');
-    } else {
-      setAttachmentSizeError(null);
     }
 
     const files = acceptedFiles.map((f) => {
@@ -674,27 +737,13 @@ const ReimbursementForm = (props) => {
     user?.is_approver
   );
 
-  // Persist (save draft or submit) 
-  const persistForm = useCallback(async (requestedStatus) => {
-    if (accountingEdit && !editReason?.trim()) {
-      showSnackbar('Please provide a reason for this edit before saving.', 'error');
-      return;
-    }
-    // Updating an already-approved reimbursement now also releases it, so
-    // guard against accidental clicks with an explicit confirmation.
-    if (accountingEdit) {
-      setPendingStatus(requestedStatus);
-      setConfirmReleaseOpen(true);
-      return;
-    }
-    await commitPersist(requestedStatus);
-  }, [accountingEdit, editReason, showSnackbar]);
-
-  const handleConfirmRelease = useCallback(async () => {
-    setConfirmReleaseOpen(false);
-    await commitPersist(pendingStatus);
-  }, [pendingStatus]);
-
+  // Persist (save draft or submit)
+  // NOTE: commitPersist is declared BEFORE persistForm / handleConfirmRelease
+  // (both of which call it) to avoid a temporal-dead-zone ReferenceError, and
+  // both of those callbacks now list commitPersist in their dependency array
+  // so they always call the current version instead of a stale one captured
+  // from an earlier render (which was causing submits to see stale/empty
+  // formData and expenses).
   const commitPersist = useCallback(async (requestedStatus) => {
     if (requestedStatus === 'pending' && !validateSubmit()) return;
     if (requestedStatus === 'draft'   && !validateDraft())  return;
@@ -717,11 +766,19 @@ const ReimbursementForm = (props) => {
           : autoApprove
             ? { approver: user.name, approvedDate: new Date().toISOString().split('T')[0] }
             : { approver: '', approvedDate: '' };
+      // Only meaningful on the genuine auto-approve self-submit path — the
+      // backend independently re-verifies the requester is an Operations
+      // approver, so this flag alone can't be used to fund anything it
+      // shouldn't.
+      const revolvingFundFields = (autoApprove && showFundChoice && fundChoice === 'yes')
+        ? { useRevolvingFund: true }
+        : {};
 
       // Phase 1: Save reimbursement header + child rows (no new files yet)
       const phase1Payload = {
         ...buildPayload(status, expenses, itineraryItems),
         ...approverFields,
+        ...revolvingFundFields,
         ...(accountingEdit ? { edit_reason: editReason.trim() } : {}),
       };
 
@@ -730,7 +787,7 @@ const ReimbursementForm = (props) => {
         : await api.post('/reimbursements', phase1Payload);
 
       if (!response.data?.success) {
-        showSnackbar('Failed to save reimbursement', 'error');
+        showSnackbar(response.data?.message || 'Failed to save reimbursement', 'error');
         return;
       }
 
@@ -781,9 +838,25 @@ const ReimbursementForm = (props) => {
           : (status === 'draft' ? 'Draft saved successfully!' : 'Reimbursement submitted successfully!'),
         'success',
       );
-      if (accountingEdit && onSaved) onSaved();
-      else if (onClose) onClose();
-      else navigate('/my-requests', { state: { tab: 0 } });
+
+      // Only pop the success modal for a brand-new reimbursement being
+      // submitted (not saved as a draft, and not an accounting edit) —
+      // that's the "creation of the transaction" moment. Drafts and
+      // accounting edits keep the previous immediate-redirect behavior.
+      const isCreateSubmit = !accountingEdit && status !== 'draft';
+      if (isCreateSubmit) {
+        const confirmedNumber =
+          response.data.data?.reimbursementNumber ||
+          response.data.data?.reimbursement_number ||
+          formData.reimbursementNumber;
+        setSuccessModal({ open: true, reimbursementNumber: confirmedNumber });
+      } else {
+        if (accountingEdit && onSaved) onSaved();
+        else if (onClose) onClose();
+        // NOTE: fixed from `tab: 0` (Cash Advances) — per MyRequests'
+        // tabKeyMap, Reimbursements is tab index 2.
+        else navigate('/my-requests', { state: { tab: 2 } });
+      }
 
     } catch (error) {
       showSnackbar(
@@ -796,7 +869,7 @@ const ReimbursementForm = (props) => {
     }
   }, [
     validateForm, buildPayload, expenses, itineraryItems,
-    isEditMode, editData?.id, isApprover, user,
+    isEditMode, editData?.id, isApprover, user, showFundChoice, fundChoice,
     uploadExpenseAttachments, uploadItineraryReceipts,
     attachments, uploadSupportingDocuments,
     pendingDeletes, showSnackbar, onClose, navigate,
@@ -804,8 +877,53 @@ const ReimbursementForm = (props) => {
     accountingEdit, editReason, onSaved, editData?.status,
   ]);
 
+  const persistForm = useCallback(async (requestedStatus) => {
+    if (accountingEdit && !editReason?.trim()) {
+      showSnackbar('Please provide a reason for this edit before saving.', 'error');
+      return;
+    }
+    // Updating an already-approved reimbursement now also releases it, so
+    // guard against accidental clicks with an explicit confirmation.
+    if (accountingEdit) {
+      setPendingStatus(requestedStatus);
+      setConfirmReleaseOpen(true);
+      return;
+    }
+    // Self-submitting Operations approver, actually submitting (not saving a
+    // draft): validate the rest of the form first, then let them pick ORF
+    // vs Regular Disbursement in a modal — same choice/UI an approver would
+    // otherwise only see on the Approvals page — before committing.
+    if (showFundChoice && requestedStatus === 'pending') {
+      if (!validateSubmit()) return;
+      setPendingStatus(requestedStatus);
+      setFundChoice('no');
+      setFundModalOpen(true);
+      return;
+    }
+    await commitPersist(requestedStatus);
+  }, [accountingEdit, editReason, showSnackbar, commitPersist, showFundChoice, validateSubmit]);
+
+  const handleConfirmRelease = useCallback(async () => {
+    setConfirmReleaseOpen(false);
+    await commitPersist(pendingStatus);
+  }, [pendingStatus, commitPersist]);
+
+  const handleConfirmFundChoice = useCallback(async () => {
+    setFundModalOpen(false);
+    await commitPersist(pendingStatus);
+  }, [pendingStatus, commitPersist]);
+
   const handleSaveDraft = useCallback(() => persistForm('draft'),   [persistForm]);
   const handleSubmit    = useCallback(() => persistForm('pending'), [persistForm]);
+
+  // Called when the user dismisses the success modal — this is what
+  // actually triggers the redirect back to My Requests (Reimbursement tab),
+  // deferred until they've had a chance to see/note the reimbursement number.
+  const handleSuccessOkay = useCallback(() => {
+    setSuccessModal({ open: false, reimbursementNumber: '' });
+    if (onClose) onClose();
+    else navigate('/my-requests', { state: { tab: 2 } });
+  }, [onClose, navigate]);
 
   // Render 
   return (
@@ -978,7 +1096,7 @@ const ReimbursementForm = (props) => {
               </div>
                             <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div className="col-span-1 md:col-span-2">
-                                <label className="px-1 text-xs text-gray-600">Date Coverage</label>
+                                <label className="px-1 text-xs text-gray-600">Period Covered</label>
                                 <div className={` border-b border-gray-200 flex items-center justify-between gap-2 px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900`}>
                                   {formatLongDate(formData.dateCoverageFrom)}
                                   <span className="text-gray-500">—</span>
@@ -1018,7 +1136,7 @@ const ReimbursementForm = (props) => {
           <ExpensesBreakdown
             expenses={expenses}
             onExpensesChange={handleExpensesChange}
-            viewOnly={viewOnly}
+            viewOnly={viewOnly || isAmountLocked}
             errors={errors}
             onSnackbar={showSnackbar}
             minDate={formData.dateCoverageFrom || undefined}
@@ -1033,7 +1151,7 @@ const ReimbursementForm = (props) => {
           <ItinerarySheet
             itineraryItems={itineraryItems}
             onItineraryItemsChange={handleItineraryItemsChange}
-            viewOnly={viewOnly}
+            viewOnly={viewOnly || isAmountLocked}
             errors={errors}
             minDate={formData.dateCoverageFrom || undefined}
             maxDate={formData.dateCoverageTo   || undefined}
@@ -1059,7 +1177,7 @@ const ReimbursementForm = (props) => {
       <Card>
         <CardContent>
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Remarks</h3>
-          { !viewOnly ? (
+          { !viewOnly && !isRemarksLocked ? (
           <Input
             fullWidth
             multiline
@@ -1110,13 +1228,6 @@ const ReimbursementForm = (props) => {
               </>
             )}
           </div>
-          {attachmentSizeError && (
-            <div className="mb-4">
-              <InlineAlert severity="error">
-                {attachmentSizeError}
-              </InlineAlert>
-            </div>
-          )}
           {attachments.length > 0 && (
             <div className="mt-4">
               <AttachmentViewer
@@ -1208,6 +1319,101 @@ const ReimbursementForm = (props) => {
             <>Updating this transaction will mark it as <span className="font-semibold text-green-700">Released</span>. Continue?</>
           )}
         </p>
+      </Modal>
+
+      <Modal
+        open={fundModalOpen}
+        onClose={() => (submitting ? null : setFundModalOpen(false))}
+        title="Funding Source"
+        maxWidth="sm"
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setFundModalOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              startIcon={<Send className="w-4 h-4" />}
+              onClick={handleConfirmFundChoice}
+              disabled={submitting || fundInsufficient}
+            >
+              {submitting ? 'Submitting…' : 'Confirm Submission'}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-gray-700 mb-4">
+          As the Operations approver, this request will be auto-approved on submission. Choose how it should be funded.
+        </p>
+        {fundLoading && (
+          <p className="text-sm text-gray-400 mb-2">Checking Operations Revolving Fund availability…</p>
+        )}
+        {!fundLoading && fundInfo && (
+          <>
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex flex-col gap-1">
+              <span className="font-bold text-gray-800">Request Amount:</span> {`₱${totalAmount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              <span className="font-bold text-gray-800">Available Fund:</span> {`₱${parseFloat(fundInfo.Amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            </div>
+            <div className={`mb-4 p-3 rounded-lg text-sm text-gray-800 flex flex-col gap-1 border ${
+              fundInsufficient ? 'bg-red-50 border-red-300' : 'bg-blue-50 border-blue-200'
+            }`}>
+              <span className="font-bold text-gray-800">Funding Source:</span>
+              <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name="useRevolvingFund"
+                  value="yes"
+                  checked={fundChoice === 'yes'}
+                  onChange={() => setFundChoice('yes')}
+                />
+                Operations Revolving Fund
+              </label>
+              <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name="useRevolvingFund"
+                  value="no"
+                  checked={fundChoice === 'no'}
+                  onChange={() => setFundChoice('no')}
+                />
+                Regular Disbursement
+              </label>
+            </div>
+            {fundChoice === 'yes' && fundInsufficient && (
+              <p className="text-sm text-red-600 font-medium mt-2">
+                Insufficient Operations Revolving Fund Balance
+              </p>
+            )}
+          </>
+        )}
+        {!fundLoading && !fundInfo && (
+          <p className="text-sm text-gray-500">
+            No revolving fund is configured for Operations — this will be a Regular Disbursement.
+          </p>
+        )}
+      </Modal>
+
+      <Modal
+        open={successModal.open}
+        onClose={handleSuccessOkay}
+        title="Reimbursement Submitted"
+        maxWidth="sm"
+        actions={
+          <Button variant="primary" onClick={handleSuccessOkay}>
+            Okay
+          </Button>
+        }
+      >
+        <div className="flex flex-col items-center text-center gap-3 py-2">
+          <CheckCircle className="w-12 h-12 text-green-600" />
+          <p className="text-gray-700">
+            Your reimbursement has been submitted successfully.
+          </p>
+          <div className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50">
+            <p className="text-xs text-gray-600">Transaction Number</p>
+            <p className="text-lg font-bold text-gray-900">{successModal.reimbursementNumber}</p>
+          </div>
+        </div>
       </Modal>
     </div>
   );

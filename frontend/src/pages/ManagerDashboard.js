@@ -20,8 +20,6 @@ import Input from '../components/ui/Input';
 import { Alert } from '../components/ui/Alert';
 import { Loading } from '../components/ui/Loading';
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-
 const daysSince = (dateStr) => {
   if (!dateStr) return 0;
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -29,13 +27,18 @@ const daysSince = (dateStr) => {
 };
 
 const getPriority = (days) => {
-  if (days >= 5) return 'Overdue';
-  if (days >= 3) return 'Urgent';
-  if (days >= 2) return 'High';
+  if (days >= 3) return 'Overdue';
+  if (days === 2) return 'Deadline';
   return 'Normal';
 };
 
-const PRIORITY_ORDER = { Overdue: 0, Urgent: 1, High: 2, Normal: 3 };
+const PRIORITY_STYLES = {
+  Overdue:  'bg-red-100 text-red-700 border border-red-200',
+  Deadline: 'bg-amber-100 text-amber-700 border border-amber-200',
+  Normal:   'bg-green-100 text-green-700 border border-green-200',
+};
+
+const PRIORITY_ORDER = { Overdue: 0, Deadline: 1, Normal: 2 };
 
 const TYPE_STYLES = {
   'Cash Advance':  'bg-indigo-50 text-indigo-700',
@@ -46,9 +49,6 @@ const TYPE_STYLES = {
 const formatPeso = (amount) =>
   `₱${parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-// Donut chart with centered total and hover tooltips, built on shadcn/ui's
-// Chart + Recharts Pie (same {label, value, color} shape as before, so
-// every call site is unchanged).
 const DonutChart = ({ data, size = 120 }) => {
   const nonZeroData = data.filter(d => d.value > 0);
   const total = useMemo(() => nonZeroData.reduce((s, d) => s + d.value, 0), [nonZeroData]);
@@ -100,8 +100,6 @@ const DonutChart = ({ data, size = 120 }) => {
   );
 };
 
-// Formats a timestamp for the timeline (date + time). Falls back gracefully
-// if the value is missing or unparsable.
 const formatDateTime = (value) => {
   if (!value) return null;
   const d = new Date(value);
@@ -115,12 +113,6 @@ const formatDateTime = (value) => {
   });
 };
 
-// Builds a timeline of events for a request from whatever fields the API
-// happens to return. Supports a few common naming conventions so it works
-// across cash advances, liquidations, and reimbursements without requiring
-// a specific backend shape. Steps with no matching timestamp are skipped,
-// except "Submitted", which always shows (falling back to "date filed" or
-// the record's created date).
 const buildTimelineSteps = (request) => {
   if (!request) return [];
 
@@ -136,7 +128,6 @@ const buildTimelineSteps = (request) => {
   const status = (request.status || '').toLowerCase();
   const steps = [];
 
-  // 1. Submitted — always already done
   const submittedAt = pick('created_at', 'submitted_at', 'date_filed', 'requested_at');
   steps.push({
     key: 'submitted',
@@ -147,7 +138,6 @@ const buildTimelineSteps = (request) => {
     isDone: true,
   });
 
-  // 2. Edited/Resubmitted (optional, only if the API tracks it and it differs from submission)
   const updatedAt = pick('updated_at', 'last_modified_at');
   if (updatedAt && submittedAt && new Date(updatedAt).getTime() > new Date(submittedAt).getTime() && status === 'pending') {
     steps.push({
@@ -160,7 +150,6 @@ const buildTimelineSteps = (request) => {
     });
   }
 
-  // 3. Approved / Rejected (mutually exclusive, depends on final status / fields present)
   const approvedAt = pick('approved_at', 'approval_date');
   const rejectedAt = pick('rejected_at', 'rejection_date', 'declined_at');
 
@@ -188,7 +177,6 @@ const buildTimelineSteps = (request) => {
     });
   }
 
-  // 4. Released / Processed (only relevant once approved, and only shown if applicable)
   const releasedAt = pick('released_at', 'processed_at', 'disbursed_at');
   if (['released', 'disbursed', 'liquidated'].includes(status) || releasedAt) {
     steps.push({
@@ -203,10 +191,6 @@ const buildTimelineSteps = (request) => {
     });
   }
 
-  // Resolve each step into a final state: 'done', 'current' (the next step
-  // waiting to happen), or 'upcoming' (further down the line, not relevant yet).
-  // Only the first not-done step becomes "current" — everything after it
-  // stays a muted "upcoming" so the active step is unambiguous.
   let currentAssigned = false;
   return steps.map((step) => {
     if (step.isDone) {
@@ -239,8 +223,6 @@ const RequestTimeline = ({ request }) => {
             const dateLabel = formatDateTime(step.timestamp);
             const isDone = step.state === 'done';
             const isCurrent = step.state === 'current';
-            // Connector after this step is colored only once this step is done —
-            // it represents "has the process moved past this point yet?"
             const connectorClass = isDone ? 'bg-gray-400' : 'bg-gray-200';
             return (
               <li key={step.key} className={`flex items-start ${isLast ? '' : 'flex-1'}`}>
@@ -285,18 +267,12 @@ const RequestTimeline = ({ request }) => {
   );
 };
 
-// ─── main component ──────────────────────────────────────────────────────────
-
 const ManagerDashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const displayName = user?.name || user?.username || user?.email || 'Manager';
-  // Admin accounts see the approval queue across every department; regular
-  // managers/approvers stay scoped to just the department(s) they approve
-  // for (existing behavior, unchanged).
   const isAdmin = user?.role === 'admin';
 
-  // ── data state ─────────────────────────────────────────────────────────────
   const [loading, setLoading]         = useState(false);
   const [pendingData, setPendingData] = useState({ cashAdvances: [], liquidations: [], reimbursements: [] });
   const [notification, setNotification] = useState(null);
@@ -306,38 +282,30 @@ const ManagerDashboard = () => {
   const [allReimbursements, setAllReimbursements] = useState([]);
   const [statsLoading, setStatsLoading] = useState(true);
 
-  // ── queue filter/sort state ────────────────────────────────────────────────
   const [queueSearch, setQueueSearch]           = useState('');
   const [queueTypeFilter, setQueueTypeFilter]   = useState('all');
   const [queueSortField, setQueueSortField]     = useState('priority');
   const [queueSortDir, setQueueSortDir]         = useState('asc');
 
-  // ── review / action modal state ────────────────────────────────────────────
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [selectedType, setSelectedType]       = useState(null);
   const [viewOpen, setViewOpen]               = useState(false);
   const [viewLoading, setViewLoading]         = useState(false);
   const [viewData, setViewData]               = useState(null);
 
-  // action modal
   const [actionOpen, setActionOpen]   = useState(false);
   const [actionType, setActionType]   = useState('approve'); // 'approve'|'reject'
   const [remarks, setRemarks]         = useState('');
 
-  // revolving fund (only relevant for approve + cash-advance/reimbursement)
   const [fundInfo, setFundInfo]       = useState(null);   // { id, funding_code, funding_description, Amount } | null
   const [fundLoading, setFundLoading] = useState(false);
   const [fundChoice, setFundChoice]   = useState('no');    // 'yes'|'no' — defaults to No
-  const REVOLVING_FUND_TYPES = ['cash-advance', 'reimbursement'];
+  const REVOLVING_FUND_TYPES = ['reimbursement'];
   const FUND_LABELS = { ORF: 'Operations Revolving Fund (ORF)', ARF: 'Accounting Revolving Fund (ARF)' };
 
-  // ── fetch ──────────────────────────────────────────────────────────────────
   const fetchPendingApprovals = useCallback(async () => {
     try {
       setLoading(true);
-      // Admins pull the full cross-department queue (scope=all); regular
-      // approvers omit the param and the API keeps scoping to their own
-      // department(s) as before.
       const res = await api.get('/approvals/pending', {
         params: isAdmin ? { scope: 'all' } : undefined,
       });
@@ -353,11 +321,6 @@ const ManagerDashboard = () => {
   const fetchStatsData = useCallback(async () => {
     try {
       setStatsLoading(true);
-      // NOTE: /cash-advances, /liquidations, /reimbursements only return
-      // requests the CURRENT USER personally submitted (created_by/submitted_by),
-      // not the ones they approve. /approvals/all returns every request
-      // (any status, excluding drafts) for the departments this user is an
-      // approver for — which is what the manager stats below need.
       const res = await api.get('/approvals/all', {
         params: isAdmin ? { scope: 'all' } : undefined,
       });
@@ -379,7 +342,6 @@ const ManagerDashboard = () => {
     fetchStatsData();
   }, [fetchPendingApprovals, fetchStatsData]);
 
-  // ── derived queue data ─────────────────────────────────────────────────────
   const pendingApprovals = useMemo(() => {
     const toRow = (item, type, approvalType, refField, amountFields, dateField, purposeField, levelField) => {
       const dateStr  = item[dateField] || item.created_at;
@@ -441,7 +403,6 @@ const ManagerDashboard = () => {
     });
   }, [pendingApprovals, queueTypeFilter, queueSearch, queueSortField, queueSortDir]);
 
-  // ── monthly stats ──────────────────────────────────────────────────────────
   const monthlyStats = useMemo(() => {
     const now = new Date();
     const thisMonth = (d) => {
@@ -450,9 +411,7 @@ const ManagerDashboard = () => {
       return dt.getMonth() === now.getMonth() && dt.getFullYear() === now.getFullYear();
     };
     const norm = (s) => (s || '').toString().toLowerCase();
-    // processApproval writes `approved_by = req.user.name` (a name string,
-    // not an ID) and `approved_at = NOW()` for both approvals AND rejections,
-    // for all three request types. So we match on name, not id.
+    
     const myName = (user?.name || '').toLowerCase();
 
     const allItems = [
@@ -461,9 +420,6 @@ const ManagerDashboard = () => {
       ...allReimbursements.map(i => ({ ...i, amt: parseFloat(i.total_amount || 0) })),
     ];
 
-    // Only count actions taken BY this approver, using the approval action
-    // timestamp (approved_at) rather than updated_at, which can drift after
-    // disbursement/other edits touch the record later.
     const actedByMe = (i) => {
       const actor = (i.approved_by || '').toString().toLowerCase();
       return myName && actor && actor === myName;
@@ -490,7 +446,6 @@ const ManagerDashboard = () => {
     return { approvedThisMonth, rejectedThisMonth, totalAmtPending, overdueCount, avgApprovalHrs };
   }, [allCashAdvances, allLiquidations, allReimbursements, pendingApprovals, user]);
 
-  // ── donut chart data ───────────────────────────────────────────────────────
   const typeDonutData = useMemo(() => [
     { label: 'Cash Advance',  value: pendingData.cashAdvances.length,   color: '#6366f1' },
     { label: 'Liquidation',   value: pendingData.liquidations.length,   color: '#ec4899' },
@@ -505,15 +460,12 @@ const ManagerDashboard = () => {
       else                  buckets['Overdue']++;
     });
     return [
-      { label: '0–1 Day', value: buckets['0–1 Day'], color: '#22c55e' },
-      { label: '2 Days',  value: buckets['2 Days'],  color: '#eab308' },
-      { label: 'Overdue', value: buckets['Overdue'], color: '#ef4444' },
+      { label: 'Day 0-1: Normal', value: buckets['0–1 Day'], color: '#22c55e' },
+      { label: 'Day: 2: Deadline',  value: buckets['2 Days'],  color: '#eab308' },
+      { label: 'Day 3+: Overdue', value: buckets['Overdue'], color: '#ef4444' },
     ];
   }, [pendingApprovals]);
 
-  // Admin-only: breakdown of the pending queue by department. Only useful
-  // when the queue spans multiple departments (i.e. for admins) — regular
-  // managers' queues are already scoped to their own department.
   const departmentData = useMemo(() => {
     if (!isAdmin) return [];
     const counts = {};
@@ -538,7 +490,6 @@ const ManagerDashboard = () => {
     return cfg;
   }, [departmentData]);
 
-  // ── recent actions (approved/rejected/returned, by this approver) ──────────
   const recentActions = useMemo(() => {
     const norm = (s) => (s || '').toString().toLowerCase();
     const myName = (user?.name || '').toLowerCase();
@@ -559,7 +510,6 @@ const ManagerDashboard = () => {
       .slice(0, 10);
   }, [allCashAdvances, allLiquidations, allReimbursements, user]);
 
-  // ── handlers ───────────────────────────────────────────────────────────────
   const handleReview = async (row) => {
     try {
       setViewLoading(true);
@@ -589,8 +539,7 @@ const ManagerDashboard = () => {
     setViewOpen(false);
     setActionOpen(true);
 
-    // Only cash advances and reimbursements can draw from a revolving fund,
-    // and only when approving.
+    // Only reimbursements can draw from a revolving fund, and only when approving.
     const departmentId = request?.department_id;
     if (type === 'approve' && departmentId && REVOLVING_FUND_TYPES.includes(request?.approvalType)) {
       try {
@@ -652,7 +601,6 @@ const ManagerDashboard = () => {
     else { setQueueSortField(field); setQueueSortDir('asc'); }
   };
 
-  // ── sub-renderers ──────────────────────────────────────────────────────────
   const getRequestIcon = (type) => {
     if (type === 'Cash Advance')  return <HandCoins className="w-4 h-4 text-indigo-500" />;
     if (type === 'Liquidation')   return <Receipt   className="w-4 h-4 text-pink-500"   />;
@@ -678,7 +626,6 @@ const ManagerDashboard = () => {
     return null;
   };
 
-  // ── render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-8">
 
@@ -694,12 +641,90 @@ const ManagerDashboard = () => {
         </Alert>
       )}
 
-      {/* ── Section 1: Summary Cards ── */}
       <div>
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Approval Summary</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Approval Monitoring</h2>
+        <div className={`grid grid-cols-1 md:grid-cols-2 ${isAdmin ? 'lg:grid-cols-3' : ''} gap-6`}>
 
-          {/* Pending Your Approval */}
+          {/* Pending by Type – donut */}
+          <Card>
+            <CardContent className="p-6">
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Pending Approval by Type</h3>
+              <div className="flex flex-col items-center gap-4">
+                <DonutChart data={typeDonutData} size={130} />
+                <div className="w-full space-y-1.5">
+                  {typeDonutData.map(d => (
+                    <div key={d.label} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                        <span className="text-gray-600">{d.label}</span>
+                      </div>
+                      <span className="font-bold text-gray-900">{d.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Approval Aging – donut */}
+          <Card>
+            <CardContent className="p-6">
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Approval Aging</h3>
+              <div className="flex flex-col items-center gap-4">
+                <DonutChart data={agingData} size={130} />
+                <div className="w-full space-y-1.5">
+                  {agingData.map(d => (
+                    <div key={d.label} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                        <span className="text-gray-600">{d.label}</span>
+                      </div>
+                      <span className="font-bold text-gray-900">{d.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Pending Requests by Department — admin only, since regular
+              managers' queues are already scoped to a single department */}
+          {isAdmin && (
+            <Card>
+              <CardContent className="p-6">
+                <h3 className="text-sm font-bold text-gray-900 mb-4">Pending Requests by Department</h3>
+                {departmentData.length === 0 ? (
+                  <p className="text-center text-sm text-gray-400 py-4">No data</p>
+                ) : (
+                  <ChartContainer config={departmentChartConfig} className="h-[220px] w-full">
+                    <BarChart accessibilityLayer data={departmentData} layout="vertical" margin={{ left: 8 }}>
+                      <CartesianGrid horizontal={false} />
+                      <XAxis type="number" hide />
+                      <YAxis
+                        dataKey="label"
+                        type="category"
+                        tickLine={false}
+                        axisLine={false}
+                        width={90}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar dataKey="value" radius={4} barSize={24} maxBarSize={28}>
+                        {departmentData.map((d, i) => (
+                          <Cell key={`dept-cell-${i}`} fill={d.color} style={{ fill: d.color }} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="border !border-blue-200 !bg-blue-50 text-white col-span-1 shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
@@ -857,23 +882,10 @@ const ManagerDashboard = () => {
                           </span>
                         </td>
                         <td className="px-4 py-4 text-center">
-                          {(() => {
-                            const days = row.days;
-                            const isOverdue = days > 3;
-                            const isWarning = days === 3;
-                            return (
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                                isOverdue
-                                  ? 'bg-red-100 text-red-700 border border-red-200'
-                                  : isWarning
-                                  ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                                  : 'bg-green-100 text-green-700 border border-green-200'
-                              }`}>
-                                {isOverdue && <span>⚠</span>}
-                                {days}d
-                              </span>
-                            );
-                          })()}
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${PRIORITY_STYLES[row.priority]}`}>
+                            {row.priority === 'Overdue' && <ClockAlert className="w-3 h-3" />}
+                            {row.days}d
+                          </span>
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-1">
@@ -912,89 +924,6 @@ const ManagerDashboard = () => {
           )}
         </CardContent>
       </Card>
-
-      {/* ── Section 3 & 4: Charts ── */}
-      <div>
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Approval Monitoring</h2>
-        <div className={`grid grid-cols-1 md:grid-cols-2 ${isAdmin ? 'lg:grid-cols-3' : ''} gap-6`}>
-
-          {/* Pending by Type – donut */}
-          <Card>
-            <CardContent className="p-6">
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Pending Approval by Type</h3>
-              <div className="flex flex-col items-center gap-4">
-                <DonutChart data={typeDonutData} size={130} />
-                <div className="w-full space-y-1.5">
-                  {typeDonutData.map(d => (
-                    <div key={d.label} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-                        <span className="text-gray-600">{d.label}</span>
-                      </div>
-                      <span className="font-bold text-gray-900">{d.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Approval Aging – donut */}
-          <Card>
-            <CardContent className="p-6">
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Approval Aging</h3>
-              <div className="flex flex-col items-center gap-4">
-                <DonutChart data={agingData} size={130} />
-                <div className="w-full space-y-1.5">
-                  {agingData.map(d => (
-                    <div key={d.label} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-                        <span className="text-gray-600">{d.label}</span>
-                      </div>
-                      <span className="font-bold text-gray-900">{d.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Pending Requests by Department — admin only, since regular
-              managers' queues are already scoped to a single department */}
-          {isAdmin && (
-            <Card>
-              <CardContent className="p-6">
-                <h3 className="text-sm font-bold text-gray-900 mb-4">Pending Requests by Department</h3>
-                {departmentData.length === 0 ? (
-                  <p className="text-center text-sm text-gray-400 py-4">No data</p>
-                ) : (
-                  <ChartContainer config={departmentChartConfig} className="h-[220px] w-full">
-                    <BarChart accessibilityLayer data={departmentData} layout="vertical" margin={{ left: 8 }}>
-                      <CartesianGrid horizontal={false} />
-                      <XAxis type="number" hide />
-                      <YAxis
-                        dataKey="label"
-                        type="category"
-                        tickLine={false}
-                        axisLine={false}
-                        width={90}
-                        tick={{ fontSize: 11 }}
-                      />
-                      <ChartTooltip content={<ChartTooltipContent />} />
-                      <Bar dataKey="value" radius={4} barSize={24} maxBarSize={28}>
-                        {departmentData.map((d, i) => (
-                          <Cell key={`dept-cell-${i}`} fill={d.color} style={{ fill: d.color }} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ChartContainer>
-                )}
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      </div>
 
       {/* ── Section 5: Recent Approval Actions ── */}
       <div>

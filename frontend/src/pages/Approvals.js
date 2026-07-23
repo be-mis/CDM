@@ -333,11 +333,11 @@ const Approvals = () => {
     const [actionType, setActionType] = useState('approve'); // 'approve' or 'reject'
     const [remarks, setRemarks] = useState('');
 
-    // revolving fund (only relevant for approve + cash-advance/reimbursement)
+    // revolving fund (only relevant for approve + reimbursement)
     const [fundInfo, setFundInfo] = useState(null);   // { id, funding_code, funding_description, Amount } | null
     const [fundLoading, setFundLoading] = useState(false);
     const [fundChoice, setFundChoice] = useState('no'); // 'yes'|'no' — defaults to No
-    const REVOLVING_FUND_TABS = { 0: 'cash-advance', 2: 'reimbursement' }; // tab index -> approvalType; tab 1 (liquidations) excluded
+    const REVOLVING_FUND_TABS = { 2: 'reimbursement' }; // tab index -> approvalType; only Reimbursement (tab 2) is revolving-fund eligible
     const FUND_LABELS = { ORF: 'Operations Revolving Fund (ORF)', ARF: 'Accounting Revolving Fund (ARF)' };
     const [notification, setNotification] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');

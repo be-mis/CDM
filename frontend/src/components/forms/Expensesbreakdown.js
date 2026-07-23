@@ -7,7 +7,7 @@ import CurrencyInput from '../ui/Currencyinput';
 import { InlineAlert } from '../ui/Alert';
 import { formatLongDate } from '../../utils/formatters';
 import { scanReceipt } from '../../utils/receiptOcrService';
-import ReceiptPreviewModal from '../modal/Receiptpreviewmodal';
+import ReceiptPreviewModal from '../modal/ReceiptPreview';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -79,10 +79,12 @@ const ExpensesBreakdown = ({
   );
 
   const updateExpense = useCallback(
-    (id, field, value) =>
+    (id, field, value) => {
+      console.log(`[ExpensesBreakdown] updateExpense - id: ${id}, field: ${field}, value:`, value);
       onExpensesChange(
         expenses.map((exp) => (exp.id === id ? { ...exp, [field]: value } : exp)),
-      ),
+      );
+    },
     [expenses, onExpensesChange],
   );
 
@@ -116,6 +118,7 @@ const ExpensesBreakdown = ({
   const processReceiptFile = useCallback(
     async (itemId, file) => {
       if (!file) return;
+      console.log(`[ExpensesBreakdown] processReceiptFile - itemId: ${itemId}, file:`, file.name, file.size, file.type);
 
       try { file.preview = URL.createObjectURL(file); } catch { file.preview = null; }
 
@@ -414,7 +417,7 @@ const ExpensesBreakdown = ({
                   !item.attachment ? (
                     <>
                       <input
-                        accept={isMobileDevice() ? 'image/*' : 'image/*,.pdf,.doc,.docx'}
+                        accept="image/*,.pdf,.doc,.docx"
                         capture={isMobileDevice() ? 'environment' : undefined}
                         className="hidden"
                         id={`row-file-upload-${item.id}`}
@@ -426,17 +429,14 @@ const ExpensesBreakdown = ({
                         htmlFor={`row-file-upload-${item.id}`}
                         className={`inline-flex items-center w-full justify-center px-3 py-2 text-xs font-medium rounded-lg bg-white border hover:bg-gray-50 cursor-pointer transition-colors min-h-[38px] ${ocrLoading[item.id] ? 'opacity-50 cursor-not-allowed' : ''} ${errors[`expense_receipt_${item.id}`] ? 'border-red-400 text-red-500 hover:border-red-500' : 'text-gray-500 border-gray-200 hover:border-gray-300'}`}
                       >
-                        {isMobileDevice() ? (
-                          <>
-                            <Camera className="w-3.5 h-3.5 mr-1.5" />
-                            Scan Receipt
-                          </>
-                        ) : (
-                          <>
-                            <Paperclip className="w-3.5 h-3.5 mr-1.5" />
-                            Attach File
-                          </>
-                        )}
+                        <span className="inline-flex items-center md:hidden">
+                          <Camera className="w-3.5 h-3.5 mr-1.5" />
+                          Scan Receipt
+                        </span>
+                        <span className="hidden items-center md:inline-flex">
+                          <Paperclip className="w-3.5 h-3.5 mr-1.5" />
+                          Attach File
+                        </span>
                       </label>
                       <p className="text-[10px] text-gray-400 mt-1">
                         Max size: {MAX_ATTACHMENT_SIZE_MB}MB

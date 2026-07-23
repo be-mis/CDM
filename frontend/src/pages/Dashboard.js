@@ -126,10 +126,12 @@ const Dashboard = () => {
     { text: 'Profile', icon: <UserIcon className="w-5 h-5" />, view: 'profile', path: '/profile', key: 'profile' },
   ];
 
+  const isOperationsManager = user?.role === 'manager' && user?.department === 'OPERATIONS';
+
   const menuItems = allMenuItems.filter(item => {
     if (item.adminOnly && user?.role !== 'admin') return false;
-    if (item.approverOnly && user?.role !== 'admin' && (!user?.isApprover || user?.role === 'accounting')) return false;
-    if (item.accountingOnly && user?.role !== 'accounting' && user?.role !== 'admin') return false;
+    if (item.approverOnly && user?.role !== 'admin' && !user?.isApprover) return false;
+    if (item.accountingOnly && user?.role !== 'accounting' && user?.role !== 'admin' && !(item.key === 'revolving-funds' && isOperationsManager)) return false;
     return true;
   });
 
@@ -233,7 +235,7 @@ const Dashboard = () => {
         return <Disbursements />;
         
         case 'revolving-funds':
-        if (user?.role !== 'accounting' && user?.role !== 'admin') {
+        if (user?.role !== 'accounting' && user?.role !== 'admin' && !isOperationsManager) {
           return (
             <InlineAlert severity="warning">
               You don't have permission to access Revolving Funds. Accounting access required.

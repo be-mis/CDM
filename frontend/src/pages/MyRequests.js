@@ -226,7 +226,7 @@ const RequestTimeline = ({ request }) => {
   if (steps.length === 0) return null;
 
   return (
-    <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50/50">
+    <div className="mb-6 border border-blue-200 rounded-lg p-4 bg-gray-50">
       <div className="flex items-center gap-2 mb-5">
         <Clock className="w-4 h-4 text-gray-500" />
         <h4 className="text-sm font-semibold text-gray-700">Request Timeline</h4>
@@ -404,7 +404,7 @@ const MyRequests = () => {
           cashAdvanceId:       data.cash_advance_id,
           cashAdvanceNumber:   data.cash_advance_number,
           totalAdvanceAmount:  data.total_advance_amount,
-          totalAmount:         data.total_amount,
+          totalAmount:         data.total_actual_amount,
           paymentMethod:       data.payment_method,
           gcashName:           data.gcash_name || '',
           checkNumber:         data.check_number,
@@ -458,7 +458,7 @@ const MyRequests = () => {
           dateNeeded:          data.date_needed || '',    
           dateCoverageFrom:    data.start_date || data.period_covered_from || '',
           dateCoverageTo:      data.end_date   || data.period_covered_to   || '',
-          totalAmount:         data.total_amount,
+          totalAmount:         data.total_actual_amount,
           paymentMethod:       data.payment_method,
           gcashName:           data.gcash_name || '',
           checkNumber:         data.check_number,
@@ -728,7 +728,7 @@ const MyRequests = () => {
           id: item.id,
           refNumber: item.reimbursement_number,
           purpose: item.purpose,
-          amount: parseFloat(item.total_amount || 0),
+          amount: parseFloat(item.total_actual_amount || 0),
           periodFrom: item.period_covered_from,
           periodTo: item.period_covered_to,
           submitDate: item.reimbursement_date,
@@ -876,7 +876,7 @@ const MyRequests = () => {
           dateNeeded: data.date_needed || '',
           dateCoverageFrom: data.start_date || data.period_covered_from || '',
           dateCoverageTo:   data.end_date   || data.period_covered_to   || '',
-          totalAmount: data.total_amount,
+          totalAmount: data.total_actual_amount,
           paymentMethod: data.payment_method,
           gcashName: data.gcash_name || '',
           checkNumber: data.check_number,
@@ -1517,11 +1517,10 @@ const MyRequests = () => {
                   <tr>
                     <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Reference No.</th>
                     <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Cash Advance Ref No.</th>
-                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Total Expenses</th>
                     <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Submit Date</th>
-                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Status</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Status</th>
                     <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">{isApproverUser ? 'Disburse By' : 'Approver'}</th>
-                    <th className="px-4 py-3 w-1/12 text-center text-sm font-semibold text-gray-700">Actions</th>
+                    <th className="px-4 py-3 w-2/12 text-center text-sm font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -1542,9 +1541,6 @@ const MyRequests = () => {
                       <tr key={request.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-4 text-sm font-semibold font-mono text-gray-900">{request.refNumber}</td>
                         <td className="px-4 py-4 text-sm font-mono text-gray-600">{request.cashAdvanceRef}</td>
-                        <td className="px-4 py-4 text-sm font-semibold text-left text-gray-900">
-                          ₱{request.totalExpenses.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                        </td>
                         <td className="px-4 py-4 text-sm text-gray-600">{formatLongDate(request.submitDate)}</td>
                         <td className="px-4 py-4">
                           <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border ${getStatusColor(request.status)}`}>

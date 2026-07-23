@@ -197,11 +197,11 @@ const getRevolvingFund = async (req, res) => {
 
 // Which request types are allowed to draw from a revolving fund, and which
 // column on each table holds that request's own reference number — matches
-// revolving_funds_history.transaction_number ("advance_number or
-// reimbursement_number"). Liquidations are intentionally excluded: they
-// aren't part of the revolving_funds_history.transaction_type enum.
+// revolving_funds_history.transaction_number ("reimbursement_number").
+// Liquidations are intentionally excluded: they aren't part of the
+// revolving_funds_history.transaction_type enum. Cash advances are also
+// excluded — revolving funds may only be used for reimbursements.
 const REVOLVING_FUND_ELIGIBLE_TYPES = {
-    'cash-advance': { table: 'cash_advances', transactionType: 'cash_advance', numberColumn: 'advance_number' },
     'reimbursement': { table: 'reimbursements', transactionType: 'reimbursement', numberColumn: 'reimbursement_number' },
 };
 
@@ -267,7 +267,7 @@ const processApproval = async (req, res) => {
         const remarksColumn = action === 'reject' ? 'reject_remarks' : 'remarks';
 
         // Revolving fund path: only reachable on approval, and only for
-        // cash-advance / reimbursement (liquidations aren't eligible).
+        // reimbursements (cash advances and liquidations aren't eligible).
         const wantsRevolvingFund = action === 'approve' && (useRevolvingFund === true || useRevolvingFund === 'true');
 
         if (wantsRevolvingFund) {
@@ -321,8 +321,8 @@ const processApproval = async (req, res) => {
 
                 await connection.query(
                     `INSERT INTO revolving_funds_history
-             (transaction_type, transaction_id, transaction_number, revolving_fund_id, funding_code, total_amount, deducted_amount, balance_before, balance_after, approver_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+             (transaction_type, transaction_id, transaction_number, revolving_fund_id, funding_code, total_amount, deducted_amount, balance_before, balance_after, approver_id, remarks, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not settled', NOW())`,
                     [
                         eligibility.transactionType,
                         id,

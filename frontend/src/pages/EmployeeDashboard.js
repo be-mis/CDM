@@ -995,6 +995,9 @@ const EmployeeDashboard = () => {
             : 'Request Details'
         }
         maxWidth="xl"
+        actions={
+          <Button variant="secondary" onClick={handleCloseView}>Close</Button>
+        }
       >
         {viewLoading ? (
           <Loading message="Loading details..." />
@@ -1002,9 +1005,9 @@ const EmployeeDashboard = () => {
           <>
             <RequestTimeline request={viewData} />
             {viewData.type === REQUEST_TYPES.CASH_ADVANCE ? (
-              <CashAdvanceForm editData={viewData} viewOnly onClose={handleCloseView} />
+              <CashAdvanceForm editData={viewData} viewOnly onClose={handleCloseView} hideCloseButton />
             ) : (
-              <LiquidationForm editData={viewData} viewOnly onClose={handleCloseView} />
+              <LiquidationForm editData={viewData} viewOnly onClose={handleCloseView} hideCloseButton />
             )}
           </>
         ) : (
@@ -1099,7 +1102,7 @@ const EmployeeDashboard = () => {
 
       {/* ── Urgent Attention Panel ────────────────────────────────────────── */}
       {!loading && urgentItems.length > 0 && (
-        <Card className="border-red-200 mt-6">
+        <Card className="border-red-200 mt-8">
           <CardContent className="p-4 sm:p-6">
             <div className="flex items-center gap-3 mb-4 sm:mb-5">
               <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-red-100 border border-red-200 shrink-0">

@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Save, Paperclip, Send, CheckCircle } from 'lucide-react';
 import api from '../api';
-import AttachmentViewer from './AttachmentViewer';
+import AttachmentViewer from './modal/AttachmentViewer';
 import { useAuth } from '../context/AuthContext';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Autocomplete from './ui/Autocomplete';
 import { Card, CardContent } from './ui/Card';
-import { Alert, InlineAlert } from './ui/Alert';
+import { Alert } from './ui/Alert';
 import Modal from './ui/Modal';
 import { normalizeDate, formatLongDate } from '../utils/formatters';
 import PaymentDetailsSection from './forms/PaymentDetailsSection';
@@ -122,6 +122,7 @@ const TruncatedViewField = ({ value, label }) => (
 const LiquidationForm = (props) => {
   const { initialData, editData, onClose, viewOnly = false, accountingEdit = false, editReason = '', editResultStatus = 'released', onSaved } = props || {};
   const isEditMode = !!editData;
+  // console.log('[LiquidationForm] isEditMode:', isEditMode, '| raw editData:', editData);
   const { user }   = useAuth();
   const navigate   = useNavigate();
 
@@ -213,20 +214,27 @@ const LiquidationForm = (props) => {
   });
   const [pendingDeletes, setPendingDeletes] = useState([]);
   const [snackbar,       setSnackbar]       = useState({ open: false, message: '', severity: 'success' });
-  const [attachmentSizeError, setAttachmentSizeError] = useState(null);
   const [errors,         setErrors]         = useState({});
   const [submitting,     setSubmitting]     = useState(false);
   // Gate accounting's "Update Transaction" behind an explicit confirmation
   // since saving now also releases the transaction.
   const [confirmReleaseOpen, setConfirmReleaseOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState(null);
+  // Shown after a brand-new liquidation is successfully submitted, instead
+  // of redirecting straight away. Holds the confirmed liquidation number so
+  // the user can note it down before returning to My Requests.
+  const [successModal, setSuccessModal] = useState({ open: false, liquidationNumber: '' });
 
   const handleExpensesChange = useCallback((updated) => {
-    if (typeof updated === 'function') {
-      setExpenses(updated);        // ← functional update from OCR callback
-    } else {
-      setExpenses(updated);        // ← plain array update
-    }
+    setExpenses(updated);
+    // Clear stale expense-related error banners; they'll be re-validated on next submit.
+    setErrors((prev) => {
+      const keys = Object.keys(prev).filter((k) => k === 'expenses' || k.startsWith('expense_'));
+      if (keys.length === 0) return prev;
+      const next = { ...prev };
+      keys.forEach((k) => delete next[k]);
+      return next;
+    });
   }, []);
   const handleItineraryItemsChange = useCallback((updated) => setItineraryItems(updated), []);
 
@@ -295,7 +303,6 @@ const LiquidationForm = (props) => {
     }
   }, []);
 
-  // ── Initialise ─────────────────────────────────────────────────────────────
   useEffect(() => {
     fetchDepartments();
     fetchAdvances();
@@ -336,7 +343,6 @@ const LiquidationForm = (props) => {
     }
   }, [formData.paymentMethod, userProfile]);
 
-  // ── Derived totals ─────────────────────────────────────────────────────────
   const totalActual = useMemo(
     () =>
       expenses.reduce((s, it) => s + (parseFloat(it.actualAmount) || 0), 0) +
@@ -349,7 +355,6 @@ const LiquidationForm = (props) => {
     [formData.totalAdvanceAmount, totalActual],
   );
 
-  // Sync refund / additional-payment
   useEffect(() => {
     if (variance > 0)
       setFormData((prev) => ({ ...prev, refundAmount: variance,          additionalPayment: 0 }));
@@ -359,14 +364,12 @@ const LiquidationForm = (props) => {
       setFormData((prev) => ({ ...prev, refundAmount: 0,                 additionalPayment: 0 }));
   }, [variance]);
 
-  // ── Form field handler ─────────────────────────────────────────────────────
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
     setErrors((prev)    => ({ ...prev, [name]: '' }));
   }, []);
 
-  // ── Cash-advance selection ─────────────────────────────────────────────────
   const handleCashAdvanceSelect = useCallback(async (_event, newValue) => {
     if (!newValue) {
       setSelectedCashAdvance(null);
@@ -388,6 +391,7 @@ const LiquidationForm = (props) => {
           dateCoverageTo:   normalizeDate(data.end_date   || data.endDate   || data.dateCoverageTo   || ''),
           totalAdvanceAmount: parseFloat(data.requested_amount || data.requestedAmount || data.amount || prev.totalAdvanceAmount) || 0,
         }));
+        setErrors((prev) => ({ ...prev, cashAdvanceId: '' }));
         if (data.expenses?.length > 0) {
           setExpenses(
             data.expenses.map((it, idx) => ({
@@ -413,7 +417,6 @@ const LiquidationForm = (props) => {
     } catch (e) {
       console.warn('Failed to fetch cash advance details', e?.message || e);
     }
-    // Fallback: use list-level data
     setFormData((prev) => ({
       ...prev,
       cashAdvanceId:      newValue.id,
@@ -422,6 +425,7 @@ const LiquidationForm = (props) => {
       businessUnit:       newValue.businessUnit || newValue.business_unit || prev.businessUnit,  // ← add this
       totalAdvanceAmount: newValue.amount      || prev.totalAdvanceAmount,
     }));
+    setErrors((prev) => ({ ...prev, cashAdvanceId: '' }));
     setSelectedCashAdvance(newValue);
   }, [isEditMode, generateLiquidationNumber]);
 
@@ -434,10 +438,7 @@ const LiquidationForm = (props) => {
 
     if (oversizedFiles.length > 0) {
       const message = `${oversizedFiles.map((f) => f.name).join(', ')} exceed${oversizedFiles.length === 1 ? 's' : ''} the ${MAX_ATTACHMENT_SIZE_MB}MB size limit and ${oversizedFiles.length === 1 ? 'was' : 'were'} not attached.`;
-      setAttachmentSizeError(message);
       showSnackbar(message, 'error');
-    } else {
-      setAttachmentSizeError(null);
     }
 
     const files = acceptedFiles.map((f) => {
@@ -449,7 +450,6 @@ const LiquidationForm = (props) => {
       showSnackbar(`${files.length} file(s) attached`, 'success');
     }
 
-    // Reset input so re-selecting the same (rejected) file re-triggers onChange
     e.target.value = '';
   }, [showSnackbar]);
 
@@ -499,10 +499,6 @@ const LiquidationForm = (props) => {
     return results;
   }, []);
 
-  /**
-   * Upload new receipt files attached to itinerary rows.
-   * Returns a new array of itinerary objects with resolved server-side receipt info.
-   */
   const uploadItineraryReceipts = useCallback(async (currentItems, liquidationId) => {
     const results = [];
     for (const item of currentItems) {
@@ -536,9 +532,6 @@ const LiquidationForm = (props) => {
     return results;
   }, []);
 
-  /**
-   * Upload top-level supporting documents and link them to the liquidation.
-   */
   const uploadSupportingDocuments = useCallback(async (liquidationId) => {
     try {
       const updated = [];
@@ -580,30 +573,6 @@ const LiquidationForm = (props) => {
     }
   }, [attachments, showSnackbar]);
 
-  // ── Build the API payload ─────────────────────────────────────────────────
-  /**
-   * Field name mapping summary (frontend → controller → DB column):
-   *
-   *  EXPENSES
-   *  ─────────────────────────────────────────────────────────
-   *  expenses[].particulars      → items[].description    → particular
-   *  expenses[].actualAmount     → items[].amount         → actual_amount
-   *  expenses[].vendor           → items[].vendor         → vendor_name
-   *  expenses[].vatable          → items[].vatable        → vatable_sales
-   *  expenses[].vatAmount        → items[].vatAmount      → vat_amount
-   *  expenses[].zeroRatedSales   → items[].zeroRatedSales → zero_rated_sales
-   *  expenses[].vatExemptSales   → items[].vatExemptSales → vat_exempt_sales
-   *  expenses[].attachment       → items[].attachments[0] → liquidation_receipts (via receipt_id)
-   *
-   *  ITINERARY
-   *  ─────────────────────────────────────────────────────────
-   *  itineraryItems[].dateCovered          → transportation[].dateCovered   → travel_date
-   *  itineraryItems[].storeName            → transportation[].store         → store_name
-   *  itineraryItems[].fromPlace            → transportation[].fromLocation  → transport_from
-   *  itineraryItems[].toPlace              → transportation[].toLocation    → transport_to
-   *  itineraryItems[].modeOfTransportation → transportation[].modeOfTransport → transport_mode
-   *  itineraryItems[].receipt              → transportation[].receipt       → liquidation_receipts (via receipt_id)
-   */
   const buildPayload = useCallback(
     (status, finalExpenses, finalItinerary) => ({
       liquidationNumber:  formData.liquidationNumber,
@@ -642,13 +611,9 @@ const LiquidationForm = (props) => {
         zeroRatedSales: parseFloat(item.zeroRatedSales) || 0,  // → DB: zero_rated_sales
         vatExemptSales: parseFloat(item.vatExemptSales) || 0,  // → DB: vat_exempt_sales
         expenseDate:    item.expenseDate    || null,
-        // Controller reads attachments[0] to create a liquidation_receipts row
-        // and store its ID in liquidation_expenses.receipt_id.
         attachments:    item.attachment ? [item.attachment] : [],
       })),
 
-      // ── Itinerary Sheet ────────────────────────────────────────────────────
-      // Controller key: `transportation`
       transportation: finalItinerary.map((it) => ({
         dateCovered:      it.dateCovered          || null, // → DB: travel_date
         store:            it.storeName            || '',   // → DB: store_name
@@ -664,8 +629,7 @@ const LiquidationForm = (props) => {
     [formData, totalActual],
   );
 
-  // ── Validation ─────────────────────────────────────────────────────────────
-  const validateForm = useCallback(() => {
+  const validateSubmit = useCallback(() => {
     const errs = {};
     if (!formData.cashAdvanceId)
       errs.cashAdvanceId = 'Cash advance is required';
@@ -673,8 +637,19 @@ const LiquidationForm = (props) => {
       errs.submittedBy = 'Submitted by is required';
     if (!formData.department)
       errs.department = 'Department is required';
-    if (expenses.some((it) => !it.particulars.toString().trim() || (parseFloat(it.actualAmount) || 0) <= 0))
-      errs.expenses = 'All expenses must have particulars and a valid actual amount';
+
+    expenses.forEach((it) => {
+      if (!it.particulars?.toString().trim())
+        errs[`expense_particulars_${it.id}`] = 'Required';
+      if (!(parseFloat(it.actualAmount) > 0))
+        errs[`expense_amount_${it.id}`] = 'Required';
+      if (!it.attachment)
+        errs[`expense_receipt_${it.id}`] = 'Receipt is required';
+    });
+
+    if (expenses.some((it) => !it.particulars?.toString().trim() || !(parseFloat(it.actualAmount) > 0) || !it.attachment))
+      errs.expenses = 'All expenses must have Particulars, Amount, and a Receipt';
+
     if (formData.dateCoverageFrom && formData.dateCoverageTo) {
       const outOfRange = expenses.some((it) => {
         if (!it.expenseDate) return false;
@@ -686,45 +661,54 @@ const LiquidationForm = (props) => {
 
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
-      showSnackbar(Object.values(errs)[0], 'error');
+      showSnackbar(errs.expenses || Object.values(errs)[0], 'error');
       return false;
     }
     return true;
   }, [formData, expenses, showSnackbar]);
 
-  // When the requestor is themselves an approver, their liquidation skips
-  // the approval queue and is auto-approved on submit — same rule as
-  // CashAdvanceForm. The approver is always the logged-in user, and the
-  // approved date is today's date at the moment of (re-)submission.
+  const validateDraft = useCallback(() => {
+    const errs = {};
+
+    if (!formData.cashAdvanceId) {
+      errs.cashAdvanceId = 'Cash advance is required';
+    }
+    if (!formData.department) {
+      errs.department = 'Department is required';
+    }
+
+    const hasParticular = expenses.some((it) => it.particulars?.toString().trim());
+    if (!hasParticular) {
+      expenses.forEach((it) => {
+        if (!it.particulars?.toString().trim()) {
+          errs[`expense_particulars_${it.id}`] = 'Required';
+        }
+      });
+      errs.expenses = 'At least one expense with a Particular is required';
+    }
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }, [formData, expenses]);
+
   const isApprover = !!(
     user?.role?.toLowerCase().includes('approver') ||
     user?.role?.toLowerCase().includes('manager') ||
     user?.is_approver
   );
 
-  // ── Persist (save draft or submit) ─────────────────────────────────────────
-  const persistForm = useCallback(async (requestedStatus) => {
-    if (accountingEdit && !editReason?.trim()) {
-      showSnackbar('Please provide a reason for this edit before saving.', 'error');
-      return;
-    }
-    // Updating an already-approved liquidation now also releases it, so
-    // guard against accidental clicks with an explicit confirmation.
-    if (accountingEdit) {
-      setPendingStatus(requestedStatus);
-      setConfirmReleaseOpen(true);
-      return;
-    }
-    await commitPersist(requestedStatus);
-  }, [accountingEdit, editReason, showSnackbar]);
-
-  const handleConfirmRelease = useCallback(async () => {
-    setConfirmReleaseOpen(false);
-    await commitPersist(pendingStatus);
-  }, [pendingStatus]);
-
   const commitPersist = useCallback(async (requestedStatus) => {
-    if (!validateForm()) return;
+    // DEBUG: log all current form inputs so we can verify the data is being
+    // captured correctly before validation runs. Safe to remove later.
+    // console.log('[LiquidationForm] commitPersist called with status:', requestedStatus);
+    // console.log('[LiquidationForm] formData:', formData);
+    // console.log('[LiquidationForm] expenses:', expenses);
+    // console.log('[LiquidationForm] itineraryItems:', itineraryItems);
+    // console.log('[LiquidationForm] attachments (supporting docs):', attachments);
+    // console.log('[LiquidationForm] selectedCashAdvance:', selectedCashAdvance);
+
+    if (requestedStatus === 'pending' && !validateSubmit()) return;
+    if (requestedStatus === 'draft'   && !validateDraft())  return;
     setSubmitting(true);
     try {
       // Accounting/Admin is correcting a liquidation outside the normal flow.
@@ -745,12 +729,30 @@ const LiquidationForm = (props) => {
             ? { approver: user.name, approvedDate: new Date().toISOString().split('T')[0] }
             : { approver: '', approvedDate: '' };
 
+      // Whether a follow-up Phase 3 write will be needed to attach resolved
+      // receipt file paths. Computed up front because it changes what status
+      // Phase 1 is allowed to save as (see note below).
+      const hasNewExpenseReceipts   = expenses.some(e => e.attachment && !e.attachment.isExisting);
+      const hasNewItineraryReceipts = itineraryItems.some(t => t.receipt && !t.receipt.isExisting);
+      const needsPhase3 = hasNewExpenseReceipts || hasNewItineraryReceipts;
+
       // ── Phase 1: Save liquidation with existing/no attachments first ──────
       // Pass expenses/itinerary as-is (existing receipts stay, new ones pending)
+      //
+      // IMPORTANT: the backend's updateLiquidation only allows further edits
+      // while status is 'draft' | 'rejected' | 'cancelled'. If we write the
+      // real target status (e.g. 'pending') here and a Phase 3 PUT follows to
+      // attach the uploaded receipt's resolved file path, that PUT gets
+      // rejected with 400 because the record is no longer editable. So: if a
+      // Phase 3 write will happen, Phase 1 must leave the record in 'draft'
+      // (and skip approver/edit-reason fields, which belong to the final
+      // state) — the real status is then written by Phase 3 instead, in the
+      // same call that carries the resolved attachments.
+      const phase1Status  = needsPhase3 ? 'draft' : status;
       const phase1Payload = {
-        ...buildPayload(status, expenses, itineraryItems),
-        ...approverFields,
-        ...(accountingEdit ? { edit_reason: editReason.trim() } : {}),
+        ...buildPayload(phase1Status, expenses, itineraryItems),
+        ...(needsPhase3 ? {} : approverFields),
+        ...(!needsPhase3 && accountingEdit ? { edit_reason: editReason.trim() } : {}),
       };
 
       const response = isEditMode && editData?.id
@@ -765,10 +767,7 @@ const LiquidationForm = (props) => {
       const liquidationId = response.data.data.id;
 
       // ── Phase 2: Upload new receipt files now that we have the ID ─────────
-      const hasNewExpenseReceipts   = expenses.some(e => e.attachment && !e.attachment.isExisting);
-      const hasNewItineraryReceipts = itineraryItems.some(t => t.receipt && !t.receipt.isExisting);
-
-      if (hasNewExpenseReceipts || hasNewItineraryReceipts) {
+      if (needsPhase3) {
         const finalExpenses  = hasNewExpenseReceipts
           ? await uploadExpenseAttachments(expenses, liquidationId)
           : expenses;
@@ -777,7 +776,9 @@ const LiquidationForm = (props) => {
           ? await uploadItineraryReceipts(itineraryItems, liquidationId)
           : itineraryItems;
 
-        // ── Phase 3: Update liquidation with resolved file paths ─────────────
+        // ── Phase 3: Update liquidation with resolved file paths AND the ──────
+        // real target status. Record is still 'draft' at this point (see
+        // Phase 1 note above), so this update is allowed.
         const phase3Payload = {
           ...buildPayload(status, finalExpenses, finalItinerary),
           ...approverFields,
@@ -809,9 +810,23 @@ const LiquidationForm = (props) => {
           : (status === 'draft' ? 'Draft saved successfully!' : 'Liquidation submitted successfully!'),
         'success',
       );
-      if (accountingEdit && onSaved) onSaved();
-      else if (onClose) onClose();
-      else navigate('/my-requests', { state: { tab: 1 } });
+
+      // Only pop the success modal for a brand-new liquidation being
+      // submitted (not saved as a draft, and not an accounting edit) —
+      // that's the "creation of the transaction" moment. Drafts and
+      // accounting edits keep the previous immediate-redirect behavior.
+      const isCreateSubmit = !accountingEdit && status !== 'draft';
+      if (isCreateSubmit) {
+        const confirmedNumber =
+          response.data.data?.liquidationNumber ||
+          response.data.data?.liquidation_number ||
+          formData.liquidationNumber;
+        setSuccessModal({ open: true, liquidationNumber: confirmedNumber });
+      } else {
+        if (accountingEdit && onSaved) onSaved();
+        else if (onClose) onClose();
+        else navigate('/my-requests', { state: { tab: 1 } });
+      }
 
     } catch (error) {
       showSnackbar(
@@ -823,7 +838,8 @@ const LiquidationForm = (props) => {
       setSubmitting(false);
     }
   }, [
-    validateForm, buildPayload, expenses, itineraryItems,
+    validateSubmit, validateDraft, buildPayload, expenses, itineraryItems,
+    formData, selectedCashAdvance,
     isEditMode, editData?.id, isApprover, user,
     uploadExpenseAttachments, uploadItineraryReceipts,
     attachments, uploadSupportingDocuments,
@@ -831,8 +847,37 @@ const LiquidationForm = (props) => {
     accountingEdit, editReason, onSaved, editData?.status,
   ]);
 
+  const persistForm = useCallback(async (requestedStatus) => {
+    if (accountingEdit && !editReason?.trim()) {
+      showSnackbar('Please provide a reason for this edit before saving.', 'error');
+      return;
+    }
+    // Updating an already-approved liquidation now also releases it, so
+    // guard against accidental clicks with an explicit confirmation.
+    if (accountingEdit) {
+      setPendingStatus(requestedStatus);
+      setConfirmReleaseOpen(true);
+      return;
+    }
+    await commitPersist(requestedStatus);
+  }, [accountingEdit, editReason, showSnackbar, commitPersist]);
+
+  const handleConfirmRelease = useCallback(async () => {
+    setConfirmReleaseOpen(false);
+    await commitPersist(pendingStatus);
+  }, [pendingStatus, commitPersist]);
+
   const handleSaveDraft = useCallback(() => persistForm('draft'),   [persistForm]);
   const handleSubmit    = useCallback(() => persistForm('pending'), [persistForm]);
+
+  // Called when the user dismisses the success modal — this is what
+  // actually triggers the redirect back to My Requests (Liquidation tab),
+  // deferred until they've had a chance to see/note the liquidation number.
+  const handleSuccessOkay = useCallback(() => {
+    setSuccessModal({ open: false, liquidationNumber: '' });
+    if (onClose) onClose();
+    else navigate('/my-requests', { state: { tab: 1 } });
+  }, [onClose, navigate]);
 
   return (
     <div className="space-y-6">
@@ -868,9 +913,9 @@ const LiquidationForm = (props) => {
                 value={viewOnly ? formatLongDate(formData.liquidationDate) : formData.liquidationDate}
               />
               
-              <div className="col-span-1 md:col-span-2 relative border border-gray-200 rounded-lg px-3 py-2 sm:h-[38px] flex flex-wrap sm:flex-nowrap items-center gap-2 bg-gray-50">
+              <div className="col-span-2 md:col-span-2 relative border border-gray-200 rounded-lg px-3 py-2 sm:h-[38px] flex flex-wrap sm:flex-nowrap items-center gap-2 bg-gray-50">
                 <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-500 z-10">
-                  Date Coverage
+                  Period Covered
                 </span>
                 <span className="text-sm text-gray-900 truncate">
                   {formData.dateCoverageFrom
@@ -957,12 +1002,12 @@ const LiquidationForm = (props) => {
               <div>
                 <label className="px-1 text-xs text-gray-600">Liquidation Date</label>
                 <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
-                  {formData.liquidationDate}
+                  {formatLongDate(formData.liquidationDate)}
                 </div>
               </div>
-              <div className="col-span-1 md:col-span-8">
-                <div className="col-span-1 md:col-span-2">
-                  <label className="px-1 text-xs text-gray-600">Date Coverage</label>
+              <div className="col-span-1 md:col-span-2">
+                <div className="col-span-2 md:col-span-2">
+                  <label className="px-1 text-xs text-gray-600">Period Covered</label>
                   <div className={` border-b border-gray-200 flex items-center justify-between gap-2 px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900`}>
                     {formatLongDate(formData.dateCoverageFrom)}
                     <span className="text-gray-500">—</span>
@@ -1111,13 +1156,6 @@ const LiquidationForm = (props) => {
               </>
             )}
           </div>
-          {attachmentSizeError && (
-            <div className="mb-4">
-              <InlineAlert severity="error">
-                {attachmentSizeError}
-              </InlineAlert>
-            </div>
-          )}
           {attachments.length > 0 && (
             <div className="mt-4">
               <AttachmentViewer
@@ -1210,6 +1248,29 @@ const LiquidationForm = (props) => {
             <>Updating this transaction will mark it as <span className="font-semibold text-green-700">Released</span>. Continue?</>
           )}
         </p>
+      </Modal>
+
+      <Modal
+        open={successModal.open}
+        onClose={handleSuccessOkay}
+        title="Liquidation Submitted"
+        maxWidth="sm"
+        actions={
+          <Button variant="primary" onClick={handleSuccessOkay}>
+            Okay
+          </Button>
+        }
+      >
+        <div className="flex flex-col items-center text-center gap-3 py-2">
+          <CheckCircle className="w-12 h-12 text-green-600" />
+          <p className="text-gray-700">
+            Your liquidation has been submitted successfully.
+          </p>
+          <div className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50">
+            <p className="text-xs text-gray-600">Transaction Number</p>
+            <p className="text-lg font-bold text-gray-900">{successModal.liquidationNumber}</p>
+          </div>
+        </div>
       </Modal>
     </div>
   );

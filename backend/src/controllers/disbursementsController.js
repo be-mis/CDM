@@ -93,9 +93,10 @@ const getRevolvingFund = async (req, res) => {
 // Which request types can be funded from the Accounting Revolving Fund at
 // release time, and which column holds their own reference number — matches
 // revolving_funds_history.transaction_number. Liquidations are excluded, same
-// as at approval time (they aren't in revolving_funds_history's enum).
+// as at approval time (they aren't in revolving_funds_history's enum). Cash
+// advances are also excluded — revolving funds may only be used for
+// reimbursements.
 const REVOLVING_FUND_ELIGIBLE_TYPES = {
-  'cash-advance':  { transactionType: 'cash_advance',  numberColumn: 'advance_number' },
   'reimbursement': { transactionType: 'reimbursement', numberColumn: 'reimbursement_number' },
 };
 
@@ -133,7 +134,7 @@ const processDisbursement = async (req, res) => {
     const eligibility = REVOLVING_FUND_ELIGIBLE_TYPES[type];
     const numberColumn = eligibility ? eligibility.numberColumn : null;
     const [request] = await pool.query(
-      `SELECT id, status, department_id, funding_code, ${amountColumn} AS amount${numberColumn ? `, ${numberColumn} AS transaction_number` : ''} FROM \`${tableName}\` WHERE id = ? LIMIT 1`,
+      `SELECT id, status, department_id, ${amountColumn} AS amount${eligibility ? `, funding_code` : ''}${numberColumn ? `, ${numberColumn} AS transaction_number` : ''}${type === 'liquidation' ? ', cash_advance_id' : ''} FROM \`${tableName}\` WHERE id = ? LIMIT 1`,
       [id],
     );
     if (request.length === 0) {
@@ -206,10 +207,15 @@ const processDisbursement = async (req, res) => {
           [balanceAfter, fund.id],
         );
 
+        // Reimbursement is the only revolving-fund-eligible type at release,
+        // and it's fully settled the moment it's released (no further step
+        // exists), so its deducted row is recorded as settled immediately.
+        const initialRemarks = 'settled';
+
         await connection.query(
           `INSERT INTO revolving_funds_history
-             (transaction_type, transaction_id, transaction_number, revolving_fund_id, funding_code, total_amount, deducted_amount, balance_before, balance_after, approver_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+             (transaction_type, transaction_id, transaction_number, revolving_fund_id, funding_code, total_amount, deducted_amount, balance_before, balance_after, approver_id, remarks, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           [
             eligibility.transactionType,
             id,
@@ -221,17 +227,87 @@ const processDisbursement = async (req, res) => {
             fundBalance,
             balanceAfter,
             req.user.id,
+            initialRemarks,
           ],
         );
 
-        if (type === 'cash-advance') {
-          await connection.query(
-            `UPDATE cash_advances
-             SET liquidation_deadline = COALESCE(liquidation_deadline, DATE_ADD(NOW(), INTERVAL 3 DAY))
-             WHERE id = ?`,
-            [id],
-          );
-        }
+        await connection.commit();
+      } catch (txError) {
+        await connection.rollback();
+        throw txError;
+      } finally {
+        connection.release();
+      }
+    } else if (action === 'reject' && eligibility && request[0].funding_code) {
+      // This request was already funded from a revolving fund at approval
+      // time (funding_code is set), so rejecting it now must reverse that
+      // deduction — the money never actually went out.
+      const [fundRows] = await pool.query(
+        `SELECT id, Amount FROM revolving_funds WHERE funding_code = ? FOR UPDATE`,
+        [request[0].funding_code],
+      );
+      if (fundRows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Revolving fund ${request[0].funding_code} not found; cannot reverse its deduction.`,
+        });
+      }
+
+      const fund = fundRows[0];
+      const refundAmount = parseFloat(request[0].amount);
+      const balanceBefore = parseFloat(fund.Amount);
+      const balanceAfter = balanceBefore + refundAmount;
+
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+
+        await connection.query(
+          `UPDATE \`${tableName}\`
+           SET status          = ?,
+               released_by     = ?,
+               released_at     = NOW(),
+               \`${remarksColumn}\` = ?
+           WHERE id = ?`,
+          [newStatus, userName, remarks || null, id],
+        );
+
+        await connection.query(
+          `UPDATE revolving_funds SET Amount = ? WHERE id = ?`,
+          [balanceAfter, fund.id],
+        );
+
+        // The original deducted row for this request now reflects the
+        // rejection directly — no longer computed on read.
+        await connection.query(
+          `UPDATE revolving_funds_history SET remarks = 'rejected'
+           WHERE transaction_type = ? AND transaction_id = ?`,
+          [eligibility.transactionType, id],
+        );
+
+        // transaction_type stays the ORIGIN request type (cash_advance /
+        // reimbursement) — not a literal 'refund' — so this row stays
+        // grouped with the rest of that request's history and so it's a
+        // valid value for the transaction_type ENUM (which has no 'refund'
+        // member). remarks='refunded' is what actually marks this row as
+        // the refund, and replenish_amount is what carries the credit.
+        await connection.query(
+          `INSERT INTO revolving_funds_history
+             (transaction_type, transaction_id, transaction_number, revolving_fund_id, funding_code, total_amount, replenish_amount, balance_before, balance_after, approver_id, remarks, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'refunded', NOW())`,
+          [
+            eligibility.transactionType,
+            id,
+            request[0].transaction_number || null,
+            fund.id,
+            request[0].funding_code,
+            refundAmount,
+            refundAmount,
+            balanceBefore,
+            balanceAfter,
+            req.user.id,
+          ],
+        );
 
         await connection.commit();
       } catch (txError) {
@@ -258,6 +334,41 @@ const processDisbursement = async (req, res) => {
            SET liquidation_deadline = COALESCE(liquidation_deadline, DATE_ADD(NOW(), INTERVAL 3 DAY))
            WHERE id = ?`,
           [id],
+        );
+      }
+
+      // A reimbursement is settled the moment it's released — if it was
+      // funded from a revolving fund earlier (at approval), mark that
+      // deducted history row as Settled now.
+      if (type === 'reimbursement' && action === 'release') {
+        // Scoped to remarks = 'not settled' so this only ever touches the
+        // single currently-open deduction row for this request. Without
+        // that condition, a request that had already been funded, rejected
+        // (creating a 'refunded' row), and re-funded would have THIS update
+        // also flip that old 'refunded' row back to 'settled'.
+        await pool.query(
+          `UPDATE revolving_funds_history SET remarks = 'settled'
+           WHERE transaction_type = 'reimbursement' AND transaction_id = ? AND remarks = 'not settled'`,
+          [id],
+        );
+      }
+
+      // LEGACY CLEANUP ONLY: cash advances are no longer revolving-fund
+      // eligible (see REVOLVING_FUND_ELIGIBLE_TYPES above), so no NEW
+      // 'not settled' cash_advance row can ever be created going forward.
+      // This block only matters for cash advances that were funded from a
+      // revolving fund before that policy change and are still awaiting
+      // liquidation — it settles their existing history row so they don't
+      // stay open forever. Once those are all cleared, this is a no-op.
+      if (type === 'liquidation' && action === 'release' && request[0].cash_advance_id) {
+        // Same scoping as the reimbursement case above — only the currently
+        // open ('not settled') deduction row for this cash advance should
+        // flip to 'settled'; a prior 'refunded' row for the same
+        // transaction_id must not be touched.
+        await pool.query(
+          `UPDATE revolving_funds_history SET remarks = 'settled'
+           WHERE transaction_type = 'cash_advance' AND transaction_id = ? AND remarks = 'not settled'`,
+          [request[0].cash_advance_id],
         );
       }
     }

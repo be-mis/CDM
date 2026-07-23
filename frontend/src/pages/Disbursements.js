@@ -448,6 +448,10 @@ const Disbursements = () => {
             setNotification({ message: 'Only transactions pending release can be edited.', severity: 'error' });
             return;
         }
+        if (row.funding_code === 'ORF') {
+            setNotification({ message: 'This request was funded via the Operations Revolving Fund and can no longer be edited.', severity: 'error' });
+            return;
+        }
         try {
             setEditLoading(true);
             setEditReason('');
@@ -493,11 +497,18 @@ const Disbursements = () => {
 
     const renderEditForm = () => {
         if (!editRequest) return null;
+        // ORF-funded requests were already funded at the approval stage
+        // (Operations Revolving Fund, department-scoped, reimbursements
+        // only). The amount and remarks are what the fund deduction/history
+        // rows were calculated from, so they must not change post-funding —
+        // release/reject still work as normal, only these two fields lock.
+        const isOrfFunded = editRequest.funding_code === 'ORF';
         const commonProps = {
             editData: editRequest,
             accountingEdit: true,
             editReason,
             onSaved: handleEditSaved,
+            lockedFields: isOrfFunded ? ['amount', 'remarks'] : [],
         };
         if (activeTab === 0) return <CashAdvanceForm {...commonProps} />;
         if (activeTab === 1) return <LiquidationForm {...commonProps} />;
@@ -712,7 +723,7 @@ const Disbursements = () => {
                                         >
                                             <Eye className="w-4 h-4" />
                                         </button>
-                                        {row.status === 'approved' && (
+                                        {row.status === 'approved' && row.funding_code !== 'ORF' && (
                                             <button
                                                 type="button"
                                                 onClick={() => handleOpenEdit(row)}
@@ -1073,6 +1084,12 @@ const Disbursements = () => {
                         <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
                             Changes here are recorded in the Audit Logs — what changed, who made the change, and when — so please provide a reason before saving.
                         </div>
+                        {editRequest?.funding_code === 'ORF' && (
+                            <div className="mb-4 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex items-center gap-2">
+                                <CreditCard className="w-4 h-4 shrink-0" />
+                                Amount and remarks are locked — this request was already funded via the Operations Revolving Fund at approval.
+                            </div>
+                        )}
                         <Input
                             label="Reason for Edit"
                             placeholder="e.g. Corrected amount per updated receipt"

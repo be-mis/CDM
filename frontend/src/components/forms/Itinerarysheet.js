@@ -4,7 +4,7 @@ import Input from '../ui/Input';
 import Button from '../ui/Button';
 import { InlineAlert } from '../ui/Alert';
 import { formatLongDate } from '../../utils/formatters';
-import ReceiptPreviewModal from '../modal/Receiptpreviewmodal';
+import ReceiptPreviewModal from '../modal/ReceiptPreview';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -141,9 +141,8 @@ const ItinerarySheet = ({
         )}
       </div>
 {viewOnly ? (
-
-      <div className="space-y-3">
-        <table className="w-full text-sm border border-gray-200 rounded-lg">
+      <div className="space-y-3 overflow-x-auto border border-gray-200 rounded-lg">
+        <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Date Covered</th>
@@ -155,7 +154,7 @@ const ItinerarySheet = ({
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Receipt</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody>
             {itineraryItems.map((item) => (
               <tr key={item.id} className="hover:bg-gray-50">
                 <td className="px-3 py-2">{formatLongDate(item.dateCovered)}</td>
@@ -180,12 +179,9 @@ const ItinerarySheet = ({
               </tr>
             ))}
           </tbody>
-
         </table>
       </div>
-
-          ) : (
-
+) : (
 
       <div className="space-y-3">
         {itineraryItems.map((item, index) => (

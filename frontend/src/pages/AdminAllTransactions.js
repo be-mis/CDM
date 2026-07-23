@@ -462,7 +462,7 @@ const AdminAllTransactions = () => {
           dateNeeded:          data.date_needed || '',    
           dateCoverageFrom:    data.start_date || data.period_covered_from || '',
           dateCoverageTo:      data.end_date   || data.period_covered_to   || '',
-          totalAmount:         data.total_amount,
+          totalAmount:         data.total_actual_amount,
           paymentMethod:       data.payment_method,
           gcashName:           data.gcash_name || '',
           checkNumber:         data.check_number,
@@ -642,10 +642,10 @@ const AdminAllTransactions = () => {
           requestDate: item.advance_date,
           status: formatStatus(item.status),
           rawStatus: item.status,
-          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || 'N/A'),
-          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || 'N/A'),
+          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || '-'),
+          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || '-'),
           department: item.department_name || item.department,
-          requestedBy: item.requested_by || item.requestedBy || 'N/A',
+          requestedBy: item.requested_by || item.requestedBy || '-',
           advanceType: item.advance_type,
           remarks: item.remarks || '',
           rejectRemarks: item.reject_remarks || '',
@@ -699,9 +699,9 @@ const AdminAllTransactions = () => {
           status: formatStatus(item.status),
           rawStatus: item.status,
           department: item.department_name || item.department,
-          requestedBy: item.submitted_by || item.requestedBy || 'N/A',
-          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || 'N/A'),
-          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || 'N/A'),
+          requestedBy: item.submitted_by || item.requestedBy || '-',
+          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || '-'),
+          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || '-'),
           paymentMethod: item.payment_method,
           gcashName: item.gcash_name,
           accountNumber: item.account_number,
@@ -736,17 +736,17 @@ const AdminAllTransactions = () => {
           id: item.id,
           refNumber: item.reimbursement_number,
           purpose: item.purpose,
-          amount: parseFloat(item.total_amount || 0),
+          amount: parseFloat(item.total_actual_amount || 0),
           periodFrom: item.period_covered_from,
           periodTo: item.period_covered_to,
           submitDate: item.reimbursement_date,
           status: formatStatus(item.status),
           rawStatus: item.status,
-          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || item.approved_by || 'N/A'),
-          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || 'N/A'),
+          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || item.approved_by || '-'),
+          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || '-'),
           department: item.department_name || item.department_id,
           departmentName: item.department_name,
-          requestedBy: item.submitted_by || item.requestedBy || 'N/A',
+          requestedBy: item.submitted_by || item.requestedBy || '-',
           paymentMethod: item.payment_method,
           gcashName: item.gcash_name,
           accountNumber: item.account_number,
@@ -1350,18 +1350,18 @@ const AdminAllTransactions = () => {
                   <tr>
                     <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Reference No.</th>
                     <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Department</th>
-                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Requester</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Requester</th>
                     <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Amount</th>
                     <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Request Date</th>
-                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Status</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Status</th>
                     <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">{isApproverUser ? 'Accounting Handler' : 'Approver'}</th>
-                    <th className="px-4 py-3 w-2/12 text-center text-sm font-semibold text-gray-700">Actions</th>
+                    <th className="px-4 py-3 w-1/12 text-center text-sm font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan={9} className="py-12">
+                      <td colSpan={8} className="py-12">
                         <Loading message="Loading cash advances..." />
                       </td>
                     </tr>
@@ -1396,8 +1396,8 @@ const AdminAllTransactions = () => {
                             {request.urgency && request.urgency !== 'normal' && (
                               <Tooltip title={
                                 request.urgency === 'overdue'
-                                  ? `Liquidation overdue since ${request.liquidationDeadline ? new Date(request.liquidationDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}`
-                                  : `Liquidation due in ${request.daysUntilDeadline} day${request.daysUntilDeadline === 1 ? '' : 's'} — ${request.liquidationDeadline ? new Date(request.liquidationDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}`
+                                  ? `Liquidation overdue since ${request.liquidationDeadline ? new Date(request.liquidationDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-' }`
+                                  : `Liquidation due in ${request.daysUntilDeadline} day${request.daysUntilDeadline === 1 ? '' : 's'} — ${request.liquidationDeadline ? new Date(request.liquidationDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-' }`
                               }>
                                 <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full border animate-pulse ${
                                   request.urgency === 'overdue' ? 'border-red-200 bg-red-50 text-red-700' :
@@ -1479,12 +1479,12 @@ const AdminAllTransactions = () => {
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Reference No.</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">CA Ref No.</th>
                     <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Department</th>
-                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Requester</th>
-                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Cash Advance Ref No.</th>
-                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Total Expenses</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Requester</th>
+                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Expenses</th>
                     <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Submit Date</th>
-                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Status</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Status</th>
                     <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">{isApproverUser ? 'Disburse By' : 'Approver'}</th>
                     <th className="px-4 py-3 w-1/12 text-center text-sm font-semibold text-gray-700">Actions</th>
                   </tr>
@@ -1506,9 +1506,9 @@ const AdminAllTransactions = () => {
                     paginatedLiquidations.map((request) => (
                       <tr key={request.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-4 text-sm font-semibold font-mono text-gray-900">{request.refNumber}</td>
+                        <td className="px-4 py-4 text-sm font-mono text-gray-600">{request.cashAdvanceRef}</td>
                         <td className="px-4 py-4 text-sm text-gray-700 max-w-[120px] truncate" title={request.department}>{request.department || '—'}</td>
                         <td className="px-4 py-4 text-sm text-gray-700 max-w-[120px] truncate" title={request.requestedBy}>{request.requestedBy || '—'}</td>
-                        <td className="px-4 py-4 text-sm font-mono text-gray-600">{request.cashAdvanceRef}</td>
                         <td className="px-4 py-4 text-sm font-semibold text-left text-gray-900">
                           ₱{request.totalExpenses.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                         </td>
@@ -1578,11 +1578,11 @@ const AdminAllTransactions = () => {
                   <tr>
                     <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Reference No.</th>
                     <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Department</th>
-                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Requester</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Requester</th>
                     <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Amount</th>
-                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Submit Date</th>
-                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">Status</th>
-                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">{isApproverUser ? 'Disburse By' : 'Approver'}</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Submit Date</th>
+                    <th className="px-4 py-3 w-2/12 text-left text-sm font-semibold text-gray-700">Status</th>
+                    <th className="px-4 py-3 w-1/12 text-left text-sm font-semibold text-gray-700">{isApproverUser ? 'Disburse By' : 'Approver'}</th>
                     <th className="px-4 py-3 w-2/12 text-center text-sm font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>

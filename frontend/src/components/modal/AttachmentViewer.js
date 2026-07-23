@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { ExternalLink, Download, FileText, Trash2 } from 'lucide-react';
-import api from '../api';
-import Modal from './ui/Modal';
-import Tooltip from './ui/Tooltip';
+import api from '../../api';
+import Tooltip from '../ui/Tooltip';
+import ReceiptPreviewModal from '../modal/ReceiptPreview';
 
 // Reusable attachment viewer with preview support for images and PDFs
 const isImage = (type, name) => {
@@ -97,10 +97,8 @@ const AttachmentViewer = ({ attachments = [], onRemove }) => {
 
           const handlePrimaryClick = () => {
             if (!url) return;
-            if (img) {
-              setPreview({ url, name, type });
-            } else if (pdf) {
-              window.open(url, '_blank');
+            if (img || pdf) {
+              setPreview({ url, fileName: name, fileType: type });
             } else {
               // For other docs, trigger download for better UX
               triggerDownload(url, name);
@@ -116,7 +114,7 @@ const AttachmentViewer = ({ attachments = [], onRemove }) => {
               <div className="flex items-center justify-center gap-1 mt-2">
                 {url && (
                   <>
-                    {!img && (
+                    {!img && !pdf && (
                       <Tooltip title="Download">
                         <button
                           onClick={() => triggerDownload(url, name)}
@@ -126,10 +124,10 @@ const AttachmentViewer = ({ attachments = [], onRemove }) => {
                         </button>
                       </Tooltip>
                     )}
-                    {img && (
+                    {(img || pdf) && (
                       <Tooltip title="Preview">
                         <button
-                          onClick={() => setPreview({ url, name, type })}
+                          onClick={() => setPreview({ url, fileName: name, fileType: type })}
                           className="p-2 text-gray-600 hover:bg-gray-100 rounded transition-colors"
                         >
                           <ExternalLink className="w-4 h-4" />
@@ -155,7 +153,7 @@ const AttachmentViewer = ({ attachments = [], onRemove }) => {
                   <img
                     src={url}
                     alt={name}
-                    className="max-w-full max-h-24 object-cover rounded-md"
+                    className="max-w-full max-h-24 object-contain rounded-md"
                   />
                 ) : pdf ? (
                   <FileText className="w-10 h-10 text-red-500" />
@@ -179,42 +177,11 @@ const AttachmentViewer = ({ attachments = [], onRemove }) => {
         })}
       </div>
 
-      {/* Preview Modal */}
-      <Modal
-        open={!!preview}
+      {/* Preview Modal — shared with Expenses Breakdown / Itinerary Sheet receipt previews */}
+      <ReceiptPreviewModal
+        receipt={preview}
         onClose={() => setPreview(null)}
-        title={preview?.name}
-        maxWidth="lg"
-      >
-        {preview && (
-          <div className="min-h-[200px]">
-            {isImage(preview.type, preview.name) ? (
-              <div className="w-full h-[70vh] flex items-center justify-center bg-gray-100">
-                <img
-                  src={preview.url}
-                  alt={preview.name}
-                  className="w-full h-full object-contain"
-                />
-              </div>
-            ) : isPdf(preview.type, preview.name) ? (
-              <iframe
-                src={preview.url}
-                title={preview.name}
-                className="w-full h-[70vh] border-none"
-              />
-            ) : (
-              <a
-                href={preview.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary-600 hover:underline"
-              >
-                Open attachment
-              </a>
-            )}
-          </div>
-        )}
-      </Modal>
+      />
     </div>
   );
 };

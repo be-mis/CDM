@@ -30,6 +30,44 @@ const resolveDepartmentId = async (conn, department) => {
   return rows.length > 0 ? rows[0].id : null;
 };
 
+// A reimbursement submitted by an approver auto-approves on submit (see
+// ReimbursementForm.js's `isApprover`/`autoApprove`), skipping the Approvals
+// queue entirely. Only Operations approvers may additionally choose to fund
+// that self-approved request from the Operations Revolving Fund — this is
+// intentionally NOT a generic "any approver, any department" rule.
+const isOperationsApprover = (user) => {
+  const role = (user?.role || '').toLowerCase();
+  const isApprover = role.includes('approver') || role.includes('manager') || !!user?.is_approver;
+  return isApprover && (user?.department || '').toUpperCase() === 'OPERATIONS';
+};
+
+// Locks the Operations Revolving Fund row, verifies it can cover
+// `amountNeeded`, and returns { fund, fundBalance } for the caller to apply
+// the deduction with. Throws (via a thrown {status, message} object) on any
+// failure so callers can rollback and respond in one place.
+const lockAndCheckOperationsFund = async (conn, amountNeeded) => {
+  const [fundRows] = await conn.query(
+    `SELECT rf.id, rf.Amount, rf.funding_code
+     FROM revolving_funds rf
+     JOIN departments d ON d.id = rf.department
+     WHERE UPPER(d.name) = 'OPERATIONS'
+     FOR UPDATE`
+  );
+  if (fundRows.length === 0) {
+    throw { status: 400, message: 'No revolving fund is configured for the Operations department.' };
+  }
+  const fund = fundRows[0];
+  const fundBalance = parseFloat(fund.Amount);
+  if (fundBalance < amountNeeded) {
+    throw {
+      status: 400,
+      message: 'Fund is not enough to cover the total amount requested',
+      remainingFund: fundBalance,
+    };
+  }
+  return { fund, fundBalance };
+};
+
 /**
  * Insert a single receipt row into reimbursement_receipts.
  * Returns the new row's insertId.
@@ -155,10 +193,44 @@ const createReimbursement = async (req, res) => {
       status = 'draft',
       items          = [],
       transportation = [],
+      useRevolvingFund,
     } = req.body;
 
     const userId    = req.user?.id    || null;
     const createdBy = req.user?.email || req.user?.name || null;
+    const finalReimbursementNumber = reimbursementNumber || generateReimbursementNumber();
+    const amountNeeded = parseFloat(totalAmount) || 0;
+
+    // Only relevant on the auto-approve path (status arrives already
+    // 'approved' — see ReimbursementForm.js/autoApprove). Regular pending
+    // submissions go through the normal Approvals queue, where ORF funding
+    // is handled by approvalsController.js instead.
+    const wantsRevolvingFund = status === 'approved' && (useRevolvingFund === true || useRevolvingFund === 'true');
+
+    let fundingCode = 'RD';
+    let fund = null;
+    let fundBalance = null;
+
+    if (wantsRevolvingFund) {
+      if (!isOperationsApprover(req.user)) {
+        await conn.rollback();
+        return res.status(403).json({
+          success: false,
+          message: 'Only Operations approvers may fund a self-approved reimbursement from the Operations Revolving Fund.',
+        });
+      }
+      try {
+        ({ fund, fundBalance } = await lockAndCheckOperationsFund(conn, amountNeeded));
+      } catch (fundErr) {
+        await conn.rollback();
+        return res.status(fundErr.status || 500).json({
+          success: false,
+          message: fundErr.message || 'Failed to verify Operations Revolving Fund balance.',
+          ...(fundErr.remainingFund !== undefined ? { remainingFund: fundErr.remainingFund } : {}),
+        });
+      }
+      fundingCode = fund.funding_code;
+    }
 
     // Resolve department name → department_id
     const resolvedDepartmentId = await resolveDepartmentId(conn, department);
@@ -172,7 +244,7 @@ const createReimbursement = async (req, res) => {
           remarks, status, created_by, funding_code)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-        reimbursementNumber || generateReimbursementNumber(),
+        finalReimbursementNumber,
         reimbursementDate   || new Date().toISOString().split('T')[0],
         dateCoverageFrom    || null,
         dateCoverageTo      || null,
@@ -181,14 +253,14 @@ const createReimbursement = async (req, res) => {
         businessUnit        || null,
         dateNeeded          || null,
         purpose             || null,
-        parseFloat(totalAmount) || 0,
+        amountNeeded,
         paymentMethod       || null,
         gcashName           || null,
         accountNumber       || null,
         remarks             || null,
         status,
         createdBy,
-        'RD',
+        fundingCode,
       ],
     );
 
@@ -196,6 +268,28 @@ const createReimbursement = async (req, res) => {
     if (!reimbursementId || reimbursementId === 0) {
       await conn.rollback();
       return res.status(500).json({ success: false, message: 'Failed to create reimbursement — no ID returned from database' });
+    }
+
+    if (wantsRevolvingFund) {
+      const balanceAfter = fundBalance - amountNeeded;
+      await conn.query(`UPDATE revolving_funds SET Amount = ? WHERE id = ?`, [balanceAfter, fund.id]);
+      await conn.query(
+        `INSERT INTO revolving_funds_history
+           (transaction_type, transaction_id, transaction_number, revolving_fund_id, funding_code, total_amount, deducted_amount, balance_before, balance_after, approver_id, remarks, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not settled', NOW())`,
+        [
+          'reimbursement',
+          reimbursementId,
+          finalReimbursementNumber,
+          fund.id,
+          fund.funding_code,
+          amountNeeded,
+          amountNeeded,
+          fundBalance,
+          balanceAfter,
+          req.user.id,
+        ],
+      );
     }
 
     await insertExpenses(conn, reimbursementId, items, userId);
@@ -250,18 +344,61 @@ const updateReimbursement = async (req, res) => {
       status = 'draft',
       items          = [],
       transportation = [],
+      useRevolvingFund,
+      edit_reason,
     } = req.body;
 
     const userId = req.user?.id || null;
+    const amountNeeded = parseFloat(totalAmount) || 0;
 
     // Verify the record exists
     const [existing] = await conn.query(
-      `SELECT id, status FROM reimbursements WHERE id = ? LIMIT 1`,
+      `SELECT id, status, funding_code, reimbursement_number FROM reimbursements WHERE id = ? LIMIT 1`,
       [reimbursementId],
     );
     if (existing.length === 0) {
       await conn.rollback();
       return res.status(404).json({ success: false, message: 'Reimbursement not found' });
+    }
+
+    // Same auto-approve/self-fund path as createReimbursement, for the case
+    // where an approver saved a draft first and is now resubmitting it (PUT,
+    // not POST). Excludes: edit_reason present (this is an accounting edit,
+    // handled by approvalsController/disbursementsController instead), and
+    // records that are already approved/released or already fund-tagged
+    // (never double-deduct on a resubmit/resave).
+    const wasNeverApprovedOrFunded =
+      !['approved', 'released'].includes((existing[0].status || '').toLowerCase()) &&
+      !['ORF', 'ARF'].includes(existing[0].funding_code);
+    const wantsRevolvingFund =
+      status === 'approved' &&
+      (useRevolvingFund === true || useRevolvingFund === 'true') &&
+      !edit_reason &&
+      wasNeverApprovedOrFunded;
+
+    let fundingCodeUpdate = null; // only set (and only included in the UPDATE) when actually funding
+    let fund = null;
+    let fundBalance = null;
+
+    if (wantsRevolvingFund) {
+      if (!isOperationsApprover(req.user)) {
+        await conn.rollback();
+        return res.status(403).json({
+          success: false,
+          message: 'Only Operations approvers may fund a self-approved reimbursement from the Operations Revolving Fund.',
+        });
+      }
+      try {
+        ({ fund, fundBalance } = await lockAndCheckOperationsFund(conn, amountNeeded));
+      } catch (fundErr) {
+        await conn.rollback();
+        return res.status(fundErr.status || 500).json({
+          success: false,
+          message: fundErr.message || 'Failed to verify Operations Revolving Fund balance.',
+          ...(fundErr.remainingFund !== undefined ? { remainingFund: fundErr.remainingFund } : {}),
+        });
+      }
+      fundingCodeUpdate = fund.funding_code;
     }
 
     // Resolve department name → department_id
@@ -284,6 +421,7 @@ const updateReimbursement = async (req, res) => {
          remarks             = ?,
          status              = ?,
          updated_at          = NOW()
+         ${fundingCodeUpdate ? ', funding_code = ?' : ''}
        WHERE id = ?`,
       [
         reimbursementDate        || null,
@@ -293,15 +431,38 @@ const updateReimbursement = async (req, res) => {
         dateNeeded               || null,
         purpose                  || null,
         businessUnit             || null,
-        parseFloat(totalAmount)  || 0,
+        amountNeeded,
         paymentMethod            || null,
         gcashName                || null,
         accountNumber            || null,
         remarks                  || null,
         status,
+        ...(fundingCodeUpdate ? [fundingCodeUpdate] : []),
         reimbursementId,
       ],
     );
+
+    if (wantsRevolvingFund) {
+      const balanceAfter = fundBalance - amountNeeded;
+      await conn.query(`UPDATE revolving_funds SET Amount = ? WHERE id = ?`, [balanceAfter, fund.id]);
+      await conn.query(
+        `INSERT INTO revolving_funds_history
+           (transaction_type, transaction_id, transaction_number, revolving_fund_id, funding_code, total_amount, deducted_amount, balance_before, balance_after, approver_id, remarks, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not settled', NOW())`,
+        [
+          'reimbursement',
+          reimbursementId,
+          existing[0].reimbursement_number,
+          fund.id,
+          fund.funding_code,
+          amountNeeded,
+          amountNeeded,
+          fundBalance,
+          balanceAfter,
+          req.user.id,
+        ],
+      );
+    }
 
     // Replace child rows
     await conn.query(`DELETE FROM reimbursement_expenses  WHERE reimbursement_id = ?`, [reimbursementId]);

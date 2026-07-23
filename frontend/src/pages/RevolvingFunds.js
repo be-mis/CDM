@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import {
   Wallet, Banknote, Search, ChevronRight, ChevronLeft,
-  HandCoins, Coins, TrendingDown, TrendingUp, PlusCircle,
+  HandCoins, Coins, TrendingDown, TrendingUp, PlusCircle, RotateCcw,
 } from 'lucide-react';
 import { formatLongDate } from '../utils/formatters';
 import { Card, CardContent } from '../components/ui/Card';
@@ -40,6 +40,7 @@ const TYPE_LABELS = {
   cash_advance: 'Cash Advance',
   reimbursement: 'Reimbursement',
   replenish: 'Replenishment',
+  refund: 'Refund',
 };
 
 // Static icon map instead of a function that re-creates elements on every
@@ -48,16 +49,22 @@ const TYPE_ICONS = {
   cash_advance: <HandCoins className="w-4 h-4 text-indigo-500" />,
   reimbursement: <Coins className="w-4 h-4 text-cyan-500" />,
   replenish: <PlusCircle className="w-4 h-4 text-green-500" />,
+  refund: <RotateCcw className="w-4 h-4 text-green-500" />,
 };
 const getTypeIcon = (type) => TYPE_ICONS[type] || null;
 
-// Replenishments add money to a fund; every other transaction type deducts.
-const isReplenishment = (type) => type === 'replenish';
+// Replenishments and refunds (reversed deductions from a rejected request)
+// add money to a fund; every other row deducts. transaction_type can't be
+// used to detect a refund — a refund row keeps the ORIGINAL request's type
+// (cash_advance / reimbursement) so it stays grouped with that request's
+// history; remarks='refunded' is what actually marks it as a refund.
+const isReplenishment = (h) => h.transaction_type === 'replenish' || h.remarks?.toLowerCase() === 'refunded';
 
-// Replenish rows store their amount in `replenish_amount`; every other
-// transaction type (cash advance, reimbursement) stores it in `deducted_amount`.
+// Same reasoning: replenish rows and refunded rows store their amount in
+// `replenish_amount`; everything else (including the original, now-rejected
+// deduction row) stores it in `deducted_amount`.
 const getHistoryAmount = (h) =>
-  isReplenishment(h.transaction_type) ? h.replenish_amount : h.deducted_amount;
+  isReplenishment(h) ? h.replenish_amount : h.deducted_amount;
 
 // Debounce hook — delays updating the returned value until `value` has
 // stopped changing for `delay` ms. Used for the transaction search box so
@@ -160,7 +167,7 @@ Pagination.displayName = 'Pagination';
 // Single fund summary card. Memoized so the whole fund grid doesn't
 // re-render just because unrelated state (search text, modal form, etc.)
 // changed elsewhere on the page.
-const FundCard = memo(({ fund, onReplenish }) => {
+const FundCard = memo(({ fund, onReplenish, canReplenish }) => {
   const style = FUND_STYLES[fund.funding_code] || DEFAULT_FUND_STYLE;
   const Icon = style.icon;
   return (
@@ -172,7 +179,7 @@ const FundCard = memo(({ fund, onReplenish }) => {
               {fund.funding_description}
             </p>
             <p className={`${style.text} text-xs opacity-70 mb-2 truncate`}>
-              {fund.funding_code} • Dept {fund.department}
+              {fund.funding_code}
             </p>
             <span className={`text-2xl sm:text-4xl font-bold ${style.text} break-words`}>
               {formatPeso(fund.Amount)}
@@ -180,16 +187,18 @@ const FundCard = memo(({ fund, onReplenish }) => {
           </div>
           <Icon className={`w-9 h-9 sm:w-12 sm:h-12 ${style.text} opacity-30 shrink-0`} />
         </div>
-        <div className="mt-4 pt-4 border-t border-black/5 flex flex-wrap gap-2">
-          <Button
-            variant="primary"
-            size="sm"
-            startIcon={<PlusCircle className="w-4 h-4" />}
-            onClick={() => onReplenish(fund)}
-          >
-            Replenish
-          </Button>
-        </div>
+        {canReplenish && (
+          <div className="mt-4 pt-4 border-t border-black/5 flex flex-wrap gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              startIcon={<PlusCircle className="w-4 h-4" />}
+              onClick={() => onReplenish(fund)}
+            >
+              Replenish
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -215,22 +224,28 @@ const HistoryRow = memo(({ h }) => (
     </td>
     <td className="px-4 py-3 text-sm font-semibold text-gray-900">{h.transaction_number}</td>
     <td className={`px-4 py-3 text-sm font-semibold flex items-center gap-1 ${
-      isReplenishment(h.transaction_type) ? 'text-green-600' : 'text-red-600'
+      isReplenishment(h) ? 'text-green-600' : 'text-red-600'
     }`}>
-      {isReplenishment(h.transaction_type) ? (
+      {isReplenishment(h) ? (
         <TrendingUp className="w-3.5 h-3.5" />
       ) : (
         <TrendingDown className="w-3.5 h-3.5" />
       )}
-      {isReplenishment(h.transaction_type) ? '+' : '−'}{formatPeso(getHistoryAmount(h))}
+      {isReplenishment(h) ? '+' : '−'}{formatPeso(getHistoryAmount(h))}
     </td>
     <td className="px-4 py-3 text-sm text-gray-500">{formatPeso(h.balance_before)}</td>
     <td className="px-4 py-3 text-sm text-gray-700">{formatPeso(h.balance_after)}</td>
     <td className="px-4 py-3">
       {h.remarks ? (
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-          h.remarks === 'Settled'
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${
+          h.remarks?.toLowerCase() === 'settled'
             ? 'bg-green-100 text-green-800'
+            : h.remarks?.toLowerCase() === 'rejected'
+            ? 'bg-red-100 text-red-800'
+            : h.remarks?.toLowerCase() === 'refunded'
+            ? 'bg-blue-100 text-blue-800'
+            : h.remarks?.toLowerCase() === 'replenish'
+            ? 'bg-gray-100 text-gray-700'
             : 'bg-amber-100 text-amber-800'
         }`}>
           {h.remarks}
@@ -264,14 +279,14 @@ const HistoryCard = memo(({ h }) => (
         <p className="text-xs text-gray-500 mt-0.5">{formatLongDate(h.created_at)}</p>
       </div>
       <div className={`shrink-0 text-sm font-semibold flex items-center gap-1 ${
-        isReplenishment(h.transaction_type) ? 'text-green-600' : 'text-red-600'
+        isReplenishment(h) ? 'text-green-600' : 'text-red-600'
       }`}>
-        {isReplenishment(h.transaction_type) ? (
+        {isReplenishment(h) ? (
           <TrendingUp className="w-3.5 h-3.5" />
         ) : (
           <TrendingDown className="w-3.5 h-3.5" />
         )}
-        {isReplenishment(h.transaction_type) ? '+' : '−'}{formatPeso(getHistoryAmount(h))}
+        {isReplenishment(h) ? '+' : '−'}{formatPeso(getHistoryAmount(h))}
       </div>
     </div>
 
@@ -280,9 +295,15 @@ const HistoryCard = memo(({ h }) => (
         {formatPeso(h.balance_before)} <span className="mx-1">→</span> {formatPeso(h.balance_after)}
       </span>
       {h.remarks ? (
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-semibold ${
-          h.remarks === 'Settled'
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-semibold capitalize ${
+          h.remarks?.toLowerCase() === 'settled'
             ? 'bg-green-100 text-green-800'
+            : h.remarks?.toLowerCase() === 'rejected'
+            ? 'bg-red-100 text-red-800'
+            : h.remarks?.toLowerCase() === 'refunded'
+            ? 'bg-blue-100 text-blue-800'
+            : h.remarks?.toLowerCase() === 'replenish'
+            ? 'bg-gray-100 text-gray-700'
             : 'bg-amber-100 text-amber-800'
         }`}>
           {h.remarks}
@@ -447,6 +468,9 @@ ReplenishModal.displayName = 'ReplenishModal';
 const RevolvingFunds = () => {
   const { user } = useAuth();
   const displayName = user?.name || user?.username || user?.email || 'Accounting';
+  // Operations Manager has monitoring/view-only access to this page — no
+  // replenish action. Only accounting/admin can add funds.
+  const canReplenish = user?.role === 'accounting' || user?.role === 'admin';
 
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(null);
@@ -604,7 +628,7 @@ const RevolvingFunds = () => {
             </Card>
           ) : (
             funds.map((fund) => (
-              <FundCard key={fund.id} fund={fund} onReplenish={openReplenish} />
+              <FundCard key={fund.id} fund={fund} onReplenish={openReplenish} canReplenish={canReplenish} />
             ))
           )}
 
@@ -662,11 +686,19 @@ const RevolvingFunds = () => {
                 <table className="w-full min-w-[900px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      {['Date', 'Fund', 'Type', 'Reference No.', 'Amount', 'Balance Before', 'Balance After', 'Remarks'].map((h) => (
+                      <th className="px-4 py-3 w-1/8 text-left text-xs font-semibold text-gray-600 tracking-wider"> Date </th>
+                      <th className="px-4 py-3 w-1/8 text-left text-xs font-semibold text-gray-600 tracking-wider"> Fund </th>
+                      <th className="px-4 py-3 w-2/8 text-left text-xs font-semibold text-gray-600 tracking-wider"> Type </th>
+                      <th className="px-4 py-3 w-2/8 text-left text-xs font-semibold text-gray-600 tracking-wider"> Reference No. </th>
+                      <th className="px-4 py-3 w-1/8 text-left text-xs font-semibold text-gray-600 tracking-wider"> Amount </th>
+                      <th className="px-4 py-3 w-1/8 text-left text-xs font-semibold text-gray-600 tracking-wider"> Balance Before </th>
+                      <th className="px-4 py-3 w-2/8 text-left text-xs font-semibold text-gray-600 tracking-wider"> Balance After </th>
+                      <th className="px-4 py-3 w-1/8 text-left text-xs font-semibold text-gray-600 tracking-wider"> Remarks </th>
+                      {/* {['Date', 'Fund', 'Type', 'Reference No.', 'Amount', 'Balance Before', 'Balance After', 'Remarks'].map((h) => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 tracking-wider">
                           {h}
                         </th>
-                      ))}
+                      ))} */}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
