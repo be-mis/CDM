@@ -636,8 +636,8 @@ const MyRequests = () => {
           requestDate: item.advance_date,
           status: formatStatus(item.status),
           rawStatus: item.status,
-          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || 'N/A'),
-          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || 'N/A'),
+          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || '-'),
+          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || '-'),
           department: item.department,
           advanceType: item.advance_type,
           remarks: item.remarks || '',
@@ -692,8 +692,8 @@ const MyRequests = () => {
           status: formatStatus(item.status),
           rawStatus: item.status,
           department: item.department,
-          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || 'N/A'),
-          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || 'N/A'),
+          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || '-'),
+          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || '-'),
           paymentMethod: item.payment_method,
           gcashName: item.gcash_name,
           accountNumber: item.account_number,
@@ -734,8 +734,8 @@ const MyRequests = () => {
           submitDate: item.reimbursement_date,
           status: formatStatus(item.status),
           rawStatus: item.status,
-          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || item.approved_by || 'N/A'),
-          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || 'N/A'),
+          approver: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.approver_name || item.approved_by || '-'),
+          releasedBy: item.status === 'pending' ? '-' : item.status === 'draft' ? '-' : (item.released_by || '-'),
           departmentName: item.department_name,
           paymentMethod: item.payment_method,
           gcashName: item.gcash_name,
@@ -1377,8 +1377,8 @@ const MyRequests = () => {
                             {request.urgency && request.urgency !== 'normal' && (
                               <Tooltip title={
                                 request.urgency === 'overdue'
-                                  ? `Liquidation overdue since ${request.liquidationDeadline ? new Date(request.liquidationDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}`
-                                  : `Liquidation due in ${request.daysUntilDeadline} day${request.daysUntilDeadline === 1 ? '' : 's'} — ${request.liquidationDeadline ? new Date(request.liquidationDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}`
+                                  ? `Liquidation overdue since ${request.liquidationDeadline ? new Date(request.liquidationDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}`
+                                  : `Liquidation due in ${request.daysUntilDeadline} day${request.daysUntilDeadline === 1 ? '' : 's'} — ${request.liquidationDeadline ? new Date(request.liquidationDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}`
                               }>
                                 <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full border animate-pulse ${
                                   request.urgency === 'overdue' ? 'border-red-200 bg-red-50 text-red-700' :

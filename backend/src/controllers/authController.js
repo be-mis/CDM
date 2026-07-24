@@ -259,7 +259,8 @@ const login = async (req, res) => {
       email: user.email, 
       name: user.name,
       role: user.role,
-      department:    user.department    || null, }, process.env.JWT_SECRET || 'devsecret', { expiresIn: '8h' });
+      department:    user.department    || null,
+      isApprover:    isApprover, }, process.env.JWT_SECRET || 'devsecret', { expiresIn: '8h' });
     await logAudit({
       userId: user.id,
       action: 'login',

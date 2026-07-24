@@ -398,8 +398,40 @@ const CashAdvanceForm = (props) => {
     const isApprover = !!(
         user?.role?.toLowerCase().includes('approver') ||
         user?.role?.toLowerCase().includes('manager') ||
-        user?.is_approver
+        user?.isApprover
     );
+
+    // Cash advances aren't Operations Revolving Fund eligible (ORF is
+    // reimbursement-only — see approvalsController.js), so the only
+    // self-submit fund choice possible here is Accounting/ARF, mirroring
+    // ReimbursementForm.js's Accounting-approver path.
+    const isAccountingApprover = isApprover && (user?.role || '').toLowerCase() === 'accounting';
+    const showFundChoice = isAccountingApprover && !viewOnly && !accountingEdit;
+
+    const [fundChoice, setFundChoice] = useState('no'); // 'yes' | 'no'
+    const [fundInfo, setFundInfo] = useState(null); // { id, funding_code, funding_description, Amount } | null
+    const [fundLoading, setFundLoading] = useState(false);
+    const [fundModalOpen, setFundModalOpen] = useState(false);
+
+    useEffect(() => {
+        if (!showFundChoice) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                setFundLoading(true);
+                const res = await api.get('/disbursements/revolving-fund', { params: { funding_code: 'ARF' } });
+                if (!cancelled && res.data.success) setFundInfo(res.data.data);
+            } catch (err) {
+                console.error('Error fetching Accounting Revolving Fund info:', err);
+            } finally {
+                if (!cancelled) setFundLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [showFundChoice]);
+
+    const fundInsufficient =
+        showFundChoice && fundChoice === 'yes' && fundInfo && parseFloat(fundInfo.Amount) < calculateTotal();
 
     const handleSubmit = async () => {
         if (isSubmitting) return;
@@ -412,6 +444,24 @@ const CashAdvanceForm = (props) => {
             setConfirmReleaseOpen(true);
             return;
         }
+        // Self-submitting Accounting approver, actually submitting (not
+        // saving a draft): validate the rest of the form first, then let
+        // them pick ARF vs Regular Disbursement in a modal — same choice
+        // they'd otherwise only make later at release — before committing.
+        if (showFundChoice) {
+            const { isValid } = validateForm();
+            if (!isValid) {
+                return showNotification('Please fill in all required fields', 'error');
+            }
+            setFundChoice('no');
+            setFundModalOpen(true);
+            return;
+        }
+        await performSubmit();
+    };
+
+    const handleConfirmFundChoice = async () => {
+        setFundModalOpen(false);
         await performSubmit();
     };
 
@@ -481,6 +531,13 @@ const CashAdvanceForm = (props) => {
                     approved_at: approvedDate,
                 }
                 : {};
+            // Only meaningful on the genuine auto-approve self-submit path —
+            // the backend independently re-verifies the requester is an
+            // Accounting approver, so this flag alone can't fund anything
+            // it shouldn't.
+            const revolvingFundFields = (isApprover && showFundChoice && fundChoice === 'yes')
+                ? { useRevolvingFund: true }
+                : {};
 
             const payload = {
                 ...formData,
@@ -489,6 +546,7 @@ const CashAdvanceForm = (props) => {
                 requestedAmount: calculateTotal(),
                 status: submitStatus,
                 ...approverFields,
+                ...revolvingFundFields,
             };
 
             let res = editData?.id
@@ -504,7 +562,7 @@ const CashAdvanceForm = (props) => {
                 setSuccessModal({ open: true, advanceNumber: confirmedNumber });
             }
         } catch (e) {
-            showNotification('Error submitting request', 'error');
+            showNotification(e.response?.data?.message || 'Error submitting request', 'error');
         } finally {
             setIsSubmitting(false);
         }
@@ -631,6 +689,78 @@ const CashAdvanceForm = (props) => {
                         <>Updating this transaction will mark it as <span className="font-semibold text-green-700">Released</span>. Continue?</>
                     )}
                 </p>
+            </Modal>
+
+            <Modal
+                open={fundModalOpen}
+                onClose={() => (isSubmitting ? null : setFundModalOpen(false))}
+                title="Funding Source"
+                maxWidth="sm"
+                actions={
+                    <>
+                        <Button variant="secondary" onClick={() => setFundModalOpen(false)} disabled={isSubmitting}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="primary"
+                            startIcon={<Send className="w-4 h-4" />}
+                            onClick={handleConfirmFundChoice}
+                            disabled={isSubmitting || fundInsufficient}
+                        >
+                            {isSubmitting ? 'Submitting…' : 'Confirm Submission'}
+                        </Button>
+                    </>
+                }
+            >
+                <p className="text-gray-700 mb-4">
+                    As the Accounting approver, this request will be auto-approved on submission. Choose how it should be funded.
+                </p>
+                {fundLoading && (
+                    <p className="text-sm text-gray-400 mb-2">Checking Accounting Revolving Fund availability…</p>
+                )}
+                {!fundLoading && fundInfo && (
+                    <>
+                        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex flex-col gap-1">
+                            <span className="font-bold text-gray-800">Request Amount:</span> {`₱${calculateTotal().toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                            <span className="font-bold text-gray-800">Available Fund:</span> {`₱${parseFloat(fundInfo.Amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                        </div>
+                        <div className={`mb-4 p-3 rounded-lg text-sm text-gray-800 flex flex-col gap-1 border ${
+                            fundInsufficient ? 'bg-red-50 border-red-300' : 'bg-blue-50 border-blue-200'
+                        }`}>
+                            <span className="font-bold text-gray-800">Funding Source:</span>
+                            <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="useRevolvingFund"
+                                    value="yes"
+                                    checked={fundChoice === 'yes'}
+                                    onChange={() => setFundChoice('yes')}
+                                />
+                                Accounting Revolving Fund
+                            </label>
+                            <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="useRevolvingFund"
+                                    value="no"
+                                    checked={fundChoice === 'no'}
+                                    onChange={() => setFundChoice('no')}
+                                />
+                                Regular Disbursement
+                            </label>
+                        </div>
+                        {fundChoice === 'yes' && fundInsufficient && (
+                            <p className="text-sm text-red-600 font-medium mt-2">
+                                Insufficient Accounting Revolving Fund Balance
+                            </p>
+                        )}
+                    </>
+                )}
+                {!fundLoading && !fundInfo && (
+                    <p className="text-sm text-gray-500">
+                        No revolving fund is configured for Accounting — this will be a Regular Disbursement.
+                    </p>
+                )}
             </Modal>
 
             <Modal
@@ -892,8 +1022,8 @@ const CashAdvanceForm = (props) => {
                                 : accountingEdit
                                     ? 'Update Transaction'
                                     : isApprover
-                                        ? 'Submit for Disbursement'
-                                        : 'Submit Request'}
+                                        ? 'Submit'
+                                        : 'Submit'}
                         </Button>
                     </>
                 )}

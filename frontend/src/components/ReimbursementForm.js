@@ -136,17 +136,23 @@ const ReimbursementForm = (props) => {
   const { user }   = useAuth();
   const navigate   = useNavigate();
 
-  // Self-submitted reimbursements from an Operations approver auto-approve
-  // on submit (see `isApprover`/`autoApprove` below) and skip the Approvals
-  // queue — so this is the only place they get to choose ORF vs Regular
-  // Disbursement. Deliberately Operations-only (not any approver/department).
-  const isOperationsApprover = !!(
-    (user?.role?.toLowerCase().includes('approver') ||
-     user?.role?.toLowerCase().includes('manager') ||
-     user?.is_approver) &&
-    (user?.department || '').toUpperCase() === 'OPERATIONS'
+  // Self-submitted requests from an approver auto-approve on submit (see
+  // `isApprover`/`autoApprove` below) and skip the Approvals queue — so this
+  // is the only place they get to choose a revolving fund vs Regular
+  // Disbursement. Deliberately limited to two specific personas, matching
+  // reimbursementController.js's resolveSelfFundAuthority:
+  //   - Operations approver → Operations Revolving Fund (ORF)
+  //   - Accounting approver → Accounting Revolving Fund (ARF)
+  const isApproverLike = !!(
+    user?.role?.toLowerCase().includes('approver') ||
+    user?.role?.toLowerCase().includes('manager') ||
+    user?.isApprover
   );
-  const showFundChoice = isOperationsApprover && !viewOnly && !accountingEdit;
+  const isOperationsApprover = isApproverLike && (user?.department || '').toUpperCase() === 'OPERATIONS';
+  const isAccountingApprover = isApproverLike && (user?.role || '').toLowerCase() === 'accounting';
+  const fundAuthority = isOperationsApprover ? 'ORF' : (isAccountingApprover ? 'ARF' : null);
+  const fundLabel = fundAuthority === 'ORF' ? 'Operations Revolving Fund' : 'Accounting Revolving Fund';
+  const showFundChoice = !!fundAuthority && !viewOnly && !accountingEdit;
 
   const [fundChoice, setFundChoice] = useState('no'); // 'yes' | 'no'
   const [fundInfo,   setFundInfo]   = useState(null); // { id, funding_code, funding_description, Amount } | null
@@ -368,27 +374,28 @@ const ReimbursementForm = (props) => {
     [expenses, itineraryItems],
   );
 
-  // Fetch the Operations Revolving Fund balance so the approver can see it
-  // before choosing to fund their own reimbursement from it. Reuses the
-  // same endpoint the Approvals page uses.
+  // Fetch the relevant revolving fund's balance so the approver can see it
+  // before choosing to fund their own request from it. ORF is looked up the
+  // same way the Approvals page does (department-scoped); ARF is looked up
+  // the same way Disbursements does (by funding_code, not department).
   useEffect(() => {
     if (!showFundChoice) return;
     let cancelled = false;
     (async () => {
       try {
         setFundLoading(true);
-        const res = await api.get('/approvals/revolving-fund', {
-          params: { department_id: formData.department },
-        });
+        const res = fundAuthority === 'ORF'
+          ? await api.get('/approvals/revolving-fund', { params: { department_id: formData.department } })
+          : await api.get('/disbursements/revolving-fund', { params: { funding_code: 'ARF' } });
         if (!cancelled && res.data.success) setFundInfo(res.data.data);
       } catch (err) {
-        console.error('Error fetching Operations Revolving Fund info:', err);
+        console.error(`Error fetching ${fundLabel} info:`, err);
       } finally {
         if (!cancelled) setFundLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [showFundChoice, formData.department]);
+  }, [showFundChoice, fundAuthority, fundLabel, formData.department]);
 
   const fundInsufficient =
     showFundChoice && fundChoice === 'yes' && fundInfo && parseFloat(fundInfo.Amount) < totalAmount;
@@ -734,7 +741,7 @@ const ReimbursementForm = (props) => {
   const isApprover = !!(
     user?.role?.toLowerCase().includes('approver') ||
     user?.role?.toLowerCase().includes('manager') ||
-    user?.is_approver
+    user?.isApprover
   );
 
   // Persist (save draft or submit)
@@ -1343,10 +1350,10 @@ const ReimbursementForm = (props) => {
         }
       >
         <p className="text-gray-700 mb-4">
-          As the Operations approver, this request will be auto-approved on submission. Choose how it should be funded.
+          As the {fundAuthority === 'ORF' ? 'Operations' : 'Accounting'} approver, this request will be auto-approved on submission. Choose how it should be funded.
         </p>
         {fundLoading && (
-          <p className="text-sm text-gray-400 mb-2">Checking Operations Revolving Fund availability…</p>
+          <p className="text-sm text-gray-400 mb-2">Checking {fundLabel} availability…</p>
         )}
         {!fundLoading && fundInfo && (
           <>
@@ -1366,7 +1373,7 @@ const ReimbursementForm = (props) => {
                   checked={fundChoice === 'yes'}
                   onChange={() => setFundChoice('yes')}
                 />
-                Operations Revolving Fund
+                {fundLabel}
               </label>
               <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
                 <input
@@ -1381,14 +1388,14 @@ const ReimbursementForm = (props) => {
             </div>
             {fundChoice === 'yes' && fundInsufficient && (
               <p className="text-sm text-red-600 font-medium mt-2">
-                Insufficient Operations Revolving Fund Balance
+                Insufficient {fundLabel} Balance
               </p>
             )}
           </>
         )}
         {!fundLoading && !fundInfo && (
           <p className="text-sm text-gray-500">
-            No revolving fund is configured for Operations — this will be a Regular Disbursement.
+            No revolving fund is configured for {fundAuthority === 'ORF' ? 'Operations' : 'Accounting'} — this will be a Regular Disbursement.
           </p>
         )}
       </Modal>

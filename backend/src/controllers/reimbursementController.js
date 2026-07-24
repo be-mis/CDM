@@ -30,31 +30,41 @@ const resolveDepartmentId = async (conn, department) => {
   return rows.length > 0 ? rows[0].id : null;
 };
 
-// A reimbursement submitted by an approver auto-approves on submit (see
-// ReimbursementForm.js's `isApprover`/`autoApprove`), skipping the Approvals
-// queue entirely. Only Operations approvers may additionally choose to fund
-// that self-approved request from the Operations Revolving Fund — this is
-// intentionally NOT a generic "any approver, any department" rule.
-const isOperationsApprover = (user) => {
+const isApproverLike = (user) => {
   const role = (user?.role || '').toLowerCase();
-  const isApprover = role.includes('approver') || role.includes('manager') || !!user?.is_approver;
-  return isApprover && (user?.department || '').toUpperCase() === 'OPERATIONS';
+  return role.includes('approver') || role.includes('manager') || !!user?.isApprover;
 };
 
-// Locks the Operations Revolving Fund row, verifies it can cover
-// `amountNeeded`, and returns { fund, fundBalance } for the caller to apply
-// the deduction with. Throws (via a thrown {status, message} object) on any
-// failure so callers can rollback and respond in one place.
-const lockAndCheckOperationsFund = async (conn, amountNeeded) => {
+// A request submitted by an approver auto-approves on submit (see
+// ReimbursementForm.js/CashAdvanceForm.js's `isApprover`/`autoApprove`),
+// skipping the Approvals queue entirely. Only two specific personas may
+// additionally choose to fund that self-approved request from a revolving
+// fund — this is intentionally NOT a generic "any approver, any fund" rule:
+//   - Operations approvers → Operations Revolving Fund (ORF)
+//   - Accounting approvers → Accounting Revolving Fund (ARF)
+// Returns the funding_code they're authorized to use, or null.
+const resolveSelfFundAuthority = (user) => {
+  if (!isApproverLike(user)) return null;
+  if ((user?.department || '').toUpperCase() === 'OPERATIONS') return 'ORF';
+  if ((user?.role || '').toLowerCase() === 'accounting') return 'ARF';
+  return null;
+};
+
+// Locks the revolving fund row for the given funding_code, verifies it can
+// cover `amountNeeded`, and returns { fund, fundBalance } for the caller to
+// apply the deduction with. Same lookup convention as
+// disbursementsController.js's getRevolvingFund/processDisbursement — by
+// funding_code, not by department (Accounting's ARF isn't department-scoped;
+// Operations' ORF happens to be the only other fund configured today).
+// Throws (via a thrown {status, message} object) on any failure so callers
+// can rollback and respond in one place.
+const lockAndCheckFundByCode = async (conn, fundingCode, amountNeeded) => {
   const [fundRows] = await conn.query(
-    `SELECT rf.id, rf.Amount, rf.funding_code
-     FROM revolving_funds rf
-     JOIN departments d ON d.id = rf.department
-     WHERE UPPER(d.name) = 'OPERATIONS'
-     FOR UPDATE`
+    `SELECT id, Amount, funding_code FROM revolving_funds WHERE funding_code = ? FOR UPDATE`,
+    [fundingCode],
   );
   if (fundRows.length === 0) {
-    throw { status: 400, message: 'No revolving fund is configured for the Operations department.' };
+    throw { status: 400, message: `No revolving fund is configured with funding code ${fundingCode}.` };
   }
   const fund = fundRows[0];
   const fundBalance = parseFloat(fund.Amount);
@@ -212,20 +222,21 @@ const createReimbursement = async (req, res) => {
     let fundBalance = null;
 
     if (wantsRevolvingFund) {
-      if (!isOperationsApprover(req.user)) {
+      const authorizedFundingCode = resolveSelfFundAuthority(req.user);
+      if (!authorizedFundingCode) {
         await conn.rollback();
         return res.status(403).json({
           success: false,
-          message: 'Only Operations approvers may fund a self-approved reimbursement from the Operations Revolving Fund.',
+          message: 'You are not authorized to fund a self-approved reimbursement from a revolving fund.',
         });
       }
       try {
-        ({ fund, fundBalance } = await lockAndCheckOperationsFund(conn, amountNeeded));
+        ({ fund, fundBalance } = await lockAndCheckFundByCode(conn, authorizedFundingCode, amountNeeded));
       } catch (fundErr) {
         await conn.rollback();
         return res.status(fundErr.status || 500).json({
           success: false,
-          message: fundErr.message || 'Failed to verify Operations Revolving Fund balance.',
+          message: fundErr.message || 'Failed to verify revolving fund balance.',
           ...(fundErr.remainingFund !== undefined ? { remainingFund: fundErr.remainingFund } : {}),
         });
       }
@@ -381,20 +392,21 @@ const updateReimbursement = async (req, res) => {
     let fundBalance = null;
 
     if (wantsRevolvingFund) {
-      if (!isOperationsApprover(req.user)) {
+      const authorizedFundingCode = resolveSelfFundAuthority(req.user);
+      if (!authorizedFundingCode) {
         await conn.rollback();
         return res.status(403).json({
           success: false,
-          message: 'Only Operations approvers may fund a self-approved reimbursement from the Operations Revolving Fund.',
+          message: 'You are not authorized to fund a self-approved reimbursement from a revolving fund.',
         });
       }
       try {
-        ({ fund, fundBalance } = await lockAndCheckOperationsFund(conn, amountNeeded));
+        ({ fund, fundBalance } = await lockAndCheckFundByCode(conn, authorizedFundingCode, amountNeeded));
       } catch (fundErr) {
         await conn.rollback();
         return res.status(fundErr.status || 500).json({
           success: false,
-          message: fundErr.message || 'Failed to verify Operations Revolving Fund balance.',
+          message: fundErr.message || 'Failed to verify revolving fund balance.',
           ...(fundErr.remainingFund !== undefined ? { remainingFund: fundErr.remainingFund } : {}),
         });
       }
