@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import CashAdvanceForm from '../components/CashAdvanceForm';
 import LiquidationForm from '../components/LiquidationForm';
+import ReimbursementForm from '../components/ReimbursementForm';
 import { formatCurrency } from '../utils/formatters';
 import { Card, CardContent } from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -28,6 +29,7 @@ const OVERVIEW_TYPES = {
 const REQUEST_TYPES = {
   CASH_ADVANCE: 'cash-advance',
   LIQUIDATION: 'liquidation',
+  REIMBURSEMENT: 'reimbursement',
 };
 
 const URGENCY_LEVELS = {
@@ -374,6 +376,39 @@ const normalizeLiquidationView = (data, fallback = {}) => ({
   type: REQUEST_TYPES.LIQUIDATION,
 });
 
+const normalizeReimbursementView = (data, fallback = {}) => ({
+  id: data.id,
+  reimbursementNumber: data.reimbursement_number || fallback.refNumber,
+  refNumber: data.reimbursement_number || fallback.refNumber,
+  reimbursementDate: data.reimbursement_date || fallback.requestDate,
+  requestDate: data.reimbursement_date || fallback.requestDate,
+  startDate: data.start_date,
+  endDate: data.end_date,
+  requestedBy: data.requested_by || data.requestedBy,
+  department: data.department,
+  totalActualAmount: data.total_actual_amount ?? fallback.amount ?? 0,
+  amount: data.total_actual_amount ?? fallback.amount ?? 0,
+  paymentMethod: data.payment_method,
+  gcashName: data.gcash_name || '',
+  checkNumber: data.check_number,
+  accountNumber: data.account_number,
+  status: data.status,
+  remarks: data.remarks,
+  reject_remarks: data.reject_remarks || '',
+  release_remarks: data.release_remarks || '',
+  items: data.items || [],
+  attachments: data.attachments || [],
+  // Timeline fields
+  created_at: data.created_at || data.reimbursement_date,
+  approved_at: data.approved_at,
+  approved_by: data.approver_name || data.approved_by,
+  rejected_at: data.rejected_at,
+  rejected_by: data.rejected_by || data.approver_name,
+  released_at: data.released_at,
+  released_by: data.released_by,
+  type: REQUEST_TYPES.REIMBURSEMENT,
+});
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
@@ -664,7 +699,7 @@ const EmployeeDashboard = () => {
     };
   }, [cashAdvances, liquidations, reimbursements]);
 
-  // Most recent 4 requests (cash advances + liquidations combined)
+  // Most recent 4 requests (cash advances + liquidations + reimbursements combined)
   const recentRequests = useMemo(() => {
     const combined = [
       ...cashAdvances.map((ca) => ({
@@ -681,9 +716,16 @@ const EmployeeDashboard = () => {
         amount: liq.total_actual_amount,
         date: liq.created_at,
       })),
+      ...reimbursements.map((r) => ({
+        ...r,
+        type: REQUEST_TYPES.REIMBURSEMENT,
+        refNumber: r.reimbursement_number,
+        amount: r.total_actual_amount,
+        date: r.created_at,
+      })),
     ];
     return combined.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4);
-  }, [cashAdvances, liquidations]);
+  }, [cashAdvances, liquidations, reimbursements]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -718,6 +760,14 @@ const EmployeeDashboard = () => {
           setViewData(normalizeLiquidationView(request, request));
           setErrors((prev) => ({ ...prev, liquidations: 'Could not load full details — showing limited info.' }));
         }
+      } else if (request.type === REQUEST_TYPES.REIMBURSEMENT) {
+        const response = await api.get(`/reimbursements/${request.id}`);
+        if (response?.data?.success) {
+          setViewData(normalizeReimbursementView(response.data.data, request));
+        } else {
+          setViewData(normalizeReimbursementView(request, request));
+          setErrors((prev) => ({ ...prev, reimbursements: 'Could not load full details — showing limited info.' }));
+        }
       }
     } catch (err) {
       console.error('Error fetching request details for view', err);
@@ -725,6 +775,8 @@ const EmployeeDashboard = () => {
         setViewData(normalizeCashAdvanceView(request, request));
       } else if (request.type === REQUEST_TYPES.LIQUIDATION) {
         setViewData(normalizeLiquidationView(request, request));
+      } else if (request.type === REQUEST_TYPES.REIMBURSEMENT) {
+        setViewData(normalizeReimbursementView(request, request));
       } else {
         setViewData({ ...request, type: request.type });
       }
@@ -991,7 +1043,9 @@ const EmployeeDashboard = () => {
           viewData
             ? viewData.type === REQUEST_TYPES.CASH_ADVANCE
               ? `Cash Advance — ${viewData.refNumber || viewData.advance_number}`
-              : `Liquidation — ${viewData.liquidationNumber || viewData.refNumber}`
+              : viewData.type === REQUEST_TYPES.LIQUIDATION
+              ? `Liquidation — ${viewData.liquidationNumber || viewData.refNumber}`
+              : `Reimbursement — ${viewData.reimbursementNumber || viewData.refNumber}`
             : 'Request Details'
         }
         maxWidth="xl"
@@ -1006,8 +1060,10 @@ const EmployeeDashboard = () => {
             <RequestTimeline request={viewData} />
             {viewData.type === REQUEST_TYPES.CASH_ADVANCE ? (
               <CashAdvanceForm editData={viewData} viewOnly onClose={handleCloseView} hideCloseButton />
-            ) : (
+            ) : viewData.type === REQUEST_TYPES.LIQUIDATION ? (
               <LiquidationForm editData={viewData} viewOnly onClose={handleCloseView} hideCloseButton />
+            ) : (
+              <ReimbursementForm editData={viewData} viewOnly onClose={handleCloseView} hideCloseButton />
             )}
           </>
         ) : (
@@ -1068,14 +1124,18 @@ const EmployeeDashboard = () => {
                         <div className="flex-shrink-0">
                           {request.type === REQUEST_TYPES.CASH_ADVANCE ? (
                             <HandCoins className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600" />
-                          ) : (
+                          ) : request.type === REQUEST_TYPES.LIQUIDATION ? (
                             <ReceiptText className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
+                          ) : (
+                            <Coins className="w-5 h-5 sm:w-6 sm:h-6 text-cyan-600" />
                           )}
                         </div>
                         <p className="text-sm font-medium text-gray-900 truncate">
                           {request.type === REQUEST_TYPES.CASH_ADVANCE
                             ? `Cash Advance — ${request.refNumber}`
-                            : `Liquidation — ${request.refNumber}`}
+                            : request.type === REQUEST_TYPES.LIQUIDATION
+                            ? `Liquidation — ${request.refNumber}`
+                            : `Reimbursement — ${request.refNumber}`}
                         </p>
                       </div>
                       <p className="text-xs text-gray-600 truncate mt-0.5 pl-7">
