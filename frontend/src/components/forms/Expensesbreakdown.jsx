@@ -19,7 +19,7 @@ const vatTypeOptions = [
 
 const isMobileDevice = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-const MAX_ATTACHMENT_SIZE_MB = 2;
+const MAX_ATTACHMENT_SIZE_MB = 10;
 const MAX_ATTACHMENT_SIZE_BYTES = MAX_ATTACHMENT_SIZE_MB * 1024 * 1024;
 
 export const blankExpense = (id = 1) => ({
@@ -80,7 +80,7 @@ const ExpensesBreakdown = ({
 
   const updateExpense = useCallback(
     (id, field, value) => {
-      console.log(`[ExpensesBreakdown] updateExpense - id: ${id}, field: ${field}, value:`, value);
+      // console.log(`[ExpensesBreakdown] updateExpense - id: ${id}, field: ${field}, value:`, value);
       onExpensesChange(
         expenses.map((exp) => (exp.id === id ? { ...exp, [field]: value } : exp)),
       );

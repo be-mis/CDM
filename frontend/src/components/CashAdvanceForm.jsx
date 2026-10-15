@@ -11,9 +11,11 @@ import { Alert, InlineAlert } from './ui/Alert';
 import Modal from './ui/Modal';
 
 const fieldClassName = (invalid = false, readOnly = false) =>
-    `block min-h-[44px] w-full min-w-0 rounded-lg border px-3 py-2.5 text-sm text-gray-900 outline-none transition-colors ${
-        invalid ? 'border-red-400 focus:ring-2 focus:ring-red-100' : 'border-gray-200 focus:border-gray-400 focus:ring-2 focus:ring-gray-100'
-    } ${readOnly ? 'bg-gray-50' : 'bg-white'}`;
+  `box-border block min-h-[44px] w-full min-w-0 max-w-full rounded-lg border px-3 py-2.5 text-base text-gray-900 outline-none transition-colors sm:text-sm ${
+    invalid
+      ? 'border-red-400 focus:ring-2 focus:ring-red-100'
+      : 'border-gray-200 focus:border-gray-400 focus:ring-2 focus:ring-gray-100'
+  } ${readOnly ? 'bg-gray-50' : 'bg-white'}`;
 
 const TruncatedViewField = ({ value, label }) => (
     <div className="min-w-0">
@@ -816,22 +818,22 @@ const CashAdvanceForm = (props) => {
                                     ))}
                                 </div>
                             </fieldset>
-                            <div className="min-w-0">
+                            <div className="w-full min-w-0 max-w-full">
                                 <label htmlFor="ca-request-date" className="mb-2 block text-xs font-semibold text-gray-600">Request Date</label>
                                 <input id="ca-request-date" type="date" name="advanceDate" value={formData.advanceDate} readOnly className={fieldClassName(false, true)} />
                             </div>
-                            <div className="min-w-0">
+                            <div className="w-full min-w-0 max-w-full">
                                 <label htmlFor="ca-date-needed" className="mb-2 block text-xs font-semibold text-gray-600">Date Needed</label>
                                 <input id="ca-date-needed" type="date" name="dateNeeded" value={formData.dateNeeded} onChange={handleInputChange} min={getMinDateNeeded()} className={fieldClassName()} />
                             </div>
                             <fieldset className="min-w-0 md:col-span-2">
                                 <legend className="mb-2 text-xs font-semibold text-gray-600">Period Covered</legend>
-                                <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                                    <div className="min-w-0">
+                                <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                                    <div className="w-full min-w-0 max-w-full">
                                         <label htmlFor="ca-period-start" className="sr-only">Period start date</label>
                                         <input id="ca-period-start" type="date" name="startDate" value={formData.startDate} onChange={handleInputChange} min={formData.dateNeeded || undefined} max={formData.endDate || undefined} aria-invalid={Boolean(errors.dateCoverage)} aria-describedby={errors.dateCoverage ? 'ca-period-error' : undefined} className={fieldClassName(Boolean(errors.dateCoverage))} />
                                     </div>
-                                    <div className="min-w-0">
+                                    <div className="w-full min-w-0 max-w-full">
                                         <label htmlFor="ca-period-end" className="sr-only">Period end date</label>
                                         <input id="ca-period-end" type="date" name="endDate" value={formData.endDate} onChange={handleInputChange} min={formData.startDate || undefined} aria-invalid={Boolean(errors.dateCoverage)} aria-describedby={errors.dateCoverage ? 'ca-period-error' : undefined} className={fieldClassName(Boolean(errors.dateCoverage))} />
                                     </div>

@@ -1,160 +1,209 @@
-import React, { useState, useEffect } from 'react';
-import { Save } from 'lucide-react';
+import React, { useState, useEffect, useId } from 'react';
+import { Save, Loader2, CircleAlert } from 'lucide-react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import Modal from './ui/Modal';
-import Input from './ui/Input';
-import Button from './ui/Button';
-import { InlineAlert } from './ui/Alert';
 
-const PaymentRequirementModal = () => {
-    const { user } = useAuth();
-    const [open, setOpen] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
-    const [formData, setFormData] = useState({
-        payroll_account: '',
-        gcash_number: '',
-        gcash_name: ''
-    });
+const inputStyle =
+  'block min-h-[44px] w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-base text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-2 focus:ring-gray-100 disabled:bg-gray-50 disabled:opacity-60 sm:text-sm';
 
-    useEffect(() => {
-        // Check if user needs to update payment info
-        if (user) {
-            checkPaymentInfo();
-        }
-    }, [user]);
+export default function PaymentRequirementModal() {
+  const { user } = useAuth();
+  const id = useId();
+
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const [formData, setFormData] = useState({
+    payroll_account: '',
+    gcash_number: '',
+    gcash_name: ''
+  });
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    let active = true;
 
     const checkPaymentInfo = async () => {
-        try {
-            const response = await api.get('/auth/profile');
-            if (response.data?.user) {
-                const { payroll_account, gcash_number, gcash_name } = response.data.user;
+      try {
+        const response = await api.get('/auth/profile');
+        const profile = response.data?.user;
 
-                // If any required field is missing, open modal
-                if (!payroll_account || !gcash_number || !gcash_name) {
-                    setFormData({
-                        payroll_account: payroll_account || '',
-                        gcash_number: gcash_number || '',
-                        gcash_name: gcash_name || ''
-                    });
-                    setOpen(true);
-                }
-            }
-        } catch (err) {
-            console.error("Failed to check payment info", err);
+        if (!active || !profile) return;
+
+        const {
+          payroll_account,
+          gcash_number,
+          gcash_name
+        } = profile;
+
+        if (!payroll_account || !gcash_number || !gcash_name) {
+          setFormData({
+            payroll_account: payroll_account || '',
+            gcash_number: gcash_number || '',
+            gcash_name: gcash_name || ''
+          });
+          setOpen(true);
         }
+      } catch (err) {
+        console.error('Failed to check payment info', err);
+      }
     };
 
-    const handleChange = (e) => {
-        setFormData({
-            ...formData,
-            [e.target.name]: e.target.value
-        });
+    checkPaymentInfo();
+
+    return () => {
+      active = false;
     };
+  }, [user]);
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+  const handleChange = (event) => {
+    const { name, value } = event.target;
 
-        if (!formData.payroll_account || !formData.gcash_number || !formData.gcash_name) {
-            setError('All payment details are required to proceed.');
-            return;
-        }
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value
+    }));
+    setError('');
+  };
 
-        setLoading(true);
-        setError(null);
+  const handleSubmit = async (event) => {
+    event.preventDefault();
 
-        try {
-            const response = await api.put('/auth/profile', formData);
-            if (response.data.success || response.status === 200) {
-                // Success - Close Modal
-                setOpen(false);
-                // Optionally trigger a user reload or update context
-                window.location.reload(); // Hard reload to ensure all states are fresh
-            } else {
-                setError(response.data.error || 'Failed to update. Please try again.');
-            }
-        } catch (err) {
-            setError(err.response?.data?.error || 'Network error. Please try again.');
-        } finally {
-            setLoading(false);
-        }
-    };
+    if (loading) return;
 
-    return (
-        <Modal
-            open={open}
-            onClose={() => {}} // Prevent closing
-            title={null}
-            showCloseButton={false}
-            maxWidth="sm"
+    if (
+      !formData.payroll_account.trim() ||
+      !formData.gcash_number.trim() ||
+      !formData.gcash_name.trim()
+    ) {
+      setError('All payment details are required to proceed.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+
+      const response = await api.put('/auth/profile', formData);
+
+      if (response.data.success || response.status === 200) {
+        setOpen(false);
+        window.location.reload();
+      } else {
+        setError(
+          response.data.error || 'Failed to update. Please try again.'
+        );
+      }
+    } catch (err) {
+      setError(
+        err.response?.data?.error ||
+          'Network error. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fields = [
+    {
+      name: 'payroll_account',
+      label: 'Payroll Account Number',
+      placeholder: 'Enter your bank account number',
+      inputMode: 'numeric'
+    },
+    {
+      name: 'gcash_number',
+      label: 'GCash Number',
+      placeholder: '09XXXXXXXXX',
+      inputMode: 'numeric'
+    },
+    {
+      name: 'gcash_name',
+      label: 'GCash Name',
+      placeholder: 'Name on GCash',
+      inputMode: 'text'
+    }
+  ];
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => {}}
+      title={null}
+      showCloseButton={false}
+      maxWidth="sm"
+    >
+      <div className="w-full min-w-0">
+        <header className="mb-5">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Complete Payment Information
+          </h2>
+
+          <p className="mt-2 text-sm leading-relaxed text-gray-500">
+            Please complete your payment information to continue
+            using the system.
+          </p>
+        </header>
+
+        {error && (
+          <div
+            role="alert"
+            className="mb-5 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-3 text-red-700"
+          >
+            <CircleAlert
+              aria-hidden="true"
+              className="mt-0.5 h-4 w-4 shrink-0"
+            />
+            <p className="text-sm leading-relaxed">{error}</p>
+          </div>
+        )}
+
+        <form
+          onSubmit={handleSubmit}
+          aria-busy={loading}
+          className="space-y-4"
         >
-            <div className="mb-4">
-                <h2 className="text-2xl font-bold text-primary-600 mb-2">Action Required</h2>
-                <p className="text-sm text-gray-600">
-                    Please complete your payment information to continue using the system.
-                </p>
+          {fields.map((field) => (
+            <div key={field.name} className="min-w-0">
+              <label
+                htmlFor={`${id}-${field.name}`}
+                className="mb-2 block text-xs font-semibold text-gray-600"
+              >
+                {field.label}
+              </label>
+
+              <input
+                id={`${id}-${field.name}`}
+                name={field.name}
+                type="text"
+                inputMode={field.inputMode}
+                value={formData[field.name]}
+                onChange={handleChange}
+                disabled={loading}
+                placeholder={field.placeholder}
+                required
+                className={inputStyle}
+              />
             </div>
+          ))}
 
-            {error && (
-                <InlineAlert severity="error" className="mb-6">
-                    {error}
-                </InlineAlert>
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
             )}
-
-            <form id="payment-setup-form" onSubmit={handleSubmit} className="space-y-6">
-                {/* Bank Account Details */}
-                <div>
-                    <h3 className="text-sm font-semibold text-gray-700 mb-3">Bank Account Details</h3>
-                    <Input
-                        fullWidth
-                        required
-                        label="Payroll Account Number"
-                        name="payroll_account"
-                        value={formData.payroll_account}
-                        onChange={handleChange}
-                        placeholder="Enter your bank account number"
-                    />
-                </div>
-
-                {/* GCash Details */}
-                <div>
-                    <h3 className="text-sm font-semibold text-gray-700 mb-3">GCash Details</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Input
-                            fullWidth
-                            required
-                            label="GCash Number"
-                            name="gcash_number"
-                            value={formData.gcash_number}
-                            onChange={handleChange}
-                            placeholder="09XXXXXXXXX"
-                        />
-                        <Input
-                            fullWidth
-                            required
-                            label="GCash Name"
-                            name="gcash_name"
-                            value={formData.gcash_name}
-                            onChange={handleChange}
-                            placeholder="Name on GCash"
-                        />
-                    </div>
-                </div>
-
-                <Button
-                    type="submit"
-                    fullWidth
-                    size="lg"
-                    disabled={loading}
-                    loading={loading}
-                    startIcon={!loading && <Save className="w-5 h-5" />}
-                >
-                    {loading ? 'Saving Details...' : 'Save & Continue'}
-                </Button>
-            </form>
-        </Modal>
-    );
-};
-
-export default PaymentRequirementModal;
+            {loading ? 'Saving Details...' : 'Save & Continue'}
+          </button>
+        </form>
+      </div>
+    </Modal>
+  );
+}

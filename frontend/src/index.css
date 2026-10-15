@@ -102,3 +102,17 @@ code {
     rgba(255, 255, 255, 0.3)
   );
 }
+
+input[type="date"] {
+  min-inline-size: 0;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: left;
+}
+
+input[type="date"]::-webkit-datetime-edit {
+  min-width: 0;
+  padding: 0;
+}
