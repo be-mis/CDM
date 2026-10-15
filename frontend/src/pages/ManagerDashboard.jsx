@@ -933,7 +933,7 @@ const ManagerDashboard = () => {
             {statsLoading ? (
               <Loading message="Loading recent actions…" />
             ) : recentActions.length === 0 ? (
-              <p className="text-gray-500 text-center py-8 text-sm">No recent approval actions.</p>
+              <p className="text-gray-500 text-center py-8 text-sm  italic">No recent approval actions.</p>
             ) : (
               <div className="overflow-x-auto border border-gray-200 rounded-lg">
                 <table className="w-full min-w-[700px]">

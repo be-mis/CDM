@@ -10,7 +10,6 @@ import LiquidationForm from '../components/LiquidationForm';
 import ReimbursementForm from '../components/ReimbursementForm';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
-import { Card, CardContent } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
@@ -19,80 +18,31 @@ import Tooltip from '../components/ui/Tooltip';
 
 // Reusable pagination control used under each request table
 const Pagination = ({ currentPage, totalItems, pageSize, onPageChange, onPageSizeChange }) => {
+  if (!totalItems) return null;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  if (totalItems === 0) return null;
-
   const start = (currentPage - 1) * pageSize + 1;
   const end = Math.min(currentPage * pageSize, totalItems);
-
-  // Build a compact page-number list: first, last, current ± 1, with ellipses
-  const pageNumbers = [];
-  for (let i = 1; i <= totalPages; i++) {
-    if (i === 1 || i === totalPages || Math.abs(i - currentPage) <= 1) {
-      pageNumbers.push(i);
-    } else if (pageNumbers[pageNumbers.length - 1] !== '...') {
-      pageNumbers.push('...');
-    }
-  }
-
   return (
-    <div className="flex items-center justify-between flex-wrap gap-3 px-2 py-3">
-      <div className="flex items-center gap-3 flex-wrap">
-        <p className="text-sm text-gray-600">
-          Showing <span className="font-medium text-gray-900">{start}</span>–
-          <span className="font-medium text-gray-900">{end}</span> of{' '}
-          <span className="font-medium text-gray-900">{totalItems}</span>
-        </p>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600 whitespace-nowrap">Rows per page</label>
-          <select
-            value={pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            className="border border-gray-300 rounded-lg px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
-          >
-            <option value={10}>10</option>
-            <option value={25}>25</option>
-            <option value={50}>50</option>
-            <option value={100}>100</option>
+    <div className="flex flex-col gap-4 border-t border-gray-200 pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+        <p><span className="font-medium text-gray-900">{start}–{end}</span> of {totalItems} requests</p>
+        <label className="flex items-center gap-2">
+          Rows
+          <select aria-label="Rows per page" value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}
+            className="min-h-[44px] rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none focus:border-gray-400 focus:ring-2 focus:ring-gray-100">
+            {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
           </select>
-        </div>
+        </label>
       </div>
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-          disabled={currentPage === 1}
-          className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          aria-label="Previous page"
-        >
-          <ChevronLeft className="w-4 h-4" />
+      <div className="flex items-center justify-between gap-3 sm:justify-end">
+        <button type="button" aria-label="Previous page" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}
+          className="flex h-11 w-11 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 disabled:cursor-not-allowed disabled:opacity-40">
+          <ChevronLeft className="h-4 w-4" />
         </button>
-        {pageNumbers.map((p, idx) =>
-          p === '...' ? (
-            <span key={`ellipsis-${idx}`} className="px-2 text-sm text-gray-400">…</span>
-          ) : (
-            <button
-              type="button"
-              key={p}
-              onClick={() => onPageChange(p)}
-              className={`min-w-[2rem] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                p === currentPage
-                  ? 'bg-primary-600 text-white'
-                  : 'text-gray-600 hover:bg-gray-50 border border-gray-300'
-              }`}
-            >
-              {p}
-            </button>
-          )
-        )}
-        <button
-          type="button"
-          onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-          disabled={currentPage === totalPages}
-          className="p-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          aria-label="Next page"
-        >
-          <ChevronRight className="w-4 h-4" />
+        <span className="text-xs text-gray-600">Page <strong className="font-semibold text-gray-900">{currentPage}</strong> of {totalPages}</span>
+        <button type="button" aria-label="Next page" disabled={currentPage >= totalPages} onClick={() => onPageChange(currentPage + 1)}
+          className="flex h-11 w-11 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 disabled:cursor-not-allowed disabled:opacity-40">
+          <ChevronRight className="h-4 w-4" />
         </button>
       </div>
     </div>
@@ -214,7 +164,7 @@ const buildTimelineSteps = (request) => {
     }
     if (!currentAssigned) {
       currentAssigned = true;
-      return { ...step, state: 'current', color: 'text-amber-600 bg-amber-100 ring-2 ring-amber-300 ring-offset-2' };
+      return { ...step, state: 'current', color: 'text-amber-700 bg-amber-50' };
     }
     return { ...step, state: 'upcoming', color: 'text-gray-400 bg-gray-100' };
   });
@@ -222,66 +172,36 @@ const buildTimelineSteps = (request) => {
 
 const RequestTimeline = ({ request }) => {
   const steps = useMemo(() => buildTimelineSteps(request), [request]);
-
-  if (steps.length === 0) return null;
-
+  if (!steps.length) return null;
   return (
-    <div className="mb-6 border border-blue-200 rounded-lg p-4 bg-gray-50">
-      <div className="flex items-center gap-2 mb-5">
-        <Clock className="w-4 h-4 text-gray-500" />
-        <h4 className="text-sm font-semibold text-gray-700">Request Timeline</h4>
-      </div>
-      <div className="overflow-x-auto">
-        <ol className="flex items-start min-w-max md:min-w-0">
-          {steps.map((step, idx) => {
-            const Icon = step.icon;
-            const isLast = idx === steps.length - 1;
-            const dateLabel = formatDateTime(step.timestamp);
-            const isDone = step.state === 'done';
-            const isCurrent = step.state === 'current';
-            // Connector after this step is colored only once this step is done —
-            // it represents "has the process moved past this point yet?"
-            const connectorClass = isDone ? 'bg-gray-400' : 'bg-gray-200';
-            return (
-              <li key={step.key} className={`flex items-start ${isLast ? '' : 'flex-1'}`}>
-                <div className="flex flex-col items-center w-32 shrink-0 text-center">
-                  <span className={`relative z-10 flex items-center justify-center w-8 h-8 rounded-full shrink-0 transition-all ${step.color} ${isCurrent ? 'animate-pulse' : ''}`}>
-                    <Icon className="w-4 h-4" />
-                  </span>
-                  <p className={`mt-2 text-xs leading-snug ${
-                    isCurrent ? 'font-bold text-amber-700' : isDone ? 'font-medium text-gray-900' : 'font-medium text-gray-400'
-                  }`}>
-                    {step.label}
-                    {isCurrent && (
-                      <span className="block text-[11px] font-semibold text-amber-600">In Progress</span>
-                    )}
-                    {step.state === 'upcoming' && (
-                      <span className="block text-[11px] font-normal text-gray-400">Not yet</span>
-                    )}
-                  </p>
-                  <p className={`text-[11px] mt-0.5 leading-snug ${isDone ? 'text-gray-500' : 'text-gray-400'}`}>
-                    {dateLabel || (isDone ? 'Date not recorded' : isCurrent ? 'Awaiting action' : 'Not yet processed')}
-                  </p>
-                  {step.actor && (
-                    <p className={`text-[11px] leading-snug truncate max-w-full ${isDone ? 'text-gray-500' : 'text-gray-400'}`} title={step.actor}>
-                      {step.actor}
-                    </p>
-                  )}
-                  {step.remarks && (
-                    <p className="text-[11px] text-gray-600 mt-1 italic px-1.5 border-l-2 border-gray-200 text-left w-full">
-                      "{step.remarks}"
-                    </p>
-                  )}
+    <section className="mb-6 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:p-5">
+      <h4 className="mb-5 flex items-center gap-2 text-sm font-semibold text-gray-900">
+        <Clock className="h-4 w-4 text-gray-500" /> Request Timeline
+      </h4>
+      <ol className="space-y-5">
+        {steps.map((step, index) => {
+          const Icon = step.icon;
+          const current = step.state === 'current';
+          return (
+            <li key={step.key} className="relative flex gap-3">
+              {index < steps.length - 1 && <span aria-hidden="true" className="absolute left-4 top-8 h-full w-px bg-gray-200" />}
+              <span className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${step.color}`}>
+                <Icon className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1 pb-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium text-gray-900">{step.label}</p>
+                  {current && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs text-amber-700">Awaiting action</span>}
                 </div>
-                {!isLast && (
-                  <div className={`flex-1 min-w-[2.5rem] h-px mt-4 transition-colors ${connectorClass}`} aria-hidden="true" />
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      </div>
-    </div>
+                <p className="mt-1 text-xs text-gray-500">{formatDateTime(step.timestamp) || (step.state === 'done' ? 'Date not recorded' : 'Not yet processed')}</p>
+                {step.actor && <p className="mt-1 break-words text-xs text-gray-600">{step.actor}</p>}
+                {step.remarks && <p className="mt-2 whitespace-pre-wrap break-words border-l-2 border-gray-200 pl-3 text-xs leading-relaxed text-gray-600">{step.remarks}</p>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 };
 
@@ -984,7 +904,7 @@ const MyRequests = () => {
     const statusLower = (status || '').toLowerCase();
     if (statusLower.includes('pending')) return 'bg-amber-50 text-amber-700 border border-amber-200';
     if (statusLower.includes('approved')) return 'bg-green-50 text-green-700 border border-green-200';
-    if (statusLower.includes('disbursed')) return 'bg-blue-50 text-blue-700 border border-blue-200';
+    if (statusLower.includes('disbursed')) return 'bg-blue-50 text-blue-700 border border-gray-200';
     if (statusLower.includes('released')) return 'bg-teal-50 text-teal-700 border border-teal-200';
     if (statusLower.includes('completed') || statusLower.includes('liquidated')) return 'bg-indigo-50 text-indigo-700 border border-indigo-200';
     if (statusLower.includes('rejected')) return 'bg-red-50 text-red-700 border border-red-200';
@@ -1101,7 +1021,7 @@ const MyRequests = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-5">
       {/* Alert toast notification */}
       <Alert
         open={snackbar.open}
@@ -1110,75 +1030,85 @@ const MyRequests = () => {
         severity={snackbar.severity}
       />
 
-      {/* Header */}
+      {/* Page introduction */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">My Requests</h1>
-        <p className="text-gray-600">View and manage all your cash advance, liquidation, and reimbursement requests</p>
+        <h2 className="text-lg font-semibold tracking-tight text-gray-900 sm:text-xl">My Requests</h2>
+        <p className="mt-1 text-sm leading-relaxed text-gray-500">Manage your cash advances, liquidations, and reimbursements.</p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-6">
-        <Card className="!bg-orange-50 border border-orange-200 text-white shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-3 sm:p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-orange-800 text-xs sm:text-sm font-semibold mb-1 sm:mb-2">Pending</p>
-                <h3 className="text-2xl sm:text-4xl font-bold text-orange-800">{stats.pending}</h3>
-              </div>
-              <Clock className="w-7 h-7 sm:w-12 sm:h-12 text-orange-800 opacity-50" />
-            </div>
-          </CardContent>
-        </Card>
+      {/* Summary */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          {
+            label: 'Pending',
+            value: stats.pending,
+            icon: Clock,
+            color: 'border-amber-200 bg-amber-50',
+            text: 'text-amber-800',
+            iconColor: 'text-amber-600'
+          },
+          {
+            label: 'Approved',
+            value: stats.approved,
+            icon: CheckCircle,
+            color: 'border-green-200 bg-green-50',
+            text: 'text-green-800',
+            iconColor: 'text-green-600'
+          },
+          {
+            label: 'Rejected',
+            value: stats.rejected,
+            icon: XCircle,
+            color: 'border-red-200 bg-red-50',
+            text: 'text-red-800',
+            iconColor: 'text-red-600'
+          },
+          {
+            label: 'Released',
+            value: stats.released,
+            icon: Banknote,
+            color: 'border-blue-200 bg-blue-50',
+            text: 'text-blue-800',
+            iconColor: 'text-blue-600'
+          }
+        ].map(({ label, value, icon: Icon, color, text, iconColor }) => (
+          <section
+            key={label}
+            className={`min-w-0 rounded-xl border p-4 sm:p-5 ${color}`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className={`text-xs font-medium sm:text-sm ${text}`}>
+                {label}
+              </p>
 
-        <Card className="!bg-green-50 border border-green-200 text-white shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-3 sm:p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-green-800 text-xs sm:text-sm font-semibold mb-1 sm:mb-2">Approved</p>
-                <h3 className="text-2xl sm:text-4xl font-bold text-green-800">{stats.approved}</h3>
-              </div>
-              <CheckCircle className="w-7 h-7 sm:w-12 sm:h-12 text-green-800 opacity-50" />
+              <Icon
+                aria-hidden="true"
+                className={`h-4 w-4 shrink-0 ${iconColor}`}
+              />
             </div>
-          </CardContent>
-        </Card>
 
-        <Card className="!bg-rose-50 border border-rose-200 text-white shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-3 sm:p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-rose-800 text-xs sm:text-sm font-semibold mb-1 sm:mb-2">Rejected</p>
-                <h3 className="text-2xl sm:text-4xl font-bold text-rose-800">{stats.rejected}</h3>
-              </div>
-              <XCircle className="w-7 h-7 sm:w-12 sm:h-12 text-rose-800 opacity-50" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="!bg-blue-50 border border-blue-200 text-white shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-3 sm:p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-800 text-xs sm:text-sm font-semibold mb-1 sm:mb-2">Released</p>
-                <h3 className="text-2xl sm:text-4xl font-bold text-blue-800">{stats.released}</h3>
-              </div>
-              <CheckCircle className="w-7 h-7 sm:w-12 sm:h-12 text-blue-800 opacity-50" />
-            </div>
-          </CardContent>
-        </Card>
+            <p
+              className={`mt-3 text-2xl font-semibold tabular-nums sm:text-3xl ${text}`}
+            >
+              {value}
+            </p>
+          </section>
+        ))}
       </div>
 
       {/* Main card panel */}
-      <Card>
+      <section className="min-w-0 rounded-xl border border-gray-200 bg-white">
         {/* Navigation Tabs */}
         <div className="border-b border-gray-200">
-          <div className="flex px-2 sm:px-4 gap-1 sm:gap-2 overflow-x-auto">
+          <div className="flex min-w-0 gap-1 overflow-x-auto px-2 sm:px-4">
             {tabs.map((tab, index) => (
               <button
                 type="button"
                 key={index}
                 onClick={() => handleTabChange(null, index)}
-                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-semibold border-b-2 whitespace-nowrap transition-colors ${
+                className={`flex min-h-[48px] shrink-0 items-center gap-2 border-b-2 px-3 py-3 text-xs font-medium whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400 sm:px-4 sm:text-sm ${
                   tabValue === index
-                    ? 'border-primary-600 text-primary-600'
+                    ? 'border-gray-900 text-gray-900'
                     : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
                 }`}
               >
@@ -1189,19 +1119,20 @@ const MyRequests = () => {
           </div>
         </div>
 
-        <CardContent className="p-6 space-y-4">
+        <div className="min-w-0 space-y-4 p-3 sm:p-5 lg:p-6">
           {/* Search bar */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by reference number or purpose..."
+              aria-label="Search requests"
+              placeholder="Search requests..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
                 setPage(prev => ({ ...prev, [tabKeyMap[tabValue]]: 1 }));
               }}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm outline-none transition-colors"
+              className="min-h-[44px] w-full rounded-lg border border-gray-200 bg-white py-3 pl-10 pr-4 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-400 focus:ring-2 focus:ring-gray-100"
             />
           </div>
 
@@ -1210,8 +1141,8 @@ const MyRequests = () => {
             <button
               type="button"
               onClick={() => handleStatusFilterChange('all')}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
-                statusFilter === 'all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              className={`min-h-[40px] rounded-lg border px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 ${
+                statusFilter === 'all' ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
               }`}
             >
               All Requests
@@ -1220,28 +1151,50 @@ const MyRequests = () => {
               const isActive = statusFilter === status;
               const isPending = status === 'pending';
               const label = status === 'pending' ? 'Pending Approval' : status.charAt(0).toUpperCase() + status.slice(1);
-              const colorMap = {
-                pending:   isActive ? 'bg-yellow-500 text-white' : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100',
-                approved:  isActive ? 'bg-green-600 text-white'  : 'bg-green-50 text-green-700 hover:bg-green-100',
-                rejected:  isActive ? 'bg-red-600 text-white'    : 'bg-red-50 text-red-700 hover:bg-red-100',
-                released:  isActive ? 'bg-teal-600 text-white'   : 'bg-teal-50 text-teal-700 hover:bg-teal-100',
-                draft:     isActive ? 'bg-gray-600 text-white'   : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-                cancelled: isActive ? 'bg-gray-600 text-white'   : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-                disbursed: isActive ? 'bg-blue-600 text-white'   : 'bg-blue-50 text-blue-700 hover:bg-blue-100',
-                liquidated:isActive ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100',
+              const statusColors = {
+                pending: {
+                  active: 'border-amber-600 bg-amber-600 text-white',
+                  inactive: 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                },
+                approved: {
+                  active: 'border-green-700 bg-green-700 text-white',
+                  inactive: 'border-green-200 bg-green-50 text-green-800 hover:bg-green-100'
+                },
+                rejected: {
+                  active: 'border-red-700 bg-red-700 text-white',
+                  inactive: 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100'
+                },
+                released: {
+                  active: 'border-blue-700 bg-blue-700 text-white',
+                  inactive: 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100'
+                },
+                disbursed: {
+                  active: 'border-teal-700 bg-teal-700 text-white',
+                  inactive: 'border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100'
+                },
+                liquidated: {
+                  active: 'border-indigo-700 bg-indigo-700 text-white',
+                  inactive: 'border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
+                }
               };
-              const colorClass = colorMap[status] || (isActive ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200');
+
+              const colors = statusColors[status] || {
+                active: 'border-gray-700 bg-gray-700 text-white',
+                inactive: 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
+              };
+
+              const colorClass = isActive ? colors.active : colors.inactive;
               return (
                 <button
                   type="button"
                   key={status}
                   onClick={() => handleStatusFilterChange(status)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${colorClass}`}
+                  className={`flex items-center gap-1.5 min-h-[40px] rounded-lg border px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 ${colorClass}`}
                 >
                   {label}
                   {isPending && pendingCount > 0 && (
                     <span className={`inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-xs font-bold ${
-                      isActive ? 'bg-white/25 text-white' : 'bg-yellow-500 text-white'
+                      isActive ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-700'
                     }`}>
                       {pendingCount}
                     </span>
@@ -1255,23 +1208,23 @@ const MyRequests = () => {
           {tabValue === 0 && (
             <>
               {/* Mobile card list */}
-              <div className="sm:hidden space-y-2">
+              <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:hidden">
                 {loading ? (
                   <Loading message="Loading cash advances..." />
                 ) : filteredCashAdvances.length === 0 ? (
-                  <p className="py-10 text-center text-gray-400 text-sm">No results found.</p>
+                  <p className="py-10 text-center text-sm italic text-gray-500">No results found.</p>
                 ) : (
                   paginatedCashAdvances.map((request) => (
                     <div
                       key={request.id}
-                      className={`p-3 rounded-lg border border-gray-200 overflow-hidden ${
+                      className={`min-w-0 rounded-xl border border-gray-200 bg-white p-4 ${
                         request.urgency === 'overdue' ? 'bg-red-50/40 border-l-4 border-l-red-500' :
                         request.urgency === 'urgent'  ? 'bg-orange-50/40 border-l-4 border-l-orange-400' :
                         request.urgency === 'warning' ? 'bg-yellow-50/40 border-l-4 border-l-yellow-400' : ''
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-semibold font-mono text-gray-900 truncate min-w-0 flex-1">{request.refNumber}</p>
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <p className="min-w-0 flex-1 break-words text-sm font-semibold text-gray-900">{request.refNumber}</p>
                         <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">
                           ₱{request.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                         </p>
@@ -1293,31 +1246,31 @@ const MyRequests = () => {
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-                        <p className="text-xs text-gray-600 truncate min-w-0 flex-1">
+                      <div className="mt-3 flex flex-col gap-3 border-t border-gray-100 pt-3">
+                        <p className="min-w-0 break-words text-xs text-gray-600">
                           {isApproverUser ? 'Accounting: ' : 'Approver: '}{isApproverUser ? request.releasedBy : request.approver}
                         </p>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button type="button" onClick={() => handleView(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors" aria-label="View details">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <button type="button" onClick={() => handleView(request)} aria-label="View details" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                             <Eye className="w-4 h-4" />
                           </button>
                           {['draft', 'cancelled', 'rejected'].includes((request.status || '').toLowerCase()) && (
-                            <button type="button" onClick={() => handleEdit(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors" aria-label="Edit">
+                            <button type="button" onClick={() => handleEdit(request)} aria-label="Edit request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                               <Edit2 className="w-4 h-4" />
                             </button>
                           )}
                           {request.status === 'Draft' && (
-                            <button type="button" onClick={() => handleDeleteCashAdvance(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" aria-label="Delete">
+                            <button type="button" onClick={() => handleDeleteCashAdvance(request)} aria-label="Delete or cancel request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           )}
                           {request.status === 'Pending Approval' && (
-                            <button type="button" onClick={() => handleDeleteCashAdvance(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" aria-label="Cancel request">
+                            <button type="button" onClick={() => handleDeleteCashAdvance(request)} aria-label="Delete or cancel request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
                               <XCircle className="w-4 h-4" />
                             </button>
                           )}
                           {request.status.toLowerCase().includes('released') && !liquidations.some(l => l.cashAdvanceRef === request.refNumber) && (
-                            <button type="button" onClick={() => handleCreateLiquidation(request)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded transition-colors" aria-label="Create liquidation">
+                            <button type="button" onClick={() => handleCreateLiquidation(request)} aria-label="Create liquidation" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                               <Receipt className="w-4 h-4" />
                             </button>
                           )}
@@ -1329,7 +1282,7 @@ const MyRequests = () => {
               </div>
 
               {/* Desktop table */}
-              <div className="hidden sm:block overflow-x-auto border border-gray-200 rounded-lg">
+              <div className="hidden min-w-0 max-w-full overflow-x-auto rounded-lg border border-gray-200 xl:block">
               <table className="w-full min-w-[800px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -1344,13 +1297,13 @@ const MyRequests = () => {
                 <tbody className="divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="py-12">
+                      <td colSpan={6} className="py-12">
                         <Loading message="Loading cash advances..." />
                       </td>
                     </tr>
                   ) : filteredCashAdvances.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-10 text-center text-gray-400 text-sm">
+                      <td colSpan={6} className="py-10 text-center text-sm italic text-gray-500">
                         No results found.
                       </td>
                     </tr>
@@ -1364,7 +1317,7 @@ const MyRequests = () => {
                           request.urgency === 'warning' ? 'bg-yellow-50/40 border-l-4 border-yellow-400' : ''
                         }`}
                       >
-                        <td className="px-4 py-4 text-sm font-semibold font-mono text-gray-900">{request.refNumber}</td>
+                        <td className="px-4 py-4 text-sm font-semibold text-gray-900">{request.refNumber}</td>
                         <td className="px-4 py-4 text-sm font-semibold text-left text-gray-900">
                           ₱{request.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                         </td>
@@ -1380,7 +1333,7 @@ const MyRequests = () => {
                                   ? `Liquidation overdue since ${request.liquidationDeadline ? new Date(request.liquidationDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}`
                                   : `Liquidation due in ${request.daysUntilDeadline} day${request.daysUntilDeadline === 1 ? '' : 's'} — ${request.liquidationDeadline ? new Date(request.liquidationDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}`
                               }>
-                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full border animate-pulse ${
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full border ${
                                   request.urgency === 'overdue' ? 'border-red-200 bg-red-50 text-red-700' :
                                   request.urgency === 'urgent'  ? 'border-orange-200 bg-orange-50 text-orange-700' :
                                                                   'border-yellow-200 bg-yellow-50 text-yellow-700'
@@ -1400,34 +1353,34 @@ const MyRequests = () => {
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-1.5">
                             <Tooltip title="View Details">
-                              <button type="button" onClick={() => handleView(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors">
+                              <button type="button" onClick={() => handleView(request)} aria-label="View details" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                                 <Eye className="w-4 h-4" />
                               </button>
                             </Tooltip>
                             {['draft', 'cancelled', 'rejected'].includes((request.status || '').toLowerCase()) && (
                               <Tooltip title="Edit">
-                                <button type="button" onClick={() => handleEdit(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleEdit(request)} aria-label="Edit request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                                   <Edit2 className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status === 'Draft' && (
                               <Tooltip title="Delete">
-                                <button type="button" onClick={() => handleDeleteCashAdvance(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleDeleteCashAdvance(request)} aria-label="Delete or cancel request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status === 'Pending Approval' && (
                               <Tooltip title="Cancel Request">
-                                <button type="button" onClick={() => handleDeleteCashAdvance(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleDeleteCashAdvance(request)} aria-label="Delete or cancel request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
                                   <XCircle className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status.toLowerCase().includes('released') && !liquidations.some(l => l.cashAdvanceRef === request.refNumber) && (
                               <Tooltip title="Create Liquidation">
-                                <button type="button" onClick={() => handleCreateLiquidation(request)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleCreateLiquidation(request)} aria-label="Create liquidation" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                                   <Receipt className="w-4 h-4" />
                                 </button>
                               </Tooltip>
@@ -1458,16 +1411,16 @@ const MyRequests = () => {
           {tabValue === 1 && (
             <>
               {/* Mobile card list */}
-              <div className="sm:hidden space-y-2">
+              <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:hidden">
                 {loading ? (
                   <Loading message="Loading liquidations..." />
                 ) : filteredLiquidations.length === 0 ? (
-                  <p className="py-10 text-center text-gray-400 text-sm">No results found.</p>
+                  <p className="py-10 text-center text-sm italic text-gray-500">No results found.</p>
                 ) : (
                   paginatedLiquidations.map((request) => (
-                    <div key={request.id} className="p-3 rounded-lg border border-gray-200 overflow-hidden">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-semibold font-mono text-gray-900 truncate min-w-0 flex-1">{request.refNumber}</p>
+                    <div key={request.id} className="min-w-0 rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <p className="min-w-0 flex-1 break-words text-sm font-semibold text-gray-900">{request.refNumber}</p>
                         <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">
                           ₱{request.totalExpenses.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                         </p>
@@ -1480,26 +1433,26 @@ const MyRequests = () => {
                           {request.status}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-                        <p className="text-xs text-gray-600 truncate min-w-0 flex-1">
+                      <div className="mt-3 flex flex-col gap-3 border-t border-gray-100 pt-3">
+                        <p className="min-w-0 break-words text-xs text-gray-600">
                           {isApproverUser ? 'Disburse by: ' : 'Approver: '}{isApproverUser ? request.releasedBy : request.approver}
                         </p>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button type="button" onClick={() => handleViewLiquidation(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors" aria-label="View details">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <button type="button" onClick={() => handleViewLiquidation(request)} aria-label="View details" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                             <Eye className="w-4 h-4" />
                           </button>
                           {['draft', 'cancelled', 'rejected'].includes((request.status || '').toLowerCase()) && (
-                            <button type="button" onClick={() => handleEditLiquidation(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors" aria-label="Edit">
+                            <button type="button" onClick={() => handleEditLiquidation(request)} aria-label="Edit request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                               <Edit2 className="w-4 h-4" />
                             </button>
                           )}
                           {request.status === 'Draft' && (
-                            <button type="button" onClick={() => handleDeleteLiquidation(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" aria-label="Delete">
+                            <button type="button" onClick={() => handleDeleteLiquidation(request)} aria-label="Delete or cancel request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           )}
                           {request.status === 'Pending Approval' && (
-                            <button type="button" onClick={() => handleDeleteLiquidation(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" aria-label="Cancel request">
+                            <button type="button" onClick={() => handleDeleteLiquidation(request)} aria-label="Delete or cancel request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
                               <XCircle className="w-4 h-4" />
                             </button>
                           )}
@@ -1511,7 +1464,7 @@ const MyRequests = () => {
               </div>
 
               {/* Desktop table */}
-              <div className="hidden sm:block overflow-x-auto border border-gray-200 rounded-lg">
+              <div className="hidden min-w-0 max-w-full overflow-x-auto rounded-lg border border-gray-200 xl:block">
               <table className="w-full min-w-[800px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -1526,21 +1479,21 @@ const MyRequests = () => {
                 <tbody className="divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan={8} className="py-12">
+                      <td colSpan={6} className="py-12">
                         <Loading message="Loading liquidations..." />
                       </td>
                     </tr>
                   ) : filteredLiquidations.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-10 text-center text-gray-400 text-sm">
+                      <td colSpan={6} className="py-10 text-center text-sm italic text-gray-500">
                         No results found.
                       </td>
                     </tr>
                   ) : (
                     paginatedLiquidations.map((request) => (
                       <tr key={request.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-4 text-sm font-semibold font-mono text-gray-900">{request.refNumber}</td>
-                        <td className="px-4 py-4 text-sm font-mono text-gray-600">{request.cashAdvanceRef}</td>
+                        <td className="px-4 py-4 text-sm font-semibold text-gray-900">{request.refNumber}</td>
+                        <td className="px-4 py-4 text-sm text-gray-600">{request.cashAdvanceRef}</td>
                         <td className="px-4 py-4 text-sm text-gray-600">{formatLongDate(request.submitDate)}</td>
                         <td className="px-4 py-4">
                           <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border ${getStatusColor(request.status)}`}>
@@ -1553,27 +1506,27 @@ const MyRequests = () => {
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-1.5">
                             <Tooltip title="View Details">
-                              <button type="button" onClick={() => handleViewLiquidation(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors">
+                              <button type="button" onClick={() => handleViewLiquidation(request)} aria-label="View details" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                                 <Eye className="w-4 h-4" />
                               </button>
                             </Tooltip>
                             {['draft', 'cancelled', 'rejected'].includes((request.status || '').toLowerCase()) && (
                               <Tooltip title="Edit">
-                                <button type="button" onClick={() => handleEditLiquidation(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleEditLiquidation(request)} aria-label="Edit request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                                   <Edit2 className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status === 'Draft' && (
                               <Tooltip title="Delete">
-                                <button type="button" onClick={() => handleDeleteLiquidation(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleDeleteLiquidation(request)} aria-label="Delete or cancel request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status === 'Pending Approval' && (
                               <Tooltip title="Cancel Request">
-                                <button type="button" onClick={() => handleDeleteLiquidation(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleDeleteLiquidation(request)} aria-label="Delete or cancel request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
                                   <XCircle className="w-4 h-4" />
                                 </button>
                               </Tooltip>
@@ -1604,16 +1557,16 @@ const MyRequests = () => {
           {tabValue === 2 && (
             <>
               {/* Mobile card list */}
-              <div className="sm:hidden space-y-2">
+              <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:hidden">
                 {loading ? (
                   <Loading message="Loading reimbursements..." />
                 ) : filteredReimbursements.length === 0 ? (
-                  <p className="py-10 text-center text-gray-400 text-sm">No results found.</p>
+                  <p className="py-10 text-center text-sm italic text-gray-500">No results found.</p>
                 ) : (
                   paginatedReimbursements.map((request) => (
-                    <div key={request.id} className="p-3 rounded-lg border border-gray-200 overflow-hidden">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-semibold font-mono text-gray-900 truncate min-w-0 flex-1">{request.refNumber}</p>
+                    <div key={request.id} className="min-w-0 rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <p className="min-w-0 flex-1 break-words text-sm font-semibold text-gray-900">{request.refNumber}</p>
                         <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">
                           ₱{request.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                         </p>
@@ -1624,26 +1577,26 @@ const MyRequests = () => {
                           {request.status}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-                        <p className="text-xs text-gray-600 truncate min-w-0 flex-1">
+                      <div className="mt-3 flex flex-col gap-3 border-t border-gray-100 pt-3">
+                        <p className="min-w-0 break-words text-xs text-gray-600">
                           {isApproverUser ? 'Disburse by: ' : 'Approver: '}{isApproverUser ? request.releasedBy : request.approver}
                         </p>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button type="button" onClick={() => handleViewReimbursement(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors" aria-label="View details">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <button type="button" onClick={() => handleViewReimbursement(request)} aria-label="View details" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                             <Eye className="w-4 h-4" />
                           </button>
                           {['draft', 'cancelled', 'rejected'].includes((request.status || '').toLowerCase()) && (
-                            <button type="button" onClick={() => handleEditReimbursement(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors" aria-label="Edit">
+                            <button type="button" onClick={() => handleEditReimbursement(request)} aria-label="Edit request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                               <Edit2 className="w-4 h-4" />
                             </button>
                           )}
                           {request.status === 'Draft' && (
-                            <button type="button" onClick={() => handleDeleteReimbursement(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" aria-label="Delete">
+                            <button type="button" onClick={() => handleDeleteReimbursement(request)} aria-label="Delete or cancel request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           )}
                           {request.status === 'Pending Approval' && (
-                            <button type="button" onClick={() => handleDeleteReimbursement(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" aria-label="Cancel request">
+                            <button type="button" onClick={() => handleDeleteReimbursement(request)} aria-label="Delete or cancel request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
                               <XCircle className="w-4 h-4" />
                             </button>
                           )}
@@ -1655,7 +1608,7 @@ const MyRequests = () => {
               </div>
 
               {/* Desktop table */}
-              <div className="hidden sm:block overflow-x-auto border border-gray-200 rounded-lg">
+              <div className="hidden min-w-0 max-w-full overflow-x-auto rounded-lg border border-gray-200 xl:block">
               <table className="w-full min-w-[800px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -1676,14 +1629,14 @@ const MyRequests = () => {
                     </tr>
                   ) : filteredReimbursements.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-10 text-center text-gray-400 text-sm">
+                      <td colSpan={6} className="py-10 text-center text-sm italic text-gray-500">
                         No results found.
                       </td>
                     </tr>
                   ) : (
                     paginatedReimbursements.map((request) => (
                       <tr key={request.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-4 text-sm font-semibold font-mono text-gray-900">{request.refNumber}</td>
+                        <td className="px-4 py-4 text-sm font-semibold text-gray-900">{request.refNumber}</td>
                         <td className="px-4 py-4 text-sm font-semibold text-left text-gray-900">
                           ₱{request.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                         </td>
@@ -1699,27 +1652,27 @@ const MyRequests = () => {
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-1.5">
                             <Tooltip title="View Details">
-                              <button type="button" onClick={() => handleViewReimbursement(request)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors">
+                              <button type="button" onClick={() => handleViewReimbursement(request)} aria-label="View details" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                                 <Eye className="w-4 h-4" />
                               </button>
                             </Tooltip>
                             {['draft', 'cancelled', 'rejected'].includes((request.status || '').toLowerCase()) && (
                               <Tooltip title="Edit">
-                                <button type="button" onClick={() => handleEditReimbursement(request)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleEditReimbursement(request)} aria-label="Edit request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
                                   <Edit2 className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status === 'Draft' && (
                               <Tooltip title="Delete">
-                                <button type="button" onClick={() => handleDeleteReimbursement(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleDeleteReimbursement(request)} aria-label="Delete or cancel request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </Tooltip>
                             )}
                             {request.status === 'Pending Approval' && (
                               <Tooltip title="Cancel Request">
-                                <button type="button" onClick={() => handleDeleteReimbursement(request)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors">
+                                <button type="button" onClick={() => handleDeleteReimbursement(request)} aria-label="Delete or cancel request" className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
                                   <XCircle className="w-4 h-4" />
                                 </button>
                               </Tooltip>
@@ -1745,15 +1698,15 @@ const MyRequests = () => {
               onPageSizeChange={handlePageSizeChange}
             />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {/* View Details Modal */}
       <Modal
         open={viewModalOpen}
         onClose={handleCloseModal}
         title={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <span>Request Details</span>
             {selectedRequest && (
               <span className={`px-3 py-1 text-xs font-semibold rounded-full flex items-center gap-1 ${getStatusColor(selectedRequest.status)}`}>

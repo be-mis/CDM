@@ -28,9 +28,6 @@ function AppRoutes({ user, logout }) {
 
       <Route path="/profile" element={user ? <Dashboard onLogout={logout} /> : <Navigate to="/login" replace />} />
 
-
-
-
       <Route path="/user-management" element={user ? <Dashboard onLogout={logout} /> : <Navigate to="/login" replace />} />
       <Route path="/audit-logs" element={user ? <Dashboard onLogout={logout} /> : <Navigate to="/login" replace />} />
       <Route path="/disbursements" element={user ? <Dashboard onLogout={logout} /> : <Navigate to="/login" replace />} />

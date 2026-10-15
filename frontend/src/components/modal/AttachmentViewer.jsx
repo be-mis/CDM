@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ExternalLink, Download, FileText, Trash2 } from 'lucide-react';
 import api from '../../api';
 import Tooltip from '../ui/Tooltip';
-import ReceiptPreviewModal from '../modal/ReceiptPreview';
+import ReceiptPreviewModal from './ReceiptPreview';
 
 // Reusable attachment viewer with preview support for images and PDFs
 const isImage = (type, name) => {

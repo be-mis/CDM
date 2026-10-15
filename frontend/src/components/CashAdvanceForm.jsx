@@ -7,20 +7,19 @@ import AttachmentsSection from './forms/AttachmentsSection';
 import PaymentDetailsSection from './forms/PaymentDetailsSection';
 import { formatNumber, sanitizeNumberInput, normalizeDate, formatLongDate } from '../utils/formatters';
 import Button from './ui/Button';
-import Input from './ui/Input';
-import { Card, CardContent } from './ui/Card';
 import { Alert, InlineAlert } from './ui/Alert';
 import Modal from './ui/Modal';
 
+const fieldClassName = (invalid = false, readOnly = false) =>
+    `block min-h-[44px] w-full min-w-0 rounded-lg border px-3 py-2.5 text-sm text-gray-900 outline-none transition-colors ${
+        invalid ? 'border-red-400 focus:ring-2 focus:ring-red-100' : 'border-gray-200 focus:border-gray-400 focus:ring-2 focus:ring-gray-100'
+    } ${readOnly ? 'bg-gray-50' : 'bg-white'}`;
+
 const TruncatedViewField = ({ value, label }) => (
-    <div className="relative w-full">
-        {label && (
-            <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600 z-10">
-                {label}
-            </span>
-        )}
-        <div className="px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 whitespace-nowrap overflow-hidden text-ellipsis w-full text-sm text-gray-900 min-h-[35px] flex items-center" title={value || ''}>
-            {value || '-'}
+    <div className="min-w-0">
+        <p className="mb-2 text-xs font-semibold text-gray-600">{label}</p>
+        <div className="min-h-[44px] w-full break-words rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900">
+            {value || '—'}
         </div>
     </div>
 );
@@ -647,10 +646,10 @@ const CashAdvanceForm = (props) => {
     };
 
     return (
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-5">
             {!viewOnly && (
                 <div className="mb-6">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-1">Cash Advance Form</h2>
+                    <h2 className="mb-1 text-lg font-semibold tracking-tight text-gray-900 sm:text-xl">Cash Advance Form</h2>
                 </div>
             )}
 
@@ -720,7 +719,7 @@ const CashAdvanceForm = (props) => {
                 )}
                 {!fundLoading && fundInfo && (
                     <>
-                        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex flex-col gap-1">
+                        <div className="mb-4 flex flex-col gap-1 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
                             <span className="font-bold text-gray-800">Request Amount:</span> {`₱${calculateTotal().toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             <span className="font-bold text-gray-800">Available Fund:</span> {`₱${parseFloat(fundInfo.Amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                         </div>
@@ -795,155 +794,81 @@ const CashAdvanceForm = (props) => {
                 position="bottom-right"
             />
 
-            <Card>
-                <CardContent>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Information</h3>
-                        {!viewOnly ? (
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                <TruncatedViewField label="Cash Advance Number" value={formData.advanceNumber} />
-                                <TruncatedViewField label="Requested By" value={formData.requestedBy} />
-                                <TruncatedViewField label="Department" value={formData.department} />
-                                <div className="relative border border-gray-300 rounded-lg px-3 py-2 flex items-center">
-                                    <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600">Business Unit</span>
-                                    <div className="flex flex-wrap gap-x-4 gap-y-1.5 w-full">
-                                        <label className="flex items-center gap-1 text-sm">
-                                            <input type="radio" name="businessUnit" value="EPC" checked={formData.businessUnit === 'EPC'} onChange={handleInputChange} className="w-4 h-4" />
-                                            EPC
+            <section className="min-w-0 rounded-xl border border-gray-200 bg-white">
+                <div className="min-w-0 p-4 sm:p-5 lg:p-6">
+                    <div className="mb-5 border-b border-gray-100 pb-4">
+                        <h3 className="text-sm font-semibold text-gray-900">Request Information</h3>
+                        {!viewOnly && <p className="mt-1 text-xs leading-relaxed text-gray-500">Complete the request details and purpose below.</p>}
+                    </div>
+                    {!viewOnly ? (
+                        <div className="grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-4">
+                            <TruncatedViewField label="Cash Advance Number" value={formData.advanceNumber} />
+                            <TruncatedViewField label="Requested By" value={formData.requestedBy} />
+                            <TruncatedViewField label="Department" value={formData.department} />
+                            <fieldset className="min-w-0">
+                                <legend className="mb-2 text-xs font-semibold text-gray-600">Business Unit</legend>
+                                <div className="flex min-h-[44px] flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-gray-200 bg-white px-3">
+                                    {['EPC', 'NBFI', 'Shared'].map((unit) => (
+                                        <label key={unit} className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-gray-700">
+                                            <input type="radio" name="businessUnit" value={unit} checked={formData.businessUnit === unit} onChange={handleInputChange} className="h-4 w-4 accent-gray-900" />
+                                            {unit}
                                         </label>
-                                        <label className="flex items-center gap-1 text-sm">
-                                            <input type="radio" name="businessUnit" value="NBFI" checked={formData.businessUnit === 'NBFI'} onChange={handleInputChange} className="w-4 h-4" />
-                                            NBFI
-                                        </label>
-                                        <label className="flex items-center gap-1 text-sm">
-                                            <input type="radio" name="businessUnit" value="Shared" checked={formData.businessUnit === 'Shared'} onChange={handleInputChange} className="w-4 h-4" />
-                                            Shared
-                                        </label>
-                                    </div>
+                                    ))}
                                 </div>
-                                <div className="relative w-full">
-                                    <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600 z-10">Request Date</span>
-                                    <input
-                                        type="date"
-                                        name="advanceDate"
-                                        value={formData.advanceDate}
-                                        readOnly
-                                        className="px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 w-full text-sm text-gray-900 outline-none cursor-default"
-                                    />
-                                </div>
-                                <div className="relative w-full">
-                                    <span className="absolute -top-2 left-3 bg-white px-1 text-xs text-gray-600 z-10">Date Needed</span>
-                                    <input
-                                        type="date"
-                                        name="dateNeeded"
-                                        value={formData.dateNeeded}
-                                        onChange={handleInputChange}
-                                        min={getMinDateNeeded()}
-                                        className="px-4 py-2 border border-gray-300 rounded-lg bg-white w-full text-sm text-gray-900 outline-none focus:border-primary-600 hover:border-gray-900"
-                                    />
-                                </div>
-                                <div className="md:col-span-2">
-                                    <div className={`relative border ${errors.dateCoverage ? 'border-red-600' : 'border-gray-300'} rounded-lg px-3 py-2 flex items-center gap-2 focus-within:border-primary-600 hover:border-gray-900`}>
-                                        <span className={`absolute -top-2 left-3 bg-white px-1 text-xs ${errors.dateCoverage ? 'text-red-600' : 'text-gray-600'}`}>
-                                            Period Covered {errors.dateCoverage && '*'}
-                                        </span>
-                                        <input
-                                            type={viewOnly ? 'text' : 'date'}
-                                            name="startDate"
-                                            value={viewOnly ? formatLongDate(formData.startDate) : formData.startDate}
-                                            onChange={handleInputChange}
-                                            readOnly={viewOnly}
-                                            min={(!viewOnly && formData.dateNeeded) ? formData.dateNeeded : undefined}
-                                            max={(!viewOnly && formData.endDate) ? formData.endDate : undefined}
-                                            className="flex-1 bg-transparent border-none outline-none text-sm"
-                                        />
-                                        <span className="text-gray-500">—</span>
-                                        <input
-                                            type={viewOnly ? 'text' : 'date'}
-                                            name="endDate"
-                                            value={viewOnly ? formatLongDate(formData.endDate) : formData.endDate}
-                                            onChange={handleInputChange}
-                                            readOnly={viewOnly}
-                                            min={(!viewOnly && formData.startDate) ? formData.startDate : undefined}
-                                            className="flex-1 bg-transparent border-none outline-none text-sm text-right"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="md:col-span-4">
-                                    <Input
-                                    fullWidth
-                                    required
-                                    multiline
-                                    rows={2}
-                                    label="Purpose"
-                                    name="purpose"
-                                    value={formData.purpose}
-                                    onChange={handleInputChange}
-                                    error={errors.purpose}
-                                    />
-                                </div>
+                            </fieldset>
+                            <div className="min-w-0">
+                                <label htmlFor="ca-request-date" className="mb-2 block text-xs font-semibold text-gray-600">Request Date</label>
+                                <input id="ca-request-date" type="date" name="advanceDate" value={formData.advanceDate} readOnly className={fieldClassName(false, true)} />
                             </div>
-                        ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-8 gap-4">
-                                <div>
-                                    <label className="px-1 text-xs text-gray-600">Cash Advance Number</label>
-                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
-                                        {formData.advanceNumber}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="px-1 text-xs text-gray-600">Requested By</label>
-                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
-                                        {formData.requestedBy}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="px-1 text-xs text-gray-600">Department</label>
-                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
-                                        {formData.department}
-                                    </div>
-                                </div><div>
-                                    <label className="px-1 text-xs text-gray-600">Business Unit</label>
-                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
-                                        {formData.businessUnit}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="px-1 text-xs text-gray-600">Request Date</label>
-                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
-                                        {formatLongDate(formData.advanceDate)}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="px-1 text-xs text-gray-600">Date Needed</label>
-                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900">
-                                        {formatLongDate(formData.dateNeeded)}
-                                    </div>
-                                </div>
-                                <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="col-span-1 md:col-span-2">
-                                        <label className="px-1 text-xs text-gray-600">Period Covered</label>
-                                        <div className={` border-b border-gray-200 flex items-center justify-between gap-2 px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900`}>
-                                            {formatLongDate(formData.startDate)}
-                                            <span className="text-gray-500">—</span>
-                                            {formatLongDate(formData.endDate)}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-span-1 md:col-span-8">
-                                    <label className="px-1 text-xs text-gray-600">Purpose</label>
-                                    <div className="px-1 py-1 font-bold border-b border-gray-200 text-sm text-gray-900 whitespace-pre-wrap">
-                                        {formData.purpose || '-'}
-                                    </div>
-                                </div>
+                            <div className="min-w-0">
+                                <label htmlFor="ca-date-needed" className="mb-2 block text-xs font-semibold text-gray-600">Date Needed</label>
+                                <input id="ca-date-needed" type="date" name="dateNeeded" value={formData.dateNeeded} onChange={handleInputChange} min={getMinDateNeeded()} className={fieldClassName()} />
                             </div>
-                        )}
-                </CardContent>
-            </Card>
+                            <fieldset className="min-w-0 md:col-span-2">
+                                <legend className="mb-2 text-xs font-semibold text-gray-600">Period Covered</legend>
+                                <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <div className="min-w-0">
+                                        <label htmlFor="ca-period-start" className="sr-only">Period start date</label>
+                                        <input id="ca-period-start" type="date" name="startDate" value={formData.startDate} onChange={handleInputChange} min={formData.dateNeeded || undefined} max={formData.endDate || undefined} aria-invalid={Boolean(errors.dateCoverage)} aria-describedby={errors.dateCoverage ? 'ca-period-error' : undefined} className={fieldClassName(Boolean(errors.dateCoverage))} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <label htmlFor="ca-period-end" className="sr-only">Period end date</label>
+                                        <input id="ca-period-end" type="date" name="endDate" value={formData.endDate} onChange={handleInputChange} min={formData.startDate || undefined} aria-invalid={Boolean(errors.dateCoverage)} aria-describedby={errors.dateCoverage ? 'ca-period-error' : undefined} className={fieldClassName(Boolean(errors.dateCoverage))} />
+                                    </div>
+                                </div>
+                                {errors.dateCoverage && <p id="ca-period-error" className="mt-2 text-xs text-red-600">{typeof errors.dateCoverage === 'string' ? errors.dateCoverage : 'Please check the period covered.'}</p>}
+                            </fieldset>
+                            <div className="min-w-0 md:col-span-2 2xl:col-span-4">
+                                <label htmlFor="ca-purpose" className="mb-2 block text-xs font-semibold text-gray-600">Purpose <span className="text-red-600">*</span></label>
+                                <textarea id="ca-purpose" name="purpose" rows={3} required value={formData.purpose} onChange={handleInputChange} aria-invalid={Boolean(errors.purpose)} aria-describedby={errors.purpose ? 'ca-purpose-error' : undefined} placeholder="Describe the purpose of this cash advance" className={`${fieldClassName(Boolean(errors.purpose))} resize-y leading-relaxed`} />
+                                {errors.purpose && <p id="ca-purpose-error" className="mt-2 text-xs text-red-600">{typeof errors.purpose === 'string' ? errors.purpose : 'Purpose is required.'}</p>}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
+                            <TruncatedViewField label="Cash Advance Number" value={formData.advanceNumber} />
+                            <TruncatedViewField label="Requested By" value={formData.requestedBy} />
+                            <TruncatedViewField label="Department" value={formData.department} />
+                            <TruncatedViewField label="Business Unit" value={formData.businessUnit} />
+                            <TruncatedViewField label="Request Date" value={formatLongDate(formData.advanceDate)} />
+                            <TruncatedViewField label="Date Needed" value={formatLongDate(formData.dateNeeded)} />
+                            <div className="min-w-0 md:col-span-2">
+                                <TruncatedViewField label="Period Covered" value={`${formatLongDate(formData.startDate) || '—'} – ${formatLongDate(formData.endDate) || '—'}`} />
+                            </div>
+                            <div className="min-w-0 md:col-span-2 2xl:col-span-4">
+                                <p className="mb-2 text-xs font-semibold text-gray-600">Purpose</p>
+                                <p className="whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-sm leading-relaxed text-gray-900">{formData.purpose || '—'}</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </section>
 
-            <Card>
-                <CardContent>
+            <section className="min-w-0 rounded-xl border border-gray-200 bg-white">
+                <div className="min-w-0 p-4 sm:p-5 lg:p-6">
                     {/* FIX 4 (note): Pass itemInputRefs down so BudgetBreakdown can attach
                         refs to number inputs for reliable cursor position restoration. */}
+                    <div className="min-w-0 max-w-full overflow-x-auto">
                     <BudgetBreakdown
                         items={items}
                         advanceType={formData.advanceType}
@@ -956,20 +881,21 @@ const CashAdvanceForm = (props) => {
                         showTotal={true}
                         inputRefs={itemInputRefs}
                     />
+                    </div>
                     <div className="mt-6 flex justify-end">
-                        <div className="w-full sm:w-auto sm:min-w-[180px] p-4 border border-gray-200 rounded-lg">
+                        <div className="w-full rounded-xl border border-gray-200 bg-gray-50 p-4 sm:w-auto sm:min-w-[240px]">
                             <p className="text-xs text-gray-600 mb-1">Grand Total Amount</p>
-                            <h3 className={`text-2xl font-semibold ${errors.total ? 'text-red-600' : 'text-gray-900'}`}>
+                            <h3 className={`break-words text-2xl font-semibold tabular-nums ${errors.total ? 'text-red-600' : 'text-gray-900'}`}>
                                 ₱ {calculateTotal().toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </h3>
                             {errors.total && <p className="text-xs text-red-600 mt-1">{errors.total}</p>}
                         </div>
                     </div>
-                </CardContent>
-            </Card>
+                </div>
+            </section>
 
-            <Card>
-                <CardContent>
+            <section className="min-w-0 rounded-xl border border-gray-200 bg-white">
+                <div className="min-w-0 p-4 sm:p-5 lg:p-6">
                     <PaymentDetailsSection
                         formData={formData}
                         viewOnly={viewOnly}
@@ -977,11 +903,11 @@ const CashAdvanceForm = (props) => {
                         errors={errors}
                         disableAccountFields={true}
                     />
-                </CardContent>
-            </Card>
+                </div>
+            </section>
 
-            <Card>
-                <CardContent>
+            <section className="min-w-0 rounded-xl border border-gray-200 bg-white">
+                <div className="min-w-0 p-4 sm:p-5 lg:p-6">
                     <AttachmentsSection
                         attachments={attachments}
                         viewOnly={viewOnly}
@@ -993,10 +919,10 @@ const CashAdvanceForm = (props) => {
                             Maximum size per attachment: {MAX_ATTACHMENT_SIZE_MB}MB
                         </p>
                     )}
-                </CardContent>
-            </Card>
+                </div>
+            </section>
 
-            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-end items-stretch sm:items-center">
+            <div className="flex flex-col-reverse gap-3 border-t border-gray-200 pt-5 sm:flex-row sm:items-center sm:justify-end">
                 {!viewOnly && (
                     <>
                         {!accountingEdit && (
@@ -1005,7 +931,7 @@ const CashAdvanceForm = (props) => {
                                 startIcon={<Save className="w-4 h-4" />}
                                 onClick={handleSaveDraft}
                                 disabled={isSubmitting}
-                                className="w-full sm:w-auto"
+                                className="!min-h-[44px] w-full !rounded-lg !border !border-gray-200 !bg-white !text-gray-700 !shadow-none hover:!bg-gray-50 sm:w-auto"
                             >
                                 {isSubmitting ? 'Saving…' : 'Save Draft'}
                             </Button>
@@ -1015,7 +941,7 @@ const CashAdvanceForm = (props) => {
                             startIcon={<Send className="w-4 h-4" />}
                             onClick={handleSubmit}
                             disabled={isSubmitting || (accountingEdit && !editReason?.trim())}
-                            className="w-full sm:w-auto"
+                            className="!min-h-[44px] w-full !rounded-lg !bg-gray-900 !text-white !shadow-none hover:!bg-gray-800 sm:w-auto"
                         >
                             {isSubmitting
                                 ? (accountingEdit ? 'Updating…' : 'Submitting…')
